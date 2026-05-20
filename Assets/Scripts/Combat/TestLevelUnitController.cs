@@ -33,6 +33,8 @@ namespace IronKingdoms.Combat
         private const float HoverPanelHeight = 86f;
         private const float HoverPanelScreenPadding = 4f;
         private const float HoverPanelMouseOffset = 14f;
+        private const float CameraOrbitFallbackForwardDistance = 1f;
+        private const float CameraOrbitMinimumDistance = 0.1f;
 
         private enum TurnSide
         {
@@ -1308,14 +1310,14 @@ namespace IronKingdoms.Combat
             if (!TryGetGroundPointFromScreenCenter(activeCamera, out cameraOrbitGroundPivot))
             {
                 var planarForward = GetPlanarForward(activeCamera.transform.forward);
-                cameraOrbitGroundPivot = activeCamera.transform.position + (planarForward * Mathf.Max(activeCamera.transform.position.y, 1f));
+                cameraOrbitGroundPivot = activeCamera.transform.position + (planarForward * Mathf.Max(activeCamera.transform.position.y, CameraOrbitFallbackForwardDistance));
                 cameraOrbitGroundPivot.y = 0f;
             }
 
             cameraOrbitDistance = Vector3.Distance(activeCamera.transform.position, cameraOrbitGroundPivot);
-            if (cameraOrbitDistance < 0.1f)
+            if (cameraOrbitDistance < CameraOrbitMinimumDistance)
             {
-                cameraOrbitDistance = 0.1f;
+                cameraOrbitDistance = CameraOrbitMinimumDistance;
             }
 
             cameraOrbitPivotInitialized = true;
