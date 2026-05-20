@@ -38,6 +38,8 @@ namespace IronKingdoms.Combat
         private const float HoverPanelMouseOffset = 14f;
         private const float CameraOrbitFallbackForwardDistance = 1f;
         private const float CameraOrbitMinimumDistance = 0.1f;
+        private const float DefaultTargetRingRadius = 0.6f;
+        private const float TargetRingScaleFactor = 0.6f;
 
         private enum TurnSide
         {
@@ -302,11 +304,11 @@ namespace IronKingdoms.Combat
         {
             if (target?.Pawn == null)
             {
-                return 0.6f;
+                return DefaultTargetRingRadius;
             }
 
             var pawnScale = target.Pawn.transform.localScale;
-            return Mathf.Max(0.6f, Mathf.Max(pawnScale.x, pawnScale.z) * 0.6f);
+            return Mathf.Max(DefaultTargetRingRadius, Mathf.Max(pawnScale.x, pawnScale.z) * TargetRingScaleFactor);
         }
 
         private void DrawRing(LineRenderer ring, Vector3 center, float radius, Color color)
