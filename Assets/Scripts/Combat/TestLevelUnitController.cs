@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using Pathfinding;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
@@ -44,6 +45,8 @@ namespace IronKingdoms.Combat
         private const float CameraFocusTransitionSpeed = 12f;
         private const float DefaultTargetRingRadius = 0.6f;
         private const float TargetRingScaleFactor = 0.6f;
+        private const float PathPreviewUpdateDistance = 0.4f;
+        private const float PathPreviewMinInterval = 0.08f;
 
         private enum TurnSide
         {
@@ -104,6 +107,12 @@ namespace IronKingdoms.Combat
         private bool isCameraFocusTransitioning;
         private Vector3 cameraFocusTransitionTarget;
         private int uiCancelFrame = -1;
+
+        private List<Vector3> previewPathWaypoints;
+        private bool previewDestinationReachable;
+        private bool previewPathPending;
+        private Vector3 lastPreviewRequestTarget;
+        private float lastPathPreviewTime;
 
         private void Start()
         {
@@ -209,21 +218,36 @@ namespace IronKingdoms.Combat
             hoverPos.y = PawnYPosition;
 
             var unitPos = selectedUnit.Pawn.transform.position;
-            var planarDelta = hoverPos - unitPos;
-            planarDelta.y = 0f;
-            var distToHover = planarDelta.magnitude;
             var remaining = selectedUnit.RemainingMovementThisTurn;
 
-            var withinRange = distToHover <= remaining + PositionArrivalTolerance;
-            Vector3 effectiveDest;
-            if (withinRange)
+            // Kick off a new A* path request when the hover target shifts enough.
+            if (AstarPath.active != null)
             {
-                effectiveDest = hoverPos;
+                RequestPathPreviewIfNeeded(unitPos, hoverPos);
+            }
+
+            // Decide which path to display: A* cached result or straight-line fallback.
+            List<Vector3> displayPath;
+            bool withinRange;
+            if (!previewPathPending && previewPathWaypoints != null && previewPathWaypoints.Count >= 2)
+            {
+                displayPath = previewPathWaypoints;
+                withinRange = previewDestinationReachable;
             }
             else
             {
-                effectiveDest = unitPos + planarDelta.normalized * remaining;
-                effectiveDest.y = PawnYPosition;
+                // Straight-line placeholder while a path request is in flight or A* is absent.
+                var planarDelta = hoverPos - unitPos;
+                planarDelta.y = 0f;
+                var distToHover = planarDelta.magnitude;
+                withinRange = distToHover <= remaining + PositionArrivalTolerance;
+                var effectiveDest = withinRange ? hoverPos : unitPos + planarDelta.normalized * remaining;
+                effectiveDest.y = 0.05f;
+                displayPath = new List<Vector3>
+                {
+                    new(unitPos.x, 0.05f, unitPos.z),
+                    effectiveDest
+                };
             }
 
             var pathColor = withinRange
@@ -237,20 +261,83 @@ namespace IronKingdoms.Combat
                 : new Color(0.95f, 0.35f, 0.15f, 0.8f);
 
             movementPathLine.enabled = true;
-            movementPathLine.SetPosition(0, unitPos);
-            movementPathLine.SetPosition(1, effectiveDest);
+            movementPathLine.positionCount = displayPath.Count;
+            for (var i = 0; i < displayPath.Count; i++)
+            {
+                movementPathLine.SetPosition(i, displayPath[i]);
+            }
+
             movementPathLine.startColor = pathColor;
             movementPathLine.endColor = pathFadeColor;
 
             destinationMarkerObject.SetActive(true);
-            var markerPos = effectiveDest;
-            markerPos.y = 0.01f;
-            destinationMarkerObject.transform.position = markerPos;
+            var dest = displayPath[displayPath.Count - 1];
+            dest.y = 0.01f;
+            destinationMarkerObject.transform.position = dest;
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
             if (markerRenderer != null)
             {
                 markerRenderer.material.color = markerColor;
             }
+        }
+
+        private void RequestPathPreviewIfNeeded(Vector3 from, Vector3 to)
+        {
+            if (AstarPath.active == null || previewPathPending)
+            {
+                return;
+            }
+
+            if (Time.unscaledTime - lastPathPreviewTime < PathPreviewMinInterval)
+            {
+                return;
+            }
+
+            var horizontalDist = new Vector2(lastPreviewRequestTarget.x - to.x, lastPreviewRequestTarget.z - to.z).magnitude;
+            if (horizontalDist < PathPreviewUpdateDistance)
+            {
+                return;
+            }
+
+            lastPreviewRequestTarget = to;
+            lastPathPreviewTime = Time.unscaledTime;
+            previewPathPending = true;
+
+            var path = ABPath.Construct(from, to, OnPreviewPathComplete);
+            AstarPath.StartPath(path);
+        }
+
+        private void OnPreviewPathComplete(Path p)
+        {
+            previewPathPending = false;
+            if (p.error || p.vectorPath == null || p.vectorPath.Count < 2 || selectedUnit == null)
+            {
+                previewPathWaypoints = null;
+                previewDestinationReachable = false;
+                return;
+            }
+
+            var remaining = selectedUnit.RemainingMovementThisTurn;
+
+            // Measure the full unclamped path length to determine reachability.
+            var fullLength = 0f;
+            for (var i = 1; i < p.vectorPath.Count; i++)
+            {
+                fullLength += Vector3.Distance(p.vectorPath[i - 1], p.vectorPath[i]);
+            }
+
+            previewDestinationReachable = fullLength <= remaining + PositionArrivalTolerance;
+            var clamped = ClampPathToMovementBudget(p.vectorPath, remaining);
+
+            // Lift waypoints just above the ground so the line is visible.
+            for (var i = 0; i < clamped.Count; i++)
+            {
+                var wp = clamped[i];
+                wp.y = 0.05f;
+                clamped[i] = wp;
+            }
+
+            previewPathWaypoints = clamped;
         }
 
         private void RefreshAttackRangeRing()
@@ -354,6 +441,10 @@ namespace IronKingdoms.Combat
 
             if (mode != UnitActionMode.Move)
             {
+                previewPathWaypoints = null;
+                previewPathPending = false;
+                lastPreviewRequestTarget = Vector3.positiveInfinity;
+
                 if (movementPathLine != null)
                 {
                     movementPathLine.enabled = false;
@@ -682,6 +773,7 @@ namespace IronKingdoms.Combat
                 if (allowedStep <= 0f)
                 {
                     unit.MoveTarget = null;
+                    unit.PathWaypoints = null;
                     continue;
                 }
 
@@ -691,9 +783,27 @@ namespace IronKingdoms.Combat
                 unit.Pawn.transform.position = nextPosition;
                 unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movedDistance);
 
-                if (Vector3.Distance(nextPosition, targetPosition) <= PositionArrivalTolerance || unit.RemainingMovementThisTurn <= MovementBudgetEpsilon)
+                var reachedCurrentTarget = Vector3.Distance(nextPosition, targetPosition) <= PositionArrivalTolerance
+                    || unit.RemainingMovementThisTurn <= MovementBudgetEpsilon;
+
+                if (reachedCurrentTarget)
                 {
-                    unit.MoveTarget = null;
+                    // Advance to the next waypoint if one is available.
+                    var waypoints = unit.PathWaypoints;
+                    var nextIndex = unit.PathWaypointIndex + 1;
+                    if (waypoints != null && nextIndex < waypoints.Count
+                        && unit.RemainingMovementThisTurn > MovementBudgetEpsilon)
+                    {
+                        unit.PathWaypointIndex = nextIndex;
+                        var nextWaypoint = waypoints[nextIndex];
+                        nextWaypoint.y = PawnYPosition;
+                        unit.MoveTarget = nextWaypoint;
+                    }
+                    else
+                    {
+                        unit.MoveTarget = null;
+                        unit.PathWaypoints = null;
+                    }
                 }
             }
         }
@@ -876,16 +986,42 @@ namespace IronKingdoms.Combat
             if (remaining <= 0f)
             {
                 unit.MoveTarget = null;
+                unit.PathWaypoints = null;
                 return;
             }
 
             var current = unit.Pawn.transform.position;
+
+            // Try A* pathfinding first (synchronous for immediate movement response).
+            if (AstarPath.active != null)
+            {
+                var path = ABPath.Construct(current, destination);
+                AstarPath.StartPath(path);
+                AstarPath.BlockUntilCalculated(path);
+
+                if (!path.error && path.vectorPath != null && path.vectorPath.Count >= 2)
+                {
+                    var waypoints = ClampPathToMovementBudget(path.vectorPath, remaining);
+                    if (waypoints.Count >= 2)
+                    {
+                        unit.PathWaypoints = waypoints;
+                        unit.PathWaypointIndex = 0;
+                        var firstTarget = waypoints[1];
+                        firstTarget.y = PawnYPosition;
+                        unit.MoveTarget = firstTarget;
+                        return;
+                    }
+                }
+            }
+
+            // Fallback: straight-line movement.
             var planarDelta = destination - current;
             planarDelta.y = 0f;
             var distanceToDestination = planarDelta.magnitude;
             if (distanceToDestination <= PositionArrivalTolerance)
             {
                 unit.MoveTarget = null;
+                unit.PathWaypoints = null;
                 return;
             }
 
@@ -893,6 +1029,40 @@ namespace IronKingdoms.Combat
             var clampedDestination = current + planarDelta.normalized * moveDistance;
             clampedDestination.y = PawnYPosition;
             unit.MoveTarget = clampedDestination;
+            unit.PathWaypoints = null;
+        }
+
+        private static List<Vector3> ClampPathToMovementBudget(List<Vector3> waypoints, float budget)
+        {
+            var result = new List<Vector3>();
+            if (waypoints == null || waypoints.Count == 0)
+            {
+                return result;
+            }
+
+            result.Add(waypoints[0]);
+            var distanceCovered = 0f;
+
+            for (var i = 1; i < waypoints.Count; i++)
+            {
+                var segmentLength = Vector3.Distance(waypoints[i - 1], waypoints[i]);
+                if (distanceCovered + segmentLength >= budget - MovementBudgetEpsilon)
+                {
+                    var segmentRemaining = budget - distanceCovered;
+                    if (segmentRemaining > MovementBudgetEpsilon && segmentLength > MovementBudgetEpsilon)
+                    {
+                        var t = segmentRemaining / segmentLength;
+                        result.Add(Vector3.Lerp(waypoints[i - 1], waypoints[i], t));
+                    }
+
+                    break;
+                }
+
+                result.Add(waypoints[i]);
+                distanceCovered += segmentLength;
+            }
+
+            return result;
         }
 
         private void StartPlayerTurn()
@@ -943,6 +1113,7 @@ namespace IronKingdoms.Combat
                 unit.RemainingMovementThisTurn = unit.Definition.Stats.speed;
                 unit.HasActedThisTurn = false;
                 unit.MoveTarget = null;
+                unit.PathWaypoints = null;
             }
         }
 
@@ -1708,6 +1879,12 @@ namespace IronKingdoms.Combat
             public bool HasActedThisTurn { get; set; }
             public Vector3? MoveTarget { get; set; }
             public bool IsAlive => Health > 0;
+
+            /// <summary>World-space waypoints for the current A* path (null when not path-following).</summary>
+            public List<Vector3> PathWaypoints { get; set; }
+
+            /// <summary>Index of the waypoint the unit is currently moving toward.</summary>
+            public int PathWaypointIndex { get; set; }
         }
     }
 }
