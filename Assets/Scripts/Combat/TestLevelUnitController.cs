@@ -15,6 +15,24 @@ namespace IronKingdoms.Combat
         private const int AttackRingSegments = 48;
         private const float PawnYPosition = 1f;
         private const float MinimumPlanarMagnitude = 0.0001f;
+        private const float InputAxisDeadzone = 0.001f;
+        private const int LeftMouseButton = 0;
+        private const int RightMouseButton = 1;
+        private const int MiddleMouseButton = 2;
+        private const float RosterAreaX = 12f;
+        private const float RosterAreaY = 12f;
+        private const float RosterAreaWidth = 320f;
+        private const float RosterAreaHeight = 300f;
+        private const float SelectedUnitPanelWidth = 280f;
+        private const float SelectedUnitPanelHeight = 310f;
+        private const float SelectedUnitPanelOffsetX = 292f;
+        private const float ActionBarWidth = 560f;
+        private const float ActionBarHeight = 150f;
+        private const float ActionBarBottomMargin = 12f;
+        private const float HoverPanelWidth = 280f;
+        private const float HoverPanelHeight = 86f;
+        private const float HoverPanelScreenPadding = 4f;
+        private const float HoverPanelMouseOffset = 14f;
 
         private enum TurnSide
         {
@@ -1000,7 +1018,7 @@ namespace IronKingdoms.Combat
 
         private void OnGUI()
         {
-            GUILayout.BeginArea(new Rect(12f, 12f, 320f, 300f), "Player-Controlled Units", GUI.skin.window);
+            GUILayout.BeginArea(new Rect(RosterAreaX, RosterAreaY, RosterAreaWidth, RosterAreaHeight), "Player-Controlled Units", GUI.skin.window);
             GUILayout.Label($"Active Turn: {activeTurnSide}");
             if (activeTurnSide == TurnSide.Player && GUILayout.Button("End Turn"))
             {
@@ -1057,7 +1075,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            GUILayout.BeginArea(new Rect(Screen.width - 292f, 12f, 280f, 310f), "Selected Unit", GUI.skin.window);
+            GUILayout.BeginArea(new Rect(Screen.width - SelectedUnitPanelOffsetX, RosterAreaY, SelectedUnitPanelWidth, SelectedUnitPanelHeight), "Selected Unit", GUI.skin.window);
             GUILayout.Label(selectedUnit.Definition.DisplayName);
             GUILayout.Label($"Role: {selectedUnit.Definition.Role}");
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
@@ -1081,11 +1099,9 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var areaWidth = 560f;
-            var areaHeight = 150f;
-            var areaX = (Screen.width - areaWidth) * 0.5f;
-            var areaY = Screen.height - areaHeight - 12f;
-            GUILayout.BeginArea(new Rect(areaX, areaY, areaWidth, areaHeight), "Actions", GUI.skin.window);
+            var areaX = (Screen.width - ActionBarWidth) * 0.5f;
+            var areaY = Screen.height - ActionBarHeight - ActionBarBottomMargin;
+            GUILayout.BeginArea(new Rect(areaX, areaY, ActionBarWidth, ActionBarHeight), "Actions", GUI.skin.window);
 
             GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan | Left Click / 1-9: Select | Enter: End turn | Esc/Right Click: Cancel");
             GUILayout.Space(4f);
@@ -1169,18 +1185,18 @@ namespace IronKingdoms.Combat
             InitializeCameraPitch(activeCamera);
             HandleKeyboardCameraPan(activeCamera);
 
-            if (Input.GetMouseButtonDown(2))
+            if (Input.GetMouseButtonDown(MiddleMouseButton))
             {
                 isCameraDragging = !IsMouseOverGameplayUi();
                 lastCameraDragMousePosition = Input.mousePosition;
             }
 
-            if (Input.GetMouseButtonUp(2))
+            if (Input.GetMouseButtonUp(MiddleMouseButton))
             {
                 isCameraDragging = false;
             }
 
-            if (!isCameraDragging || !Input.GetMouseButton(2))
+            if (!isCameraDragging || !Input.GetMouseButton(MiddleMouseButton))
             {
                 return;
             }
@@ -1189,7 +1205,7 @@ namespace IronKingdoms.Combat
             var delta = mousePosition - lastCameraDragMousePosition;
             lastCameraDragMousePosition = mousePosition;
 
-            if (delta.sqrMagnitude <= 0f)
+            if (delta.sqrMagnitude < MinimumPlanarMagnitude)
             {
                 return;
             }
@@ -1208,7 +1224,7 @@ namespace IronKingdoms.Combat
         {
             var horizontal = Input.GetAxisRaw("Horizontal");
             var vertical = Input.GetAxisRaw("Vertical");
-            if (Mathf.Abs(horizontal) <= 0.001f && Mathf.Abs(vertical) <= 0.001f)
+            if (Mathf.Abs(horizontal) <= InputAxisDeadzone && Mathf.Abs(vertical) <= InputAxisDeadzone)
             {
                 return;
             }
@@ -1254,7 +1270,9 @@ namespace IronKingdoms.Combat
 
         private bool TryConsumeUiClick()
         {
-            if (!Input.GetMouseButtonDown(0) && !Input.GetMouseButtonDown(1) && !Input.GetMouseButtonDown(2))
+            if (!Input.GetMouseButtonDown(LeftMouseButton)
+                && !Input.GetMouseButtonDown(RightMouseButton)
+                && !Input.GetMouseButtonDown(MiddleMouseButton))
             {
                 return false;
             }
@@ -1281,25 +1299,23 @@ namespace IronKingdoms.Combat
         private bool IsMouseOverGameplayUi()
         {
             var mouseGuiPosition = GetMouseGuiPosition();
-            if (new Rect(12f, 12f, 320f, 300f).Contains(mouseGuiPosition))
+            if (new Rect(RosterAreaX, RosterAreaY, RosterAreaWidth, RosterAreaHeight).Contains(mouseGuiPosition))
             {
                 return true;
             }
 
             if (selectedUnit != null)
             {
-                if (new Rect(Screen.width - 292f, 12f, 280f, 310f).Contains(mouseGuiPosition))
+                if (new Rect(Screen.width - SelectedUnitPanelOffsetX, RosterAreaY, SelectedUnitPanelWidth, SelectedUnitPanelHeight).Contains(mouseGuiPosition))
                 {
                     return true;
                 }
 
                 if (activeTurnSide == TurnSide.Player)
                 {
-                    var areaWidth = 560f;
-                    var areaHeight = 150f;
-                    var areaX = (Screen.width - areaWidth) * 0.5f;
-                    var areaY = Screen.height - areaHeight - 12f;
-                    if (new Rect(areaX, areaY, areaWidth, areaHeight).Contains(mouseGuiPosition))
+                    var areaX = (Screen.width - ActionBarWidth) * 0.5f;
+                    var areaY = Screen.height - ActionBarHeight - ActionBarBottomMargin;
+                    if (new Rect(areaX, areaY, ActionBarWidth, ActionBarHeight).Contains(mouseGuiPosition))
                     {
                         return true;
                     }
@@ -1308,12 +1324,10 @@ namespace IronKingdoms.Combat
 
             if (hoveredEnemyUnit != null && hoveredEnemyUnit.IsAlive)
             {
-                var width = 280f;
-                var height = 86f;
                 var mousePosition = Input.mousePosition;
-                var x = Mathf.Clamp(mousePosition.x + 14f, 4f, Screen.width - width - 4f);
-                var y = Mathf.Clamp(Screen.height - mousePosition.y + 14f, 4f, Screen.height - height - 4f);
-                if (new Rect(x, y, width, height).Contains(mouseGuiPosition))
+                var x = Mathf.Clamp(mousePosition.x + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.width - HoverPanelWidth - HoverPanelScreenPadding);
+                var y = Mathf.Clamp(Screen.height - mousePosition.y + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.height - HoverPanelHeight - HoverPanelScreenPadding);
+                if (new Rect(x, y, HoverPanelWidth, HoverPanelHeight).Contains(mouseGuiPosition))
                 {
                     return true;
                 }
@@ -1358,12 +1372,10 @@ namespace IronKingdoms.Combat
             }
 
             var mousePosition = Input.mousePosition;
-            var width = 280f;
-            var height = 86f;
-            var x = Mathf.Clamp(mousePosition.x + 14f, 4f, Screen.width - width - 4f);
-            var y = Mathf.Clamp(Screen.height - mousePosition.y + 14f, 4f, Screen.height - height - 4f);
+            var x = Mathf.Clamp(mousePosition.x + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.width - HoverPanelWidth - HoverPanelScreenPadding);
+            var y = Mathf.Clamp(Screen.height - mousePosition.y + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.height - HoverPanelHeight - HoverPanelScreenPadding);
 
-            GUILayout.BeginArea(new Rect(x, y, width, height), "Target", GUI.skin.window);
+            GUILayout.BeginArea(new Rect(x, y, HoverPanelWidth, HoverPanelHeight), "Target", GUI.skin.window);
             GUILayout.Label(hoveredEnemyUnit.Definition.DisplayName);
             GUILayout.Label($"HP: {hoveredEnemyUnit.Health}/{hoveredEnemyUnit.Definition.Stats.health}");
             GUILayout.Label(BuildHealthBoxes(hoveredEnemyUnit.Health, hoveredEnemyUnit.Definition.Stats.health));
