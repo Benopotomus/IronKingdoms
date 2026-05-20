@@ -35,6 +35,7 @@ namespace IronKingdoms.Combat
         private const float HoverPanelMouseOffset = 14f;
         private const float CameraOrbitFallbackForwardDistance = 1f;
         private const float CameraOrbitMinimumDistance = 0.1f;
+        private const float DoubleClickIntervalSeconds = 0.3f;
 
         private enum TurnSide
         {
@@ -89,6 +90,8 @@ namespace IronKingdoms.Combat
         private bool cameraOrbitPivotInitialized;
         private Vector3 cameraOrbitGroundPivot;
         private float cameraOrbitDistance;
+        private RuntimeUnit lastClickedPlayerUnit;
+        private float lastClickedPlayerUnitClickTime = float.NegativeInfinity;
         private int uiCancelFrame = -1;
 
         private void Start()
@@ -478,7 +481,7 @@ namespace IronKingdoms.Combat
             {
                 if (playerRuntimeUnits[i].Pawn == hit.collider.gameObject && playerRuntimeUnits[i].IsAlive)
                 {
-                    SelectUnit(playerRuntimeUnits[i]);
+                    HandlePlayerUnitClick(playerRuntimeUnits[i]);
                     return;
                 }
             }
@@ -529,7 +532,7 @@ namespace IronKingdoms.Combat
                 {
                     if (playerRuntimeUnits[i].Pawn == hit.collider.gameObject && playerRuntimeUnits[i].IsAlive)
                     {
-                        SelectUnit(playerRuntimeUnits[i]);
+                        HandlePlayerUnitClick(playerRuntimeUnits[i]);
                         return;
                     }
                 }
@@ -590,7 +593,7 @@ namespace IronKingdoms.Combat
             {
                 if (playerRuntimeUnits[i].Pawn == hit.collider.gameObject && playerRuntimeUnits[i].IsAlive)
                 {
-                    SelectUnit(playerRuntimeUnits[i]);
+                    HandlePlayerUnitClick(playerRuntimeUnits[i]);
                     return;
                 }
             }
@@ -884,6 +887,61 @@ namespace IronKingdoms.Combat
             selectedUnit = unit != null && unit.IsAlive ? unit : null;
             selectedAttackWeaponIndex = 0;
             SetCurrentMode(UnitActionMode.None);
+        }
+
+        private void HandlePlayerUnitClick(RuntimeUnit unit)
+        {
+            if (unit == null || !unit.IsAlive)
+            {
+                return;
+            }
+
+            var isDoubleClick = ReferenceEquals(lastClickedPlayerUnit, unit)
+                && Time.unscaledTime - lastClickedPlayerUnitClickTime <= DoubleClickIntervalSeconds;
+            lastClickedPlayerUnit = unit;
+            lastClickedPlayerUnitClickTime = Time.unscaledTime;
+
+            SelectUnit(unit);
+            if (isDoubleClick)
+            {
+                FocusCameraOnUnit(unit);
+            }
+        }
+
+        private void FocusCameraOnUnit(RuntimeUnit unit)
+        {
+            if (unit == null || unit.Pawn == null)
+            {
+                return;
+            }
+
+            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            if (activeCamera == null)
+            {
+                return;
+            }
+
+            if (!cameraPitchInitialized)
+            {
+                InitializeCameraPitch(activeCamera);
+            }
+
+            if (!cameraOrbitPivotInitialized)
+            {
+                InitializeCameraOrbitPivot(activeCamera);
+            }
+
+            var focusPoint = unit.Pawn.transform.position;
+            focusPoint.y = 0f;
+            if (cameraOrbitDistance < CameraOrbitMinimumDistance)
+            {
+                cameraOrbitDistance = Mathf.Max(CameraOrbitMinimumDistance, Vector3.Distance(activeCamera.transform.position, focusPoint));
+            }
+
+            cameraOrbitGroundPivot = focusPoint;
+            cameraOrbitPivotInitialized = true;
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
         }
 
         private WeaponProfile GetSelectedAttackWeapon(RuntimeUnit unit)
