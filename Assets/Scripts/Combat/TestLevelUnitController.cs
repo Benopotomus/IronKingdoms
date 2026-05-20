@@ -29,6 +29,9 @@ namespace IronKingdoms.Combat
         private const float ActionBarWidth = 560f;
         private const float ActionBarHeight = 150f;
         private const float ActionBarBottomMargin = 12f;
+        private const float CameraControlsPanelWidth = 460f;
+        private const float CameraControlsPanelHeight = 54f;
+        private const float CameraControlsPanelTopMargin = 12f;
         private const float HoverPanelWidth = 280f;
         private const float HoverPanelHeight = 86f;
         private const float HoverPanelScreenPadding = 4f;
@@ -1024,6 +1027,8 @@ namespace IronKingdoms.Combat
 
         private void OnGUI()
         {
+            DrawCameraControlsPanel();
+
             GUILayout.BeginArea(new Rect(RosterAreaX, RosterAreaY, RosterAreaWidth, RosterAreaHeight), "Player-Controlled Units", GUI.skin.window);
             GUILayout.Label($"Active Turn: {activeTurnSide}");
             if (activeTurnSide == TurnSide.Player && GUILayout.Button("End Turn"))
@@ -1098,6 +1103,15 @@ namespace IronKingdoms.Combat
             DrawHoveredEnemyHealth();
         }
 
+        private void DrawCameraControlsPanel()
+        {
+            var areaX = (Screen.width - CameraControlsPanelWidth) * 0.5f;
+            var areaY = CameraControlsPanelTopMargin;
+            GUILayout.BeginArea(new Rect(areaX, areaY, CameraControlsPanelWidth, CameraControlsPanelHeight), "Camera Controls", GUI.skin.window);
+            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan");
+            GUILayout.EndArea();
+        }
+
         private void DrawActionBar()
         {
             if (selectedUnit == null || activeTurnSide != TurnSide.Player)
@@ -1109,8 +1123,7 @@ namespace IronKingdoms.Combat
             var areaY = Screen.height - ActionBarHeight - ActionBarBottomMargin;
             GUILayout.BeginArea(new Rect(areaX, areaY, ActionBarWidth, ActionBarHeight), "Actions", GUI.skin.window);
 
-            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan | Left Click / 1-9: Select | Enter: End turn | Esc/Right Click: Cancel");
-            GUILayout.Label("Activation is staged: move first, then combat action. After taking a combat action, movement is locked.");
+            GUILayout.Label("Left Click / 1-9: Select | Enter: End turn | Esc/Right Click: Cancel");
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
 
