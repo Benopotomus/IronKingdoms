@@ -1279,7 +1279,8 @@ namespace IronKingdoms.Combat
             cameraPitchDegrees = Mathf.Clamp(cameraPitchDegrees - (delta.y * cameraRotationSensitivity), cameraMinPitch, cameraMaxPitch);
             var euler = activeCamera.transform.rotation.eulerAngles;
             activeCamera.transform.rotation = Quaternion.Euler(cameraPitchDegrees, euler.y + yaw, 0f);
-            activeCamera.transform.position = cameraOrbitGroundPivot - (activeCamera.transform.forward * cameraOrbitDistance);
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
         }
 
         private void InitializeCameraPitch()
@@ -1310,7 +1311,7 @@ namespace IronKingdoms.Combat
             if (!TryGetGroundPointFromScreenCenter(activeCamera, out cameraOrbitGroundPivot))
             {
                 var planarForward = GetPlanarForward(activeCamera.transform.forward);
-                cameraOrbitGroundPivot = activeCamera.transform.position + (planarForward * Mathf.Max(activeCamera.transform.position.y, CameraOrbitFallbackForwardDistance));
+                cameraOrbitGroundPivot = activeCamera.transform.position + (planarForward * CameraOrbitFallbackForwardDistance);
                 cameraOrbitGroundPivot.y = 0f;
             }
 
@@ -1336,7 +1337,8 @@ namespace IronKingdoms.Combat
 
             cameraOrbitGroundPivot += planarDelta;
             cameraOrbitGroundPivot.y = 0f;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (activeCamera.transform.forward * cameraOrbitDistance);
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
         }
 
         private bool TryGetGroundPointFromScreenCenter(Camera activeCamera, out Vector3 groundPoint)
