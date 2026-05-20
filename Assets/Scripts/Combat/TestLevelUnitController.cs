@@ -1744,7 +1744,12 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
-            if (currentPlayerMode != UnitActionMode.None)
+            // Clicks inside the action bar are handled by IMGUI (weapon/move/attack buttons).
+            // Don't cancel the current mode so those button clicks can be processed normally.
+            var mouseGuiPosition = GetMouseGuiPosition();
+            var isOverActionBar = selectedUnit != null && activeTurnSide == TurnSide.Player
+                && GetActionBarRect().Contains(mouseGuiPosition);
+            if (!isOverActionBar && currentPlayerMode != UnitActionMode.None)
             {
                 uiCancelFrame = Time.frameCount;
                 SetCurrentMode(UnitActionMode.None);
