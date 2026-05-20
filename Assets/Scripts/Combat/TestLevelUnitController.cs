@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
@@ -47,8 +48,10 @@ namespace IronKingdoms.Combat
         private int enemyActivationIndex;
         private bool enemyIssuedMoveForActiveUnit;
         private bool enemyResolvedActionForActiveUnit;
+        private RuntimeUnit hoveredEnemyUnit;
 
         private UnitActionMode currentPlayerMode = UnitActionMode.None;
+        private int selectedAttackWeaponIndex;
         private LineRenderer movementPathLine;
         private LineRenderer attackRangeRing;
         private GameObject destinationMarkerObject;
@@ -73,6 +76,7 @@ namespace IronKingdoms.Combat
             TickMovement(Time.deltaTime);
             TickEnemyAi(Time.deltaTime);
             UpdateMovementVisualizer();
+            UpdateHoveredEnemy();
         }
 
         private void BuildVisualizers()
@@ -228,7 +232,8 @@ namespace IronKingdoms.Combat
 
             attackRangeRing.enabled = true;
             var center = selectedUnit.Pawn.transform.position;
-            var radius = selectedUnit.Weapon.Range;
+            var weapon = GetSelectedAttackWeapon(selectedUnit);
+            var radius = weapon.Range;
             var ringColor = new Color(0.95f, 0.55f, 0.1f, 0.75f);
             attackRangeRing.startColor = ringColor;
             attackRangeRing.endColor = ringColor;
@@ -245,6 +250,10 @@ namespace IronKingdoms.Combat
         private void SetCurrentMode(UnitActionMode mode)
         {
             currentPlayerMode = mode;
+            if (mode == UnitActionMode.Attack && selectedUnit != null)
+            {
+                selectedAttackWeaponIndex = Mathf.Clamp(selectedAttackWeaponIndex, 0, selectedUnit.Weapons.Length - 1);
+            }
 
             if (mode != UnitActionMode.Move)
             {
@@ -438,7 +447,13 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            if (!Input.GetMouseButtonDown(1))
+            if (Input.GetMouseButtonDown(1))
+            {
+                SetCurrentMode(UnitActionMode.None);
+                return;
+            }
+
+            if (!Input.GetMouseButtonDown(0))
             {
                 return;
             }
@@ -455,6 +470,18 @@ namespace IronKingdoms.Combat
             }
 
             var ray = activeCamera.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(ray, out var hit))
+            {
+                for (var i = 0; i < playerRuntimeUnits.Count; i++)
+                {
+                    if (playerRuntimeUnits[i].Pawn == hit.collider.gameObject && playerRuntimeUnits[i].IsAlive)
+                    {
+                        SelectUnit(playerRuntimeUnits[i]);
+                        return;
+                    }
+                }
+            }
+
             if (!boardPlane.Raycast(ray, out var enter))
             {
                 return;
@@ -477,6 +504,12 @@ namespace IronKingdoms.Combat
                 }
             }
 
+            if (Input.GetMouseButtonDown(1))
+            {
+                SetCurrentMode(UnitActionMode.None);
+                return;
+            }
+
             if (!Input.GetMouseButtonDown(0))
             {
                 return;
@@ -486,6 +519,8 @@ namespace IronKingdoms.Combat
             {
                 return;
             }
+
+            var attackWeapon = GetSelectedAttackWeapon(selectedUnit);
 
             var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
             if (activeCamera == null)
@@ -517,9 +552,9 @@ namespace IronKingdoms.Combat
                 }
 
                 var dist = Vector3.Distance(selectedUnit.Pawn.transform.position, enemy.Pawn.transform.position);
-                if (dist <= selectedUnit.Weapon.Range)
+                if (dist <= attackWeapon.Range)
                 {
-                    ResolveAttack(selectedUnit, enemy);
+                    ResolveAttack(selectedUnit, enemy, attackWeapon);
                     selectedUnit.HasActedThisTurn = true;
                     SetCurrentMode(UnitActionMode.None);
                 }
@@ -624,14 +659,15 @@ namespace IronKingdoms.Combat
 
             var targetPosition = target.Pawn.transform.position;
             var distance = Vector3.Distance(enemy.Pawn.transform.position, targetPosition);
-            if (distance <= enemy.Weapon.Range * AiInRangeTolerance)
+            var desiredRange = GetLongestWeaponRange(enemy);
+            if (distance <= desiredRange * AiInRangeTolerance)
             {
                 enemy.MoveTarget = null;
                 return;
             }
 
             var direction = (targetPosition - enemy.Pawn.transform.position).normalized;
-            var stopDistance = Mathf.Max(AiMinimumStopDistance, enemy.Weapon.Range * AiDesiredStopFactor);
+            var stopDistance = Mathf.Max(AiMinimumStopDistance, desiredRange * AiDesiredStopFactor);
             var destination = targetPosition - direction * stopDistance;
             destination.y = PawnYPosition;
             IssueMoveOrder(enemy, destination);
@@ -646,12 +682,13 @@ namespace IronKingdoms.Combat
             }
 
             var distance = Vector3.Distance(unit.Pawn.transform.position, target.Pawn.transform.position);
-            if (distance > unit.Weapon.Range)
+            var weapon = GetBestWeaponForDistance(unit, distance);
+            if (weapon == null)
             {
                 return false;
             }
 
-            ResolveAttack(unit, target);
+            ResolveAttack(unit, target, weapon);
             return true;
         }
 
@@ -762,9 +799,9 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private void ResolveAttack(RuntimeUnit attacker, RuntimeUnit defender)
+        private void ResolveAttack(RuntimeUnit attacker, RuntimeUnit defender, WeaponProfile weapon)
         {
-            var isMeleeAttack = attacker.Weapon.attackType == WeaponAttackType.Melee;
+            var isMeleeAttack = weapon.attackType == WeaponAttackType.Melee;
             var attackValue = isMeleeAttack ? attacker.Definition.Stats.meleeAttack : attacker.Definition.Stats.rangedAttack;
             var attackRoll = Roll2d6() + attackValue;
             if (attackRoll < defender.Definition.Stats.defense)
@@ -772,7 +809,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var damageRoll = Roll2d6() + attacker.Weapon.Power;
+            var damageRoll = Roll2d6() + weapon.Power;
             var damage = Mathf.Max(0, damageRoll - defender.Definition.Stats.armor);
             defender.Health = Mathf.Max(0, defender.Health - damage);
             if (!defender.IsAlive)
@@ -793,7 +830,87 @@ namespace IronKingdoms.Combat
         private void SelectUnit(RuntimeUnit unit)
         {
             selectedUnit = unit != null && unit.IsAlive ? unit : null;
+            selectedAttackWeaponIndex = 0;
             SetCurrentMode(UnitActionMode.None);
+        }
+
+        private WeaponProfile GetSelectedAttackWeapon(RuntimeUnit unit)
+        {
+            return unit.Weapons[Mathf.Clamp(selectedAttackWeaponIndex, 0, unit.Weapons.Length - 1)];
+        }
+
+        private static float GetLongestWeaponRange(RuntimeUnit unit)
+        {
+            var range = unit.Weapons[0].Range;
+            for (var i = 1; i < unit.Weapons.Length; i++)
+            {
+                range = Mathf.Max(range, unit.Weapons[i].Range);
+            }
+
+            return range;
+        }
+
+        private static WeaponProfile GetBestWeaponForDistance(RuntimeUnit unit, float distance)
+        {
+            WeaponProfile best = null;
+            for (var i = 0; i < unit.Weapons.Length; i++)
+            {
+                var weapon = unit.Weapons[i];
+                if (distance > weapon.Range)
+                {
+                    continue;
+                }
+
+                if (best == null || weapon.Power > best.Power)
+                {
+                    best = weapon;
+                }
+            }
+
+            return best;
+        }
+
+        private void UpdateHoveredEnemy()
+        {
+            hoveredEnemyUnit = null;
+            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            if (activeCamera == null)
+            {
+                return;
+            }
+
+            var ray = activeCamera.ScreenPointToRay(Input.mousePosition);
+            if (!Physics.Raycast(ray, out var hit))
+            {
+                return;
+            }
+
+            for (var i = 0; i < enemyRuntimeUnits.Count; i++)
+            {
+                var enemy = enemyRuntimeUnits[i];
+                if (enemy.IsAlive && enemy.Pawn == hit.collider.gameObject)
+                {
+                    hoveredEnemyUnit = enemy;
+                    return;
+                }
+            }
+        }
+
+        private static string BuildHealthBoxes(int health, int maxHealth)
+        {
+            var clampedCurrent = Mathf.Clamp(health, 0, maxHealth);
+            var sb = new StringBuilder(maxHealth + (maxHealth / 10));
+            for (var i = 0; i < maxHealth; i++)
+            {
+                if (i > 0 && i % 10 == 0)
+                {
+                    sb.Append(' ');
+                }
+
+                sb.Append(i < clampedCurrent ? '■' : '□');
+            }
+
+            return sb.ToString();
         }
 
         private static RuntimeUnit FindFirstAlive(List<RuntimeUnit> units)
@@ -865,14 +982,23 @@ namespace IronKingdoms.Combat
             }
 
             GUILayout.Space(8f);
-            GUILayout.Label("Left Click / 1-9: Select unit");
-            GUILayout.Label("M: Toggle Move  |  A: Toggle Attack");
-            GUILayout.Label("Enter / End Turn: End player turn");
-            GUILayout.Label("Esc: Cancel current mode");
+            GUILayout.Label("Enemies");
+            for (var i = 0; i < enemyRuntimeUnits.Count; i++)
+            {
+                var enemy = enemyRuntimeUnits[i];
+                var enemyLabel = $"{enemy.Definition.DisplayName} - HP {enemy.Health}/{enemy.Definition.Stats.health}";
+                if (!enemy.IsAlive)
+                {
+                    enemyLabel += " (defeated)";
+                }
+
+                GUILayout.Label(enemyLabel);
+            }
             GUILayout.EndArea();
 
             if (selectedUnit == null)
             {
+                DrawHoveredEnemyHealth();
                 return;
             }
 
@@ -880,47 +1006,104 @@ namespace IronKingdoms.Combat
             GUILayout.Label(selectedUnit.Definition.DisplayName);
             GUILayout.Label($"Role: {selectedUnit.Definition.Role}");
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
+            GUILayout.Label(BuildHealthBoxes(selectedUnit.Health, selectedUnit.Definition.Stats.health));
             GUILayout.Label($"Speed: {selectedUnit.Definition.Stats.speed:0.0}  |  Move left: {selectedUnit.RemainingMovementThisTurn:0.0}\"");
             GUILayout.Label($"Model Size: {selectedUnit.Definition.Stats.modelSize.DisplayName()}");
-            GUILayout.Label($"Weapon: {selectedUnit.Weapon.DisplayName}");
-            GUILayout.Label($"Type: {selectedUnit.Weapon.attackType}  |  Range: {selectedUnit.Weapon.Range:0.0}\"");            GUILayout.Label($"Power: {selectedUnit.Weapon.Power}");
+            var selectedWeapon = GetSelectedAttackWeapon(selectedUnit);
+            GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
+            GUILayout.Label($"Type: {selectedWeapon.attackType}  |  Range: {selectedWeapon.Range:0.0}\"");
+            GUILayout.Label($"Power: {selectedWeapon.Power}");
 
-            if (activeTurnSide == TurnSide.Player)
+            GUILayout.EndArea();
+            DrawActionBar();
+            DrawHoveredEnemyHealth();
+        }
+
+        private void DrawActionBar()
+        {
+            if (selectedUnit == null || activeTurnSide != TurnSide.Player)
             {
-                GUILayout.Space(6f);
-                GUILayout.BeginHorizontal();
-
-                var canMove = selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon && !selectedUnit.MoveTarget.HasValue;
-                GUI.enabled = canMove;
-                var moveLabel = currentPlayerMode == UnitActionMode.Move ? "[ Move ]" : "Move";
-                if (GUILayout.Button(moveLabel))
-                {
-                    SetCurrentMode(currentPlayerMode == UnitActionMode.Move ? UnitActionMode.None : UnitActionMode.Move);
-                }
-
-                var canAttack = !selectedUnit.HasActedThisTurn;
-                GUI.enabled = canAttack;
-                var attackLabel = currentPlayerMode == UnitActionMode.Attack ? "[ Attack ]" : "Attack";
-                if (GUILayout.Button(attackLabel))
-                {
-                    SetCurrentMode(currentPlayerMode == UnitActionMode.Attack ? UnitActionMode.None : UnitActionMode.Attack);
-                }
-
-                GUI.enabled = true;
-                GUILayout.EndHorizontal();
-
-                GUILayout.Space(4f);
-                switch (currentPlayerMode)
-                {
-                    case UnitActionMode.Move:
-                        GUILayout.Label("Right-click to set destination");
-                        break;
-                    case UnitActionMode.Attack:
-                        GUILayout.Label("Click an enemy within range to attack");
-                        break;
-                }
+                return;
             }
 
+            var areaWidth = 560f;
+            var areaHeight = 150f;
+            var areaX = (Screen.width - areaWidth) * 0.5f;
+            var areaY = Screen.height - areaHeight - 12f;
+            GUILayout.BeginArea(new Rect(areaX, areaY, areaWidth, areaHeight), "Actions", GUI.skin.window);
+
+            GUILayout.Label("Left Click / 1-9: Select unit | Enter: End turn | Esc/Right Click: Cancel");
+            GUILayout.Space(4f);
+            GUILayout.BeginHorizontal();
+
+            var canMove = selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon && !selectedUnit.MoveTarget.HasValue;
+            GUI.enabled = canMove;
+            var moveLabel = currentPlayerMode == UnitActionMode.Move ? "[ Move ]" : "Move";
+            if (GUILayout.Button(moveLabel, GUILayout.Height(30f)))
+            {
+                SetCurrentMode(currentPlayerMode == UnitActionMode.Move ? UnitActionMode.None : UnitActionMode.Move);
+            }
+
+            var canAttack = !selectedUnit.HasActedThisTurn;
+            GUI.enabled = canAttack;
+            var attackLabel = currentPlayerMode == UnitActionMode.Attack ? "[ Attack ]" : "Attack";
+            if (GUILayout.Button(attackLabel, GUILayout.Height(30f)))
+            {
+                SetCurrentMode(currentPlayerMode == UnitActionMode.Attack ? UnitActionMode.None : UnitActionMode.Attack);
+            }
+
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+
+            if (currentPlayerMode == UnitActionMode.Attack)
+            {
+                GUILayout.Space(6f);
+                GUILayout.Label("Select weapon, then left-click an enemy in range:");
+                GUILayout.BeginHorizontal();
+                for (var i = 0; i < selectedUnit.Weapons.Length; i++)
+                {
+                    var weapon = selectedUnit.Weapons[i];
+                    var label = $"{weapon.DisplayName} ({weapon.Range:0.0}\")";
+                    if (i == selectedAttackWeaponIndex)
+                    {
+                        label = $"[ {label} ]";
+                    }
+
+                    if (GUILayout.Button(label))
+                    {
+                        selectedAttackWeaponIndex = i;
+                        RefreshAttackRangeRing();
+                    }
+                }
+
+                GUILayout.EndHorizontal();
+            }
+            else if (currentPlayerMode == UnitActionMode.Move)
+            {
+                GUILayout.Space(6f);
+                GUILayout.Label("Left-click board to confirm move destination. Right-click to cancel.");
+            }
+
+            GUILayout.EndArea();
+        }
+
+        private void DrawHoveredEnemyHealth()
+        {
+            if (hoveredEnemyUnit == null || !hoveredEnemyUnit.IsAlive)
+            {
+                return;
+            }
+
+            var mousePosition = Input.mousePosition;
+            var width = 280f;
+            var height = 86f;
+            var x = Mathf.Clamp(mousePosition.x + 14f, 4f, Screen.width - width - 4f);
+            var y = Mathf.Clamp(Screen.height - mousePosition.y + 14f, 4f, Screen.height - height - 4f);
+
+            GUILayout.BeginArea(new Rect(x, y, width, height), "Target", GUI.skin.window);
+            GUILayout.Label(hoveredEnemyUnit.Definition.DisplayName);
+            GUILayout.Label($"HP: {hoveredEnemyUnit.Health}/{hoveredEnemyUnit.Definition.Stats.health}");
+            GUILayout.Label(BuildHealthBoxes(hoveredEnemyUnit.Health, hoveredEnemyUnit.Definition.Stats.health));
             GUILayout.EndArea();
         }
 
@@ -932,13 +1115,14 @@ namespace IronKingdoms.Combat
                 IsPlayerControlled = isPlayerControlled;
                 Pawn = pawn;
                 Health = definition.Stats.health;
-                Weapon = definition.Stats.GetPrimaryWeapon();
+                definition.Stats.EnsureWeaponDefaults();
+                Weapons = definition.Stats.weapons;
             }
 
             public UnitTypeDefinition Definition { get; }
             public bool IsPlayerControlled { get; }
             public GameObject Pawn { get; }
-            public WeaponProfile Weapon { get; }
+            public WeaponProfile[] Weapons { get; }
             public int Health { get; set; }
             public float RemainingMovementThisTurn { get; set; }
             public bool HasActedThisTurn { get; set; }
