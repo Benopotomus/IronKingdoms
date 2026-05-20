@@ -11,12 +11,12 @@ namespace IronKingdoms.Combat
     [CreateAssetMenu(menuName = "Iron Kingdoms/Combat/Weapon", fileName = "Weapon")]
     public class WeaponProfile : ScriptableObject
     {
-        [SerializeField] private string displayName = "Primary Weapon";
-        [SerializeField] private WeaponAttackType attackType = WeaponAttackType.Melee;
-        [SerializeField] private int power = 5;
-        [SerializeField] private float range = 1.5f;
-        [SerializeField] private int matModifier;
-        [SerializeField] private int ratModifier;
+        public string displayName = "Primary Weapon";
+        public WeaponAttackType attackType = WeaponAttackType.Melee;
+        public int power = 5;
+        public float range = 1.5f;
+        public int matModifier;
+        public int ratModifier;
 
         public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? "Weapon" : displayName;
         public WeaponAttackType AttackType => attackType;
