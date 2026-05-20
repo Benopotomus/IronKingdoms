@@ -41,6 +41,7 @@ namespace IronKingdoms.Combat
         private const float CameraOrbitFallbackForwardDistance = 1f;
         private const float CameraOrbitMinimumDistance = 0.1f;
         private const float DoubleClickIntervalSeconds = 0.3f;
+        private const float CameraFocusTransitionSpeed = 12f;
         private const float DefaultTargetRingRadius = 0.6f;
         private const float TargetRingScaleFactor = 0.6f;
 
@@ -100,6 +101,8 @@ namespace IronKingdoms.Combat
         private float cameraOrbitDistance;
         private RuntimeUnit lastClickedPlayerUnit;
         private float lastClickedPlayerUnitClickTime = float.NegativeInfinity;
+        private bool isCameraFocusTransitioning;
+        private Vector3 cameraFocusTransitionTarget;
         private int uiCancelFrame = -1;
 
         private void Start()
@@ -1027,10 +1030,9 @@ namespace IronKingdoms.Combat
                 cameraOrbitDistance = Mathf.Max(CameraOrbitMinimumDistance, Vector3.Distance(activeCamera.transform.position, focusPoint));
             }
 
-            cameraOrbitGroundPivot = focusPoint;
             cameraOrbitPivotInitialized = true;
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
+            cameraFocusTransitionTarget = focusPoint;
+            isCameraFocusTransitioning = true;
         }
 
         private WeaponProfile GetSelectedAttackWeapon(RuntimeUnit unit)
@@ -1390,6 +1392,8 @@ namespace IronKingdoms.Combat
                 isCameraDragging = false;
             }
 
+            TickCameraFocusTransition(activeCamera);
+
             if (!isCameraDragging || !Input.GetMouseButton(MiddleMouseButton))
             {
                 return;
@@ -1423,6 +1427,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            isCameraFocusTransitioning = false;
             var forward = GetPlanarForward(activeCamera.transform.forward);
             var right = GetPlanarRight(forward);
             var delta = (right * horizontal + forward * vertical) * (cameraKeyboardPanSpeed * Time.deltaTime);
@@ -1431,6 +1436,7 @@ namespace IronKingdoms.Combat
 
         private void DragPanCamera(Camera activeCamera, Vector3 delta)
         {
+            isCameraFocusTransitioning = false;
             var forward = GetPlanarForward(activeCamera.transform.forward);
             var right = GetPlanarRight(forward);
             var pan = (-right * delta.x - forward * delta.y) * cameraDragPanSensitivity;
@@ -1448,12 +1454,34 @@ namespace IronKingdoms.Combat
                 }
             }
 
+            isCameraFocusTransitioning = false;
             var yaw = delta.x * cameraRotationSensitivity;
             cameraPitchDegrees = Mathf.Clamp(cameraPitchDegrees - (delta.y * cameraRotationSensitivity), cameraMinPitch, cameraMaxPitch);
             var euler = activeCamera.transform.rotation.eulerAngles;
             activeCamera.transform.rotation = Quaternion.Euler(cameraPitchDegrees, euler.y + yaw, 0f);
             var cameraForward = activeCamera.transform.forward;
             activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
+        }
+
+        private void TickCameraFocusTransition(Camera activeCamera)
+        {
+            if (!isCameraFocusTransitioning)
+            {
+                return;
+            }
+
+            cameraOrbitGroundPivot = Vector3.MoveTowards(
+                cameraOrbitGroundPivot,
+                cameraFocusTransitionTarget,
+                CameraFocusTransitionSpeed * Time.deltaTime);
+
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
+
+            if (Vector3.Distance(cameraOrbitGroundPivot, cameraFocusTransitionTarget) < 0.001f)
+            {
+                isCameraFocusTransitioning = false;
+            }
         }
 
         private void InitializeCameraPitch()
