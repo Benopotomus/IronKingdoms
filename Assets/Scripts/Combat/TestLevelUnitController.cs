@@ -14,6 +14,7 @@ namespace IronKingdoms.Combat
         private const float VisualizerLineWidth = 0.06f;
         private const int AttackRingSegments = 48;
         private const float PawnYPosition = 1f;
+        private const float GroundYPosition = 0f;
         private const float MinimumVectorSqrMagnitude = 0.0001f;
         private const float InputAxisDeadzone = 0.001f;
         private const int LeftMouseButton = 0;
@@ -932,7 +933,7 @@ namespace IronKingdoms.Combat
             }
 
             var focusPoint = unit.Pawn.transform.position;
-            focusPoint.y = 0f;
+            focusPoint.y = GroundYPosition;
             if (cameraOrbitDistance < CameraOrbitMinimumDistance)
             {
                 cameraOrbitDistance = Mathf.Max(CameraOrbitMinimumDistance, Vector3.Distance(activeCamera.transform.position, focusPoint));
@@ -1173,7 +1174,8 @@ namespace IronKingdoms.Combat
             GUILayout.BeginArea(new Rect(areaX, areaY, ActionBarWidth, ActionBarHeight), "Actions", GUI.skin.window);
 
             GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan");
-            GUILayout.Label("Left Click / 1-9: Select | Double Left Click: Focus camera | Enter: End turn | Esc/Right Click: Cancel");
+            GUILayout.Label("Left Click / 1-9: Select | Double Left Click: Focus camera");
+            GUILayout.Label("Enter: End turn | Esc/Right Click: Cancel");
             GUILayout.Label("Activation is staged: move first, then combat action. After taking a combat action, movement is locked.");
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
