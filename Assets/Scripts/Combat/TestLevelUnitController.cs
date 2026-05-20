@@ -44,6 +44,10 @@ namespace IronKingdoms.Combat
         private const float CameraFocusTransitionSpeed = 12f;
         private const float DefaultTargetRingRadius = 0.6f;
         private const float TargetRingScaleFactor = 0.6f;
+        private const int WeaponRangeRingSegments = 64;
+        private const float FloatingDamageLifetime = 1.2f;
+        private const float FloatingDamageRiseSpeed = 55f;
+        private const float HoverPanelAttackExtraHeight = 34f;
 
         private enum TurnSide
         {
@@ -86,10 +90,22 @@ namespace IronKingdoms.Combat
         private bool enemyResolvedActionForActiveUnit;
         private RuntimeUnit hoveredEnemyUnit;
 
+        private struct FloatingDamageEntry
+        {
+            public Vector3 WorldPosition;
+            public string Text;
+            public float Age;
+            public Color Color;
+        }
+
         private UnitActionMode currentPlayerMode = UnitActionMode.None;
         private int selectedAttackWeaponIndex;
         private LineRenderer movementPathLine;
+        private LineRenderer weaponRangeRingLine;
         private readonly List<LineRenderer> attackTargetRings = new();
+        private readonly List<FloatingDamageEntry> floatingDamageEntries = new();
+        private GUIStyle floatingDamageStyle;
+        private GUIStyle floatingDamageShadowStyle;
         private GameObject destinationMarkerObject;
         private Material visualizerMaterial;
         private bool isCameraDragging;
@@ -124,7 +140,9 @@ namespace IronKingdoms.Combat
 
             TickMovement(Time.deltaTime);
             TickEnemyAi(Time.deltaTime);
+            TickFloatingDamage(Time.deltaTime);
             UpdateMovementVisualizer();
+            UpdateWeaponRangeRing();
             UpdateHoveredEnemy();
         }
 
@@ -155,6 +173,20 @@ namespace IronKingdoms.Combat
             }
 
             movementPathLine.enabled = false;
+
+            var rangeRingObj = new GameObject("WeaponRangeRing");
+            rangeRingObj.transform.SetParent(transform);
+            weaponRangeRingLine = rangeRingObj.AddComponent<LineRenderer>();
+            weaponRangeRingLine.widthMultiplier = VisualizerLineWidth;
+            weaponRangeRingLine.positionCount = WeaponRangeRingSegments + 1;
+            weaponRangeRingLine.useWorldSpace = true;
+            weaponRangeRingLine.loop = false;
+            if (visualizerMaterial != null)
+            {
+                weaponRangeRingLine.material = visualizerMaterial;
+            }
+
+            weaponRangeRingLine.enabled = false;
 
             destinationMarkerObject = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             destinationMarkerObject.name = "DestinationMarker";
@@ -383,6 +415,11 @@ namespace IronKingdoms.Combat
             }
 
             HideAttackTargetRings();
+
+            if (weaponRangeRingLine != null)
+            {
+                weaponRangeRingLine.enabled = false;
+            }
 
             if (destinationMarkerObject != null)
             {
@@ -953,12 +990,16 @@ namespace IronKingdoms.Combat
             var attackRoll = Roll2d6() + attackValue;
             if (attackRoll < defender.Definition.Stats.defense)
             {
+                SpawnFloatingText(defender.Pawn.transform.position, "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
                 return;
             }
 
             var damageRoll = Roll2d6() + weapon.Power;
             var damage = Mathf.Max(0, damageRoll - defender.Definition.Stats.armor);
             defender.Health = Mathf.Max(0, defender.Health - damage);
+            var damageText = damage > 0 ? $"-{damage}" : "Blocked";
+            var damageColor = damage > 0 ? new Color(1f, 0.15f, 0.15f, 1f) : new Color(0.7f, 0.7f, 0.7f, 1f);
+            SpawnFloatingText(defender.Pawn.transform.position, damageText, damageColor);
             if (!defender.IsAlive)
             {
                 defender.Pawn.SetActive(false);
@@ -972,6 +1013,138 @@ namespace IronKingdoms.Combat
         private static int Roll2d6()
         {
             return Random.Range(1, 7) + Random.Range(1, 7);
+        }
+
+        private void UpdateWeaponRangeRing()
+        {
+            if (weaponRangeRingLine == null)
+            {
+                return;
+            }
+
+            if (selectedUnit == null || !selectedUnit.IsAlive
+                || currentPlayerMode != UnitActionMode.Attack
+                || activeTurnSide != TurnSide.Player)
+            {
+                weaponRangeRingLine.enabled = false;
+                return;
+            }
+
+            var weapon = GetSelectedAttackWeapon(selectedUnit);
+            var center = selectedUnit.Pawn.transform.position;
+            var radius = weapon.Range;
+            var color = new Color(0.95f, 0.85f, 0.1f, 0.7f);
+            weaponRangeRingLine.enabled = true;
+            weaponRangeRingLine.startColor = color;
+            weaponRangeRingLine.endColor = color;
+            weaponRangeRingLine.positionCount = WeaponRangeRingSegments + 1;
+            for (var i = 0; i <= WeaponRangeRingSegments; i++)
+            {
+                var angle = (float)i / WeaponRangeRingSegments * Mathf.PI * 2f;
+                weaponRangeRingLine.SetPosition(i, new Vector3(
+                    center.x + Mathf.Cos(angle) * radius,
+                    0.05f,
+                    center.z + Mathf.Sin(angle) * radius));
+            }
+        }
+
+        private void TickFloatingDamage(float deltaTime)
+        {
+            for (var i = floatingDamageEntries.Count - 1; i >= 0; i--)
+            {
+                var entry = floatingDamageEntries[i];
+                entry.Age += deltaTime;
+                if (entry.Age >= FloatingDamageLifetime)
+                {
+                    floatingDamageEntries.RemoveAt(i);
+                }
+                else
+                {
+                    floatingDamageEntries[i] = entry;
+                }
+            }
+        }
+
+        private void SpawnFloatingText(Vector3 worldPosition, string text, Color color)
+        {
+            worldPosition.y += 0.5f;
+            floatingDamageEntries.Add(new FloatingDamageEntry
+            {
+                WorldPosition = worldPosition,
+                Text = text,
+                Age = 0f,
+                Color = color
+            });
+        }
+
+        private static float CalculateHitChancePercent(RuntimeUnit attacker, RuntimeUnit defender, WeaponProfile weapon)
+        {
+            var isMeleeWeapon = weapon.attackType == WeaponAttackType.Melee;
+            var attackStat = isMeleeWeapon ? attacker.Definition.Stats.meleeAttack : attacker.Definition.Stats.rangedAttack;
+            var needed = defender.Definition.Stats.defense - attackStat;
+            var hits = 0;
+            for (var d1 = 1; d1 <= 6; d1++)
+            {
+                for (var d2 = 1; d2 <= 6; d2++)
+                {
+                    if (d1 + d2 >= needed)
+                    {
+                        hits++;
+                    }
+                }
+            }
+
+            return hits / 36f * 100f;
+        }
+
+        private void DrawFloatingDamageNumbers()
+        {
+            if (floatingDamageEntries.Count == 0)
+            {
+                return;
+            }
+
+            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            if (activeCamera == null)
+            {
+                return;
+            }
+
+            if (floatingDamageStyle == null)
+            {
+                floatingDamageStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 20,
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter
+                };
+                floatingDamageShadowStyle = new GUIStyle(floatingDamageStyle);
+            }
+
+            for (var i = 0; i < floatingDamageEntries.Count; i++)
+            {
+                var entry = floatingDamageEntries[i];
+                var t = entry.Age / FloatingDamageLifetime;
+                var fadeAlpha = 1f - (t * t);
+                var screenPos = activeCamera.WorldToScreenPoint(entry.WorldPosition);
+                if (screenPos.z <= 0f)
+                {
+                    continue;
+                }
+
+                var riseOffset = entry.Age * FloatingDamageRiseSpeed;
+                var guiX = screenPos.x - 40f;
+                var guiY = Screen.height - screenPos.y - riseOffset - 20f;
+                var labelRect = new Rect(guiX, guiY, 80f, 30f);
+
+                var textColor = entry.Color;
+                textColor.a = fadeAlpha;
+                floatingDamageStyle.normal.textColor = textColor;
+                floatingDamageShadowStyle.normal.textColor = new Color(0f, 0f, 0f, fadeAlpha * 0.65f);
+
+                GUI.Label(new Rect(guiX + 1f, guiY + 1f, 80f, 30f), entry.Text, floatingDamageShadowStyle);
+                GUI.Label(labelRect, entry.Text, floatingDamageStyle);
+            }
         }
 
         private void SelectUnit(RuntimeUnit unit)
@@ -1197,6 +1370,7 @@ namespace IronKingdoms.Combat
         private void OnGUI()
         {
             DrawCameraControlsPanel();
+            DrawFloatingDamageNumbers();
 
             GUILayout.BeginArea(new Rect(RosterAreaX, RosterAreaY, RosterAreaWidth, RosterAreaHeight), "Player-Controlled Units", GUI.skin.window);
             GUILayout.Label($"Active Turn: {activeTurnSide}");
@@ -1611,9 +1785,10 @@ namespace IronKingdoms.Combat
             if (hoveredEnemyUnit != null && hoveredEnemyUnit.IsAlive)
             {
                 var mousePosition = Input.mousePosition;
+                var panelHeight = GetHoverPanelHeight();
                 var x = Mathf.Clamp(mousePosition.x + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.width - HoverPanelWidth - HoverPanelScreenPadding);
-                var y = Mathf.Clamp(Screen.height - mousePosition.y + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.height - HoverPanelHeight - HoverPanelScreenPadding);
-                if (new Rect(x, y, HoverPanelWidth, HoverPanelHeight).Contains(mouseGuiPosition))
+                var y = Mathf.Clamp(Screen.height - mousePosition.y + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.height - panelHeight - HoverPanelScreenPadding);
+                if (new Rect(x, y, HoverPanelWidth, panelHeight).Contains(mouseGuiPosition))
                 {
                     return true;
                 }
@@ -1662,6 +1837,14 @@ namespace IronKingdoms.Combat
                 || Input.GetMouseButtonDown(MiddleMouseButton);
         }
 
+        private float GetHoverPanelHeight()
+        {
+            var showHitChance = currentPlayerMode == UnitActionMode.Attack
+                && selectedUnit != null && selectedUnit.IsAlive
+                && activeTurnSide == TurnSide.Player;
+            return showHitChance ? HoverPanelHeight + HoverPanelAttackExtraHeight : HoverPanelHeight;
+        }
+
         private void DrawHoveredEnemyHealth()
         {
             if (hoveredEnemyUnit == null || !hoveredEnemyUnit.IsAlive)
@@ -1670,13 +1853,29 @@ namespace IronKingdoms.Combat
             }
 
             var mousePosition = Input.mousePosition;
+            var panelHeight = GetHoverPanelHeight();
             var x = Mathf.Clamp(mousePosition.x + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.width - HoverPanelWidth - HoverPanelScreenPadding);
-            var y = Mathf.Clamp(Screen.height - mousePosition.y + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.height - HoverPanelHeight - HoverPanelScreenPadding);
+            var y = Mathf.Clamp(Screen.height - mousePosition.y + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.height - panelHeight - HoverPanelScreenPadding);
 
-            GUILayout.BeginArea(new Rect(x, y, HoverPanelWidth, HoverPanelHeight), "Target", GUI.skin.window);
+            GUILayout.BeginArea(new Rect(x, y, HoverPanelWidth, panelHeight), "Target", GUI.skin.window);
             GUILayout.Label(hoveredEnemyUnit.Definition.DisplayName);
             GUILayout.Label($"HP: {hoveredEnemyUnit.Health}/{hoveredEnemyUnit.Definition.Stats.health}");
             GUILayout.Label(BuildHealthBoxes(hoveredEnemyUnit.Health, hoveredEnemyUnit.Definition.Stats.health));
+            if (currentPlayerMode == UnitActionMode.Attack && selectedUnit != null && selectedUnit.IsAlive && activeTurnSide == TurnSide.Player)
+            {
+                var weapon = GetSelectedAttackWeapon(selectedUnit);
+                var inRange = IsTargetInRange(selectedUnit, hoveredEnemyUnit, weapon);
+                if (inRange)
+                {
+                    var hitChance = CalculateHitChancePercent(selectedUnit, hoveredEnemyUnit, weapon);
+                    GUILayout.Label($"Hit Chance: {hitChance:0}%");
+                }
+                else
+                {
+                    GUILayout.Label("Out of range");
+                }
+            }
+
             GUILayout.EndArea();
         }
 
