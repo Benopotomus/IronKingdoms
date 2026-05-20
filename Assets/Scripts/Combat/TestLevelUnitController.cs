@@ -8,6 +8,14 @@ namespace IronKingdoms.Combat
         private const float AiInRangeTolerance = 0.95f;
         private const float AiDesiredStopFactor = 0.85f;
         private const float AiMinimumStopDistance = 0.2f;
+        private const float PositionArrivalTolerance = 0.05f;
+        private const float MovementBudgetEpsilon = 0.001f;
+        
+        private enum TurnSide
+        {
+            Player,
+            Enemy
+        }
 
         [SerializeField] private List<UnitTypeDefinition> playerUnits = new();
         [SerializeField] private List<UnitTypeDefinition> enemyUnits = new();
@@ -15,7 +23,6 @@ namespace IronKingdoms.Combat
         [SerializeField] private Transform enemySpawnAnchor;
         [SerializeField, Min(0.5f)] private float spawnSpacing = 2f;
         [SerializeField, Min(0.1f)] private float aiThinkInterval = 0.5f;
-        [SerializeField, Min(0.1f)] private float attackCooldownSeconds = 1.2f;
         [SerializeField] private Camera selectionCamera;
         [SerializeField] private bool autoSpawnOnStart = true;
 
@@ -24,7 +31,12 @@ namespace IronKingdoms.Combat
         private readonly List<RuntimeUnit> allRuntimeUnits = new();
         private readonly Plane boardPlane = new(Vector3.up, Vector3.zero);
         private RuntimeUnit selectedUnit;
+        private TurnSide activeTurnSide = TurnSide.Player;
         private float aiThinkTimer;
+        private RuntimeUnit activeEnemyUnit;
+        private int enemyActivationIndex;
+        private bool enemyIssuedMoveForActiveUnit;
+        private bool enemyResolvedActionForActiveUnit;
 
         private void Start()
         {
@@ -36,11 +48,18 @@ namespace IronKingdoms.Combat
 
         private void Update()
         {
-            HandlePlayerSelectionInput();
-            HandlePlayerMoveInput();
+            if (activeTurnSide == TurnSide.Player)
+            {
+                HandlePlayerSelectionInput();
+                HandlePlayerMoveInput();
+                if (Input.GetKeyDown(KeyCode.Return))
+                {
+                    EndPlayerTurn();
+                }
+            }
+
             TickMovement(Time.deltaTime);
             TickEnemyAi(Time.deltaTime);
-            TickCombat(Time.deltaTime);
         }
 
         [ContextMenu("Spawn Units")]
@@ -49,8 +68,8 @@ namespace IronKingdoms.Combat
             ClearSpawnedUnits();
             SpawnArmy(playerUnits, playerSpawnAnchor, playerRuntimeUnits, true, new Color(0.2f, 0.5f, 1f));
             SpawnArmy(enemyUnits, enemySpawnAnchor, enemyRuntimeUnits, false, new Color(1f, 0.3f, 0.3f));
-            aiThinkTimer = aiThinkInterval;
             selectedUnit = FindFirstAlive(playerRuntimeUnits);
+            StartPlayerTurn();
         }
 
         private void SpawnArmy(List<UnitTypeDefinition> units, Transform anchor, List<RuntimeUnit> destination, bool isPlayerControlled, Color color)
@@ -104,6 +123,11 @@ namespace IronKingdoms.Combat
 
         private void HandlePlayerSelectionInput()
         {
+            if (activeTurnSide != TurnSide.Player)
+            {
+                return;
+            }
+
             for (var i = 0; i < Mathf.Min(9, playerRuntimeUnits.Count); i++)
             {
                 if (Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1 + i)))
@@ -141,7 +165,7 @@ namespace IronKingdoms.Combat
 
         private void HandlePlayerMoveInput()
         {
-            if (selectedUnit == null || !selectedUnit.IsAlive || !Input.GetMouseButtonDown(1))
+            if (activeTurnSide != TurnSide.Player || selectedUnit == null || !selectedUnit.IsAlive || !Input.GetMouseButtonDown(1))
             {
                 return;
             }
@@ -160,7 +184,7 @@ namespace IronKingdoms.Combat
 
             var destination = ray.GetPoint(enter);
             destination.y = 1f;
-            selectedUnit.MoveTarget = destination;
+            IssueMoveOrder(selectedUnit, destination);
         }
 
         private void TickMovement(float deltaTime)
@@ -174,10 +198,21 @@ namespace IronKingdoms.Combat
                 }
 
                 var targetPosition = unit.MoveTarget.Value;
-                var nextPosition = Vector3.MoveTowards(unit.Pawn.transform.position, targetPosition, unit.Definition.Stats.speed * deltaTime);
-                unit.Pawn.transform.position = nextPosition;
+                var maxStepThisFrame = unit.Definition.Stats.speed * deltaTime;
+                var allowedStep = Mathf.Min(maxStepThisFrame, unit.RemainingMovementThisTurn);
+                if (allowedStep <= 0f)
+                {
+                    unit.MoveTarget = null;
+                    continue;
+                }
 
-                if (Vector3.Distance(nextPosition, targetPosition) <= 0.05f)
+                var currentPosition = unit.Pawn.transform.position;
+                var nextPosition = Vector3.MoveTowards(currentPosition, targetPosition, allowedStep);
+                var movedDistance = Vector3.Distance(currentPosition, nextPosition);
+                unit.Pawn.transform.position = nextPosition;
+                unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movedDistance);
+
+                if (Vector3.Distance(nextPosition, targetPosition) <= PositionArrivalTolerance || unit.RemainingMovementThisTurn <= MovementBudgetEpsilon)
                 {
                     unit.MoveTarget = null;
                 }
@@ -186,6 +221,11 @@ namespace IronKingdoms.Combat
 
         private void TickEnemyAi(float deltaTime)
         {
+            if (activeTurnSide != TurnSide.Enemy)
+            {
+                return;
+            }
+
             aiThinkTimer -= deltaTime;
             if (aiThinkTimer > 0f)
             {
@@ -193,67 +233,187 @@ namespace IronKingdoms.Combat
             }
 
             aiThinkTimer = aiThinkInterval;
-            for (var i = 0; i < enemyRuntimeUnits.Count; i++)
+            if (activeEnemyUnit == null)
             {
-                var enemy = enemyRuntimeUnits[i];
-                if (!enemy.IsAlive)
+                if (!TryActivateNextEnemyUnit())
                 {
-                    continue;
+                    StartPlayerTurn();
+                    return;
                 }
 
-                var target = FindNearestAliveUnit(enemy, playerRuntimeUnits);
-                if (target == null)
-                {
-                    enemy.MoveTarget = null;
-                    continue;
-                }
-
-                var targetPosition = target.Pawn.transform.position;
-                var distance = Vector3.Distance(enemy.Pawn.transform.position, targetPosition);
-                if (distance <= enemy.Weapon.Range * AiInRangeTolerance)
-                {
-                    enemy.MoveTarget = null;
-                }
-                else
-                {
-                    var direction = (targetPosition - enemy.Pawn.transform.position).normalized;
-                    var stopDistance = Mathf.Max(AiMinimumStopDistance, enemy.Weapon.Range * AiDesiredStopFactor);
-                    enemy.MoveTarget = targetPosition - direction * stopDistance;
-                }
+                return;
             }
+
+            if (!activeEnemyUnit.IsAlive)
+            {
+                CompleteEnemyActivation();
+                return;
+            }
+
+            if (!enemyIssuedMoveForActiveUnit)
+            {
+                enemyIssuedMoveForActiveUnit = true;
+                ResolveEnemyMovement(activeEnemyUnit);
+                return;
+            }
+
+            if (activeEnemyUnit.MoveTarget.HasValue)
+            {
+                return;
+            }
+
+            if (!enemyResolvedActionForActiveUnit)
+            {
+                enemyResolvedActionForActiveUnit = true;
+                ResolveUnitAction(activeEnemyUnit, playerRuntimeUnits);
+                return;
+            }
+
+            CompleteEnemyActivation();
         }
 
-        private void TickCombat(float deltaTime)
+        private void ResolveEnemyMovement(RuntimeUnit enemy)
         {
-            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            var target = FindNearestAliveUnit(enemy, playerRuntimeUnits);
+            if (target == null)
             {
-                var unit = allRuntimeUnits[i];
+                enemy.MoveTarget = null;
+                return;
+            }
+
+            var targetPosition = target.Pawn.transform.position;
+            var distance = Vector3.Distance(enemy.Pawn.transform.position, targetPosition);
+            if (distance <= enemy.Weapon.Range * AiInRangeTolerance)
+            {
+                enemy.MoveTarget = null;
+                return;
+            }
+
+            var direction = (targetPosition - enemy.Pawn.transform.position).normalized;
+            var stopDistance = Mathf.Max(AiMinimumStopDistance, enemy.Weapon.Range * AiDesiredStopFactor);
+            var destination = targetPosition - direction * stopDistance;
+            destination.y = 1f;
+            IssueMoveOrder(enemy, destination);
+        }
+
+        private bool ResolveUnitAction(RuntimeUnit unit, List<RuntimeUnit> targets)
+        {
+            var target = FindNearestAliveUnit(unit, targets);
+            if (target == null)
+            {
+                return false;
+            }
+
+            var distance = Vector3.Distance(unit.Pawn.transform.position, target.Pawn.transform.position);
+            if (distance > unit.Weapon.Range)
+            {
+                return false;
+            }
+
+            ResolveAttack(unit, target);
+            return true;
+        }
+
+        private bool TryActivateNextEnemyUnit()
+        {
+            while (enemyActivationIndex < enemyRuntimeUnits.Count)
+            {
+                var candidate = enemyRuntimeUnits[enemyActivationIndex++];
+                if (!candidate.IsAlive)
+                {
+                    continue;
+                }
+
+                activeEnemyUnit = candidate;
+                enemyIssuedMoveForActiveUnit = false;
+                enemyResolvedActionForActiveUnit = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        private void CompleteEnemyActivation()
+        {
+            activeEnemyUnit = null;
+            enemyIssuedMoveForActiveUnit = false;
+            enemyResolvedActionForActiveUnit = false;
+        }
+
+        private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination)
+        {
+            if (unit == null || !unit.IsAlive || unit.Pawn == null)
+            {
+                return;
+            }
+
+            var remaining = Mathf.Max(0f, unit.RemainingMovementThisTurn);
+            if (remaining <= 0f)
+            {
+                unit.MoveTarget = null;
+                return;
+            }
+
+            var current = unit.Pawn.transform.position;
+            var planarDelta = destination - current;
+            planarDelta.y = 0f;
+            var distanceToDestination = planarDelta.magnitude;
+            if (distanceToDestination <= PositionArrivalTolerance)
+            {
+                unit.MoveTarget = null;
+                return;
+            }
+
+            var moveDistance = Mathf.Min(remaining, distanceToDestination);
+            var clampedDestination = current + planarDelta.normalized * moveDistance;
+            clampedDestination.y = 1f;
+            unit.MoveTarget = clampedDestination;
+        }
+
+        private void StartPlayerTurn()
+        {
+            activeTurnSide = TurnSide.Player;
+            ResetMovementForTurn(playerRuntimeUnits);
+            selectedUnit = FindFirstAlive(playerRuntimeUnits);
+        }
+
+        private void EndPlayerTurn()
+        {
+            if (activeTurnSide != TurnSide.Player)
+            {
+                return;
+            }
+
+            for (var i = 0; i < playerRuntimeUnits.Count; i++)
+            {
+                var unit = playerRuntimeUnits[i];
                 if (!unit.IsAlive)
                 {
                     continue;
                 }
 
-                unit.AttackCooldownRemaining = Mathf.Max(0f, unit.AttackCooldownRemaining - deltaTime);
-                if (unit.AttackCooldownRemaining > 0f)
-                {
-                    continue;
-                }
+                ResolveUnitAction(unit, enemyRuntimeUnits);
+            }
 
-                var targets = unit.IsPlayerControlled ? enemyRuntimeUnits : playerRuntimeUnits;
-                var target = FindNearestAliveUnit(unit, targets);
-                if (target == null)
-                {
-                    continue;
-                }
+            StartEnemyTurn();
+        }
 
-                var distance = Vector3.Distance(unit.Pawn.transform.position, target.Pawn.transform.position);
-                if (distance > unit.Weapon.Range)
-                {
-                    continue;
-                }
+        private void StartEnemyTurn()
+        {
+            activeTurnSide = TurnSide.Enemy;
+            ResetMovementForTurn(enemyRuntimeUnits);
+            aiThinkTimer = aiThinkInterval;
+            enemyActivationIndex = 0;
+            CompleteEnemyActivation();
+        }
 
-                ResolveAttack(unit, target);
-                unit.AttackCooldownRemaining = attackCooldownSeconds;
+        private static void ResetMovementForTurn(List<RuntimeUnit> units)
+        {
+            for (var i = 0; i < units.Count; i++)
+            {
+                var unit = units[i];
+                unit.RemainingMovementThisTurn = unit.Definition.Stats.speed;
+                unit.MoveTarget = null;
             }
         }
 
@@ -329,6 +489,13 @@ namespace IronKingdoms.Combat
         private void OnGUI()
         {
             GUILayout.BeginArea(new Rect(12f, 12f, 320f, 300f), "Player-Controlled Units", GUI.skin.window);
+            GUILayout.Label($"Active Turn: {activeTurnSide}");
+            if (activeTurnSide == TurnSide.Player && GUILayout.Button("End Turn"))
+            {
+                EndPlayerTurn();
+            }
+
+            GUILayout.Space(6f);
             if (playerRuntimeUnits.Count == 0)
             {
                 GUILayout.Label("No units assigned.");
@@ -354,6 +521,7 @@ namespace IronKingdoms.Combat
             GUILayout.Space(8f);
             GUILayout.Label("Left Click / 1-9: Select");
             GUILayout.Label("Right Click: Move selected");
+            GUILayout.Label("Enter / End Turn button: End player turn");
             GUILayout.EndArea();
 
             if (selectedUnit == null)
@@ -389,7 +557,7 @@ namespace IronKingdoms.Combat
             public GameObject Pawn { get; }
             public WeaponProfile Weapon { get; }
             public int Health { get; set; }
-            public float AttackCooldownRemaining { get; set; }
+            public float RemainingMovementThisTurn { get; set; }
             public Vector3? MoveTarget { get; set; }
             public bool IsAlive => Health > 0;
         }
