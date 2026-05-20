@@ -1,0 +1,9 @@
+{
+  "name": "IronKingdoms.Editor",
+  "references": [
+    "IronKingdoms.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ]
+}

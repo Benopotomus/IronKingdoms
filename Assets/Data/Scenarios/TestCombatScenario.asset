@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8ad50ce8ed044adbbf0ce50ed2f66e9d, type: 3}
+  m_Name: TestCombatScenario
+  m_EditorClassIdentifier: 
+  attacker: {fileID: 11400000, guid: 4b53030b572b4c45bfd1830cf5fcf4ee, type: 2}
+  defender: {fileID: 11400000, guid: 6b3caac2bc2545b4848213f8c8697915, type: 2}
+  startingDistance: 10
+  maxRounds: 5
+  randomSeed: 42
