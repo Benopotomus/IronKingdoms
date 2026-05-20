@@ -682,14 +682,10 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            if (activeEnemyTarget == null || !activeEnemyTarget.IsAlive)
+            if (!EnsureActiveEnemyTarget())
             {
-                activeEnemyTarget = FindNearestAliveUnit(activeEnemyUnit, playerRuntimeUnits);
-                if (activeEnemyTarget == null)
-                {
-                    CompleteEnemyActivation();
-                    return;
-                }
+                CompleteEnemyActivation();
+                return;
             }
 
             if (!enemyIssuedMoveForActiveUnit)
@@ -783,7 +779,12 @@ namespace IronKingdoms.Combat
                 }
 
                 activeEnemyUnit = candidate;
-                activeEnemyTarget = FindNearestAliveUnit(candidate, playerRuntimeUnits);
+                activeEnemyTarget = null;
+                if (!EnsureActiveEnemyTarget())
+                {
+                    continue;
+                }
+
                 enemyIssuedMoveForActiveUnit = false;
                 enemyResolvedActionForActiveUnit = false;
                 return true;
@@ -798,6 +799,23 @@ namespace IronKingdoms.Combat
             activeEnemyTarget = null;
             enemyIssuedMoveForActiveUnit = false;
             enemyResolvedActionForActiveUnit = false;
+        }
+
+        private bool EnsureActiveEnemyTarget()
+        {
+            if (activeEnemyUnit == null || !activeEnemyUnit.IsAlive)
+            {
+                activeEnemyTarget = null;
+                return false;
+            }
+
+            if (activeEnemyTarget != null && activeEnemyTarget.IsAlive)
+            {
+                return true;
+            }
+
+            activeEnemyTarget = FindNearestAliveUnit(activeEnemyUnit, playerRuntimeUnits);
+            return activeEnemyTarget != null;
         }
 
         private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination)
