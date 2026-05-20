@@ -38,6 +38,8 @@ namespace IronKingdoms.Combat
         private const float HoverPanelMouseOffset = 14f;
         private const float CameraOrbitFallbackForwardDistance = 1f;
         private const float CameraOrbitMinimumDistance = 0.1f;
+        private const float DefaultTargetRingRadius = 0.6f;
+        private const float TargetRingScaleFactor = 0.6f;
 
         private enum TurnSide
         {
@@ -82,7 +84,7 @@ namespace IronKingdoms.Combat
         private UnitActionMode currentPlayerMode = UnitActionMode.None;
         private int selectedAttackWeaponIndex;
         private LineRenderer movementPathLine;
-        private LineRenderer attackRangeRing;
+        private readonly List<LineRenderer> attackTargetRings = new();
         private GameObject destinationMarkerObject;
         private Material visualizerMaterial;
         private bool isCameraDragging;
@@ -144,20 +146,6 @@ namespace IronKingdoms.Combat
             }
 
             movementPathLine.enabled = false;
-
-            var ringObj = new GameObject("AttackRangeRing");
-            ringObj.transform.SetParent(transform);
-            attackRangeRing = ringObj.AddComponent<LineRenderer>();
-            attackRangeRing.widthMultiplier = VisualizerLineWidth;
-            attackRangeRing.positionCount = AttackRingSegments + 1;
-            attackRangeRing.useWorldSpace = true;
-            attackRangeRing.loop = false;
-            if (visualizerMaterial != null)
-            {
-                attackRangeRing.material = visualizerMaterial;
-            }
-
-            attackRangeRing.enabled = false;
 
             destinationMarkerObject = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             destinationMarkerObject.name = "DestinationMarker";
@@ -258,27 +246,82 @@ namespace IronKingdoms.Combat
 
         private void RefreshAttackRangeRing()
         {
-            if (attackRangeRing == null || selectedUnit == null || !selectedUnit.IsAlive || currentPlayerMode != UnitActionMode.Attack)
+            HideAttackTargetRings();
+            if (selectedUnit == null || !selectedUnit.IsAlive || currentPlayerMode != UnitActionMode.Attack)
             {
-                if (attackRangeRing != null)
-                {
-                    attackRangeRing.enabled = false;
-                }
-
                 return;
             }
 
-            attackRangeRing.enabled = true;
-            var center = selectedUnit.Pawn.transform.position;
             var weapon = GetSelectedAttackWeapon(selectedUnit);
-            var radius = weapon.Range;
             var ringColor = new Color(0.95f, 0.55f, 0.1f, 0.75f);
-            attackRangeRing.startColor = ringColor;
-            attackRangeRing.endColor = ringColor;
+            var ringIndex = 0;
+            foreach (var enemy in enemyRuntimeUnits)
+            {
+                if (!enemy.IsAlive || !IsTargetInRange(selectedUnit, enemy, weapon))
+                {
+                    continue;
+                }
+
+                var ring = GetOrCreateAttackTargetRing(ringIndex);
+                var radius = GetTargetRingRadius(enemy);
+                DrawRing(ring, enemy.Pawn.transform.position, radius, ringColor);
+                ringIndex++;
+            }
+        }
+
+        private void HideAttackTargetRings()
+        {
+            foreach (var ring in attackTargetRings)
+            {
+                ring.enabled = false;
+            }
+        }
+
+        private LineRenderer GetOrCreateAttackTargetRing(int index)
+        {
+            if (index < attackTargetRings.Count)
+            {
+                return attackTargetRings[index];
+            }
+
+            var ringObj = new GameObject($"AttackTargetRing_{index}");
+            ringObj.transform.SetParent(transform);
+            var ring = ringObj.AddComponent<LineRenderer>();
+            ring.widthMultiplier = VisualizerLineWidth;
+            ring.positionCount = AttackRingSegments + 1;
+            ring.useWorldSpace = true;
+            ring.loop = false;
+            if (visualizerMaterial != null)
+            {
+                ring.material = visualizerMaterial;
+            }
+
+            ring.enabled = false;
+            attackTargetRings.Add(ring);
+            return ring;
+        }
+
+        private static float GetTargetRingRadius(RuntimeUnit target)
+        {
+            if (target?.Pawn == null)
+            {
+                return DefaultTargetRingRadius;
+            }
+
+            var pawnScale = target.Pawn.transform.localScale;
+            var scaledRadius = Mathf.Max(pawnScale.x, pawnScale.z) * TargetRingScaleFactor;
+            return Mathf.Max(DefaultTargetRingRadius, scaledRadius);
+        }
+
+        private void DrawRing(LineRenderer ring, Vector3 center, float radius, Color color)
+        {
+            ring.enabled = true;
+            ring.startColor = color;
+            ring.endColor = color;
             for (var i = 0; i <= AttackRingSegments; i++)
             {
                 var angle = (float)i / AttackRingSegments * Mathf.PI * 2f;
-                attackRangeRing.SetPosition(i, new Vector3(
+                ring.SetPosition(i, new Vector3(
                     center.x + Mathf.Cos(angle) * radius,
                     0.05f,
                     center.z + Mathf.Sin(angle) * radius));
@@ -317,9 +360,9 @@ namespace IronKingdoms.Combat
             {
                 RefreshAttackRangeRing();
             }
-            else if (attackRangeRing != null)
+            else
             {
-                attackRangeRing.enabled = false;
+                HideAttackTargetRings();
             }
         }
 
@@ -330,10 +373,7 @@ namespace IronKingdoms.Combat
                 movementPathLine.enabled = false;
             }
 
-            if (attackRangeRing != null)
-            {
-                attackRangeRing.enabled = false;
-            }
+            HideAttackTargetRings();
 
             if (destinationMarkerObject != null)
             {
@@ -606,8 +646,7 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var dist = Vector3.Distance(selectedUnit.Pawn.transform.position, enemy.Pawn.transform.position);
-                if (dist <= attackWeapon.Range)
+                if (IsTargetInRange(selectedUnit, enemy, attackWeapon))
                 {
                     ResolveAttack(selectedUnit, enemy, attackWeapon);
                     selectedUnit.HasActedThisTurn = true;
@@ -938,6 +977,24 @@ namespace IronKingdoms.Combat
             }
 
             return best;
+        }
+
+        private static bool IsTargetInRange(RuntimeUnit attacker, RuntimeUnit target, WeaponProfile weapon)
+        {
+            if (attacker?.Pawn == null || target?.Pawn == null || weapon == null)
+            {
+                return false;
+            }
+
+            var distance = GetPlanarDistance(attacker.Pawn.transform.position, target.Pawn.transform.position);
+            return distance <= weapon.Range + PositionArrivalTolerance;
+        }
+
+        private static float GetPlanarDistance(Vector3 from, Vector3 to)
+        {
+            var delta = to - from;
+            delta.y = 0f;
+            return delta.magnitude;
         }
 
         private void UpdateHoveredEnemy()
