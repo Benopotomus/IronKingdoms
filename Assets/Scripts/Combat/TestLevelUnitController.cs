@@ -253,9 +253,8 @@ namespace IronKingdoms.Combat
             var weapon = GetSelectedAttackWeapon(selectedUnit);
             var ringColor = new Color(0.95f, 0.55f, 0.1f, 0.75f);
             var ringIndex = 0;
-            for (var enemyIndex = 0; enemyIndex < enemyRuntimeUnits.Count; enemyIndex++)
+            foreach (var enemy in enemyRuntimeUnits)
             {
-                var enemy = enemyRuntimeUnits[enemyIndex];
                 if (!enemy.IsAlive || !IsTargetInRange(selectedUnit, enemy, weapon))
                 {
                     continue;
@@ -269,9 +268,9 @@ namespace IronKingdoms.Combat
 
         private void HideAttackTargetRings()
         {
-            for (var ringIndex = 0; ringIndex < attackTargetRings.Count; ringIndex++)
+            foreach (var ring in attackTargetRings)
             {
-                attackTargetRings[ringIndex].enabled = false;
+                ring.enabled = false;
             }
         }
 
@@ -282,7 +281,7 @@ namespace IronKingdoms.Combat
                 return attackTargetRings[index];
             }
 
-            var ringObj = new GameObject($"AttackTargetRing_{index + 1}");
+            var ringObj = new GameObject($"AttackTargetRing_{index}");
             ringObj.transform.SetParent(transform);
             var ring = ringObj.AddComponent<LineRenderer>();
             ring.widthMultiplier = VisualizerLineWidth;
