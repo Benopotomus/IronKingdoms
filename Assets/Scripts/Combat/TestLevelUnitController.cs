@@ -1172,7 +1172,8 @@ namespace IronKingdoms.Combat
             var areaY = Screen.height - ActionBarHeight - ActionBarBottomMargin;
             GUILayout.BeginArea(new Rect(areaX, areaY, ActionBarWidth, ActionBarHeight), "Actions", GUI.skin.window);
 
-            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan | Left Click / 1-9: Select | Enter: End turn | Esc/Right Click: Cancel");
+            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan");
+            GUILayout.Label("Left Click / 1-9: Select | Double Left Click: Focus camera | Enter: End turn | Esc/Right Click: Cancel");
             GUILayout.Label("Activation is staged: move first, then combat action. After taking a combat action, movement is locked.");
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
