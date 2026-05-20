@@ -447,9 +447,8 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            if (Input.GetMouseButtonDown(1))
+            if (TryCancelModeOnRightClick())
             {
-                SetCurrentMode(UnitActionMode.None);
                 return;
             }
 
@@ -504,9 +503,8 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            if (Input.GetMouseButtonDown(1))
+            if (TryCancelModeOnRightClick())
             {
-                SetCurrentMode(UnitActionMode.None);
                 return;
             }
 
@@ -836,11 +834,21 @@ namespace IronKingdoms.Combat
 
         private WeaponProfile GetSelectedAttackWeapon(RuntimeUnit unit)
         {
+            if (unit.Weapons == null || unit.Weapons.Length == 0)
+            {
+                return WeaponProfile.CreateDefault();
+            }
+
             return unit.Weapons[Mathf.Clamp(selectedAttackWeaponIndex, 0, unit.Weapons.Length - 1)];
         }
 
         private static float GetLongestWeaponRange(RuntimeUnit unit)
         {
+            if (unit.Weapons == null || unit.Weapons.Length == 0)
+            {
+                return WeaponProfile.CreateDefault().Range;
+            }
+
             var range = unit.Weapons[0].Range;
             for (var i = 1; i < unit.Weapons.Length; i++)
             {
@@ -852,6 +860,11 @@ namespace IronKingdoms.Combat
 
         private static WeaponProfile GetBestWeaponForDistance(RuntimeUnit unit, float distance)
         {
+            if (unit.Weapons == null || unit.Weapons.Length == 0)
+            {
+                return null;
+            }
+
             WeaponProfile best = null;
             for (var i = 0; i < unit.Weapons.Length; i++)
             {
@@ -899,7 +912,7 @@ namespace IronKingdoms.Combat
         private static string BuildHealthBoxes(int health, int maxHealth)
         {
             var clampedCurrent = Mathf.Clamp(health, 0, maxHealth);
-            var sb = new StringBuilder(maxHealth + (maxHealth / 10));
+            var sb = new StringBuilder((maxHealth * 11 / 10) + 1);
             for (var i = 0; i < maxHealth; i++)
             {
                 if (i > 0 && i % 10 == 0)
@@ -911,6 +924,17 @@ namespace IronKingdoms.Combat
             }
 
             return sb.ToString();
+        }
+
+        private bool TryCancelModeOnRightClick()
+        {
+            if (!Input.GetMouseButtonDown(1))
+            {
+                return false;
+            }
+
+            SetCurrentMode(UnitActionMode.None);
+            return true;
         }
 
         private static RuntimeUnit FindFirstAlive(List<RuntimeUnit> units)
@@ -1116,7 +1140,14 @@ namespace IronKingdoms.Combat
                 Pawn = pawn;
                 Health = definition.Stats.health;
                 definition.Stats.EnsureWeaponDefaults();
-                Weapons = definition.Stats.weapons;
+                if (definition.Stats.weapons == null || definition.Stats.weapons.Length == 0)
+                {
+                    Weapons = new[] { WeaponProfile.CreateDefault() };
+                }
+                else
+                {
+                    Weapons = definition.Stats.weapons;
+                }
             }
 
             public UnitTypeDefinition Definition { get; }
