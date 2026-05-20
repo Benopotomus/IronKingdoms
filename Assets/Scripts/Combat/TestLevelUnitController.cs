@@ -380,7 +380,8 @@ namespace IronKingdoms.Combat
             }
 
             if (Input.GetKeyDown(KeyCode.M) && selectedUnit != null && selectedUnit.IsAlive
-                && selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon)
+                && selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon
+                && !selectedUnit.HasActedThisTurn)
             {
                 SetCurrentMode(currentPlayerMode == UnitActionMode.Move ? UnitActionMode.None : UnitActionMode.Move);
             }
@@ -466,6 +467,12 @@ namespace IronKingdoms.Combat
 
             if (selectedUnit == null || !selectedUnit.IsAlive)
             {
+                return;
+            }
+
+            if (selectedUnit.HasActedThisTurn)
+            {
+                SetCurrentMode(UnitActionMode.None);
                 return;
             }
 
@@ -725,7 +732,7 @@ namespace IronKingdoms.Combat
 
         private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination)
         {
-            if (unit == null || !unit.IsAlive || unit.Pawn == null)
+            if (unit == null || !unit.IsAlive || unit.Pawn == null || unit.HasActedThisTurn)
             {
                 return;
             }
@@ -1033,7 +1040,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            GUILayout.BeginArea(new Rect(Screen.width - 292f, 12f, 280f, 310f), "Selected Unit", GUI.skin.window);
+            GUILayout.BeginArea(new Rect(12f, Screen.height - 322f, 280f, 310f), "Selected Unit", GUI.skin.window);
             GUILayout.Label(selectedUnit.Definition.DisplayName);
             GUILayout.Label($"Role: {selectedUnit.Definition.Role}");
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
@@ -1043,7 +1050,7 @@ namespace IronKingdoms.Combat
             var selectedWeapon = GetSelectedAttackWeapon(selectedUnit);
             GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
             GUILayout.Label($"Type: {selectedWeapon.attackType}  |  Range: {selectedWeapon.Range:0.0}\"");
-            GUILayout.Label($"Power: {selectedWeapon.Power}");
+            GUILayout.Label($"Weapon POW: {selectedWeapon.Power}");
 
             GUILayout.EndArea();
             DrawActionBar();
@@ -1064,10 +1071,13 @@ namespace IronKingdoms.Combat
             GUILayout.BeginArea(new Rect(areaX, areaY, areaWidth, areaHeight), "Actions", GUI.skin.window);
 
             GUILayout.Label("Left Click / 1-9: Select unit | Enter: End turn | Esc/Right Click: Cancel");
+            GUILayout.Label("Activation is staged: move first, then combat action. After attacking, movement is locked.");
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
 
-            var canMove = selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon && !selectedUnit.MoveTarget.HasValue;
+            var canMove = selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon
+                && !selectedUnit.MoveTarget.HasValue
+                && !selectedUnit.HasActedThisTurn;
             GUI.enabled = canMove;
             var moveLabel = currentPlayerMode == UnitActionMode.Move ? "[ Move ]" : "Move";
             if (GUILayout.Button(moveLabel, GUILayout.Height(30f)))

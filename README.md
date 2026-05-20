@@ -14,6 +14,8 @@ Open `/home/runner/work/IronKingdoms/IronKingdoms` in Unity 6000.3.10f1, then lo
 - assign player and enemy unit assets directly in the inspector,
 - control player units by left-click/number keys and right-click move orders,
 - let simple enemy AI drive enemy units, and
-- view a live roster panel plus selected-unit details popout UI.
+- view a live roster panel plus a lower-left selected-unit details panel.
+
+Player activation is staged in the current prototype: move first, then take a combat action. Once a unit has taken its combat action, it cannot use movement for the rest of that activation.
 
 Design notes live in `Docs/CombatPrototypeDesign.md`.
