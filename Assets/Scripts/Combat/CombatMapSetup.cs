@@ -4,13 +4,13 @@ using UnityEngine;
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Procedurally builds the test combat map geometry and initialises an A* GridGraph
+    /// Procedurally builds the test combat map geometry and initialises an A* RecastGraph
     /// that covers the play area. Attach this component to any GameObject in the
     /// TestCombatScene before the <see cref="TestLevelUnitController"/> runs.
     /// </summary>
     public class CombatMapSetup : MonoBehaviour
     {
-        // ── Grid configuration ───────────────────────────────────────────────
+        // ── Navmesh configuration ────────────────────────────────────────────
         private const float NavmeshBoundsSize = 26f;
 
         // ── Map geometry ─────────────────────────────────────────────────────
