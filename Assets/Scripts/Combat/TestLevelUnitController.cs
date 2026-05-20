@@ -252,6 +252,13 @@ namespace IronKingdoms.Combat
             currentPlayerMode = mode;
             if (mode == UnitActionMode.Attack && selectedUnit != null)
             {
+                if (selectedUnit.Weapons == null || selectedUnit.Weapons.Length == 0)
+                {
+                    selectedAttackWeaponIndex = 0;
+                    currentPlayerMode = UnitActionMode.None;
+                    return;
+                }
+
                 selectedAttackWeaponIndex = Mathf.Clamp(selectedAttackWeaponIndex, 0, selectedUnit.Weapons.Length - 1);
             }
 
@@ -912,7 +919,7 @@ namespace IronKingdoms.Combat
         private static string BuildHealthBoxes(int health, int maxHealth)
         {
             var clampedCurrent = Mathf.Clamp(health, 0, maxHealth);
-            var sb = new StringBuilder((maxHealth * 11 / 10) + 1);
+            var sb = new StringBuilder(maxHealth + (maxHealth / 10) + 1);
             for (var i = 0; i < maxHealth; i++)
             {
                 if (i > 0 && i % 10 == 0)
