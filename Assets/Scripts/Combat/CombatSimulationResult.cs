@@ -20,8 +20,7 @@ namespace IronKingdoms.Combat
 
         public override string ToString()
         {
-            return string.Join("
-", LogLines);
+            return string.Join("\n", LogLines);
         }
     }
 }
