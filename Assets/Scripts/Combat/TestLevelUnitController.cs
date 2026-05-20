@@ -259,8 +259,8 @@ namespace IronKingdoms.Combat
 
         private void ResolveAttack(RuntimeUnit attacker, RuntimeUnit defender)
         {
-            var usesMelee = attacker.Weapon.attackType == WeaponAttackType.Melee;
-            var attackValue = usesMelee ? attacker.Definition.Stats.meleeAttack : attacker.Definition.Stats.rangedAttack;
+            var isMeleeAttack = attacker.Weapon.attackType == WeaponAttackType.Melee;
+            var attackValue = isMeleeAttack ? attacker.Definition.Stats.meleeAttack : attacker.Definition.Stats.rangedAttack;
             var attackRoll = Roll2d6() + attackValue;
             if (attackRoll < defender.Definition.Stats.defense)
             {

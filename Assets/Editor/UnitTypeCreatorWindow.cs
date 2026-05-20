@@ -183,7 +183,7 @@ namespace IronKingdoms.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("role"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("stats"), true);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("designNotes"));
-            serializedObject.ApplyModifiedPropertiesWithoutUndo();
+            serializedObject.ApplyModifiedProperties();
 
             if (GUILayout.Button("Apply Unit Changes"))
             {
