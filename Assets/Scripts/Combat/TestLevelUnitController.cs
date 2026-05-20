@@ -1321,6 +1321,8 @@ namespace IronKingdoms.Combat
                 cameraOrbitDistance = CameraOrbitMinimumDistance;
             }
 
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
             cameraOrbitPivotInitialized = true;
         }
 
@@ -1336,7 +1338,6 @@ namespace IronKingdoms.Combat
             }
 
             cameraOrbitGroundPivot += planarDelta;
-            cameraOrbitGroundPivot.y = 0f;
             var cameraForward = activeCamera.transform.forward;
             activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
         }
