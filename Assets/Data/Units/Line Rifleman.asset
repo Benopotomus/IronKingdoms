@@ -16,14 +16,13 @@ MonoBehaviour:
   role: 2
   stats:
     speed: 5
+    modelSize: 0
     meleeAttack: 4
     rangedAttack: 6
     defense: 13
     armor: 12
     health: 10
     startingResource: 0
-    weaponPower: 6
-    weaponRange: 10
     weapons:
     - displayName: Long Rifle
       attackType: 1

@@ -16,14 +16,13 @@ MonoBehaviour:
   role: 1
   stats:
     speed: 5
+    modelSize: 2
     meleeAttack: 7
     rangedAttack: 2
     defense: 12
     armor: 17
     health: 18
     startingResource: 3
-    weaponPower: 8
-    weaponRange: 1.5
     weapons:
     - displayName: Steam Halberd
       attackType: 0

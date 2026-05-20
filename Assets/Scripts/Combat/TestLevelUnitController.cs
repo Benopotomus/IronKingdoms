@@ -316,8 +316,10 @@ namespace IronKingdoms.Combat
 
                 unitDefinition.Stats.EnsureWeaponDefaults();
                 var pawn = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                var pawnScale = unitDefinition.Stats.modelSize.GetPawnScale();
                 pawn.name = $"{unitDefinition.DisplayName} ({(isPlayerControlled ? "Player" : "Enemy")})";
-                pawn.transform.SetPositionAndRotation(origin + new Vector3(i * spawnSpacing, PawnYPosition, 0f), Quaternion.identity);
+                pawn.transform.localScale = pawnScale;
+                pawn.transform.SetPositionAndRotation(origin + new Vector3(i * spawnSpacing, pawnScale.y, 0f), Quaternion.identity);
                 pawn.transform.SetParent(transform);
                 var renderer = pawn.GetComponent<Renderer>();
                 if (renderer != null)
@@ -879,6 +881,7 @@ namespace IronKingdoms.Combat
             GUILayout.Label($"Role: {selectedUnit.Definition.Role}");
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
             GUILayout.Label($"Speed: {selectedUnit.Definition.Stats.speed:0.0}  |  Move left: {selectedUnit.RemainingMovementThisTurn:0.0}\"");
+            GUILayout.Label($"Model Size: {selectedUnit.Definition.Stats.modelSize.DisplayName()}");
             GUILayout.Label($"Weapon: {selectedUnit.Weapon.DisplayName}");
             GUILayout.Label($"Type: {selectedUnit.Weapon.attackType}  |  Range: {selectedUnit.Weapon.Range:0.0}\"");            GUILayout.Label($"Power: {selectedUnit.Weapon.Power}");
 
