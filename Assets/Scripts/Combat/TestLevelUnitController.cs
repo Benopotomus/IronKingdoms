@@ -12,6 +12,7 @@ namespace IronKingdoms.Combat
         private const float MovementBudgetEpsilon = 0.001f;
         private const float VisualizerLineWidth = 0.06f;
         private const int AttackRingSegments = 48;
+        private const float PawnYPosition = 1f;
 
         private enum TurnSide
         {
@@ -81,7 +82,13 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            visualizerMaterial = new Material(Shader.Find("Sprites/Default"));
+            var foundShader = Shader.Find("Sprites/Default")
+                ?? Shader.Find("Hidden/Internal-Colored")
+                ?? Shader.Find("Unlit/Color");
+            if (foundShader != null)
+            {
+                visualizerMaterial = new Material(foundShader);
+            }
 
             var lineObj = new GameObject("MovementPathLine");
             lineObj.transform.SetParent(transform);
@@ -89,7 +96,11 @@ namespace IronKingdoms.Combat
             movementPathLine.widthMultiplier = VisualizerLineWidth;
             movementPathLine.positionCount = 2;
             movementPathLine.useWorldSpace = true;
-            movementPathLine.material = visualizerMaterial;
+            if (visualizerMaterial != null)
+            {
+                movementPathLine.material = visualizerMaterial;
+            }
+
             movementPathLine.enabled = false;
 
             var ringObj = new GameObject("AttackRangeRing");
@@ -99,7 +110,11 @@ namespace IronKingdoms.Combat
             attackRangeRing.positionCount = AttackRingSegments + 1;
             attackRangeRing.useWorldSpace = true;
             attackRangeRing.loop = false;
-            attackRangeRing.material = visualizerMaterial;
+            if (visualizerMaterial != null)
+            {
+                attackRangeRing.material = visualizerMaterial;
+            }
+
             attackRangeRing.enabled = false;
 
             destinationMarkerObject = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -113,7 +128,7 @@ namespace IronKingdoms.Combat
             }
 
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
-            if (markerRenderer != null)
+            if (markerRenderer != null && visualizerMaterial != null)
             {
                 markerRenderer.material = new Material(visualizerMaterial);
             }
@@ -152,7 +167,7 @@ namespace IronKingdoms.Combat
             }
 
             var hoverPos = ray.GetPoint(enter);
-            hoverPos.y = 1f;
+            hoverPos.y = PawnYPosition;
 
             var unitPos = selectedUnit.Pawn.transform.position;
             var planarDelta = hoverPos - unitPos;
@@ -169,7 +184,7 @@ namespace IronKingdoms.Combat
             else
             {
                 effectiveDest = unitPos + planarDelta.normalized * remaining;
-                effectiveDest.y = 1f;
+                effectiveDest.y = PawnYPosition;
             }
 
             var pathColor = withinRange
@@ -302,7 +317,7 @@ namespace IronKingdoms.Combat
                 unitDefinition.Stats.EnsureWeaponDefaults();
                 var pawn = GameObject.CreatePrimitive(PrimitiveType.Capsule);
                 pawn.name = $"{unitDefinition.DisplayName} ({(isPlayerControlled ? "Player" : "Enemy")})";
-                pawn.transform.SetPositionAndRotation(origin + new Vector3(i * spawnSpacing, 1f, 0f), Quaternion.identity);
+                pawn.transform.SetPositionAndRotation(origin + new Vector3(i * spawnSpacing, PawnYPosition, 0f), Quaternion.identity);
                 pawn.transform.SetParent(transform);
                 var renderer = pawn.GetComponent<Renderer>();
                 if (renderer != null)
@@ -444,7 +459,7 @@ namespace IronKingdoms.Combat
             }
 
             var destination = ray.GetPoint(enter);
-            destination.y = 1f;
+            destination.y = PawnYPosition;
             IssueMoveOrder(selectedUnit, destination);
             SetCurrentMode(UnitActionMode.None);
         }
@@ -616,7 +631,7 @@ namespace IronKingdoms.Combat
             var direction = (targetPosition - enemy.Pawn.transform.position).normalized;
             var stopDistance = Mathf.Max(AiMinimumStopDistance, enemy.Weapon.Range * AiDesiredStopFactor);
             var destination = targetPosition - direction * stopDistance;
-            destination.y = 1f;
+            destination.y = PawnYPosition;
             IssueMoveOrder(enemy, destination);
         }
 
@@ -690,7 +705,7 @@ namespace IronKingdoms.Combat
 
             var moveDistance = Mathf.Min(remaining, distanceToDestination);
             var clampedDestination = current + planarDelta.normalized * moveDistance;
-            clampedDestination.y = 1f;
+            clampedDestination.y = PawnYPosition;
             unit.MoveTarget = clampedDestination;
         }
 
@@ -865,8 +880,7 @@ namespace IronKingdoms.Combat
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
             GUILayout.Label($"Speed: {selectedUnit.Definition.Stats.speed:0.0}  |  Move left: {selectedUnit.RemainingMovementThisTurn:0.0}\"");
             GUILayout.Label($"Weapon: {selectedUnit.Weapon.DisplayName}");
-            GUILayout.Label($"Type: {selectedUnit.Weapon.attackType}  |  Range: {selectedUnit.Weapon.Range:0.0}\"");
-            GUILayout.Label($"Power: {selectedUnit.Weapon.Power}");
+            GUILayout.Label($"Type: {selectedUnit.Weapon.attackType}  |  Range: {selectedUnit.Weapon.Range:0.0}\"");            GUILayout.Label($"Power: {selectedUnit.Weapon.Power}");
 
             if (activeTurnSide == TurnSide.Player)
             {
