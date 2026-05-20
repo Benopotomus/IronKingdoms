@@ -33,6 +33,8 @@ namespace IronKingdoms.Combat
         private const float HoverPanelHeight = 86f;
         private const float HoverPanelScreenPadding = 4f;
         private const float HoverPanelMouseOffset = 14f;
+        private const float CameraOrbitFallbackForwardDistance = 1f;
+        private const float CameraOrbitMinimumDistance = 0.1f;
 
         private enum TurnSide
         {
@@ -84,6 +86,9 @@ namespace IronKingdoms.Combat
         private Vector3 lastCameraDragMousePosition;
         private bool cameraPitchInitialized;
         private float cameraPitchDegrees;
+        private bool cameraOrbitPivotInitialized;
+        private Vector3 cameraOrbitGroundPivot;
+        private float cameraOrbitDistance;
         private int uiCancelFrame = -1;
 
         private void Start()
@@ -1248,7 +1253,7 @@ namespace IronKingdoms.Combat
             var forward = GetPlanarForward(activeCamera.transform.forward);
             var right = GetPlanarRight(forward);
             var delta = (right * horizontal + forward * vertical) * (cameraKeyboardPanSpeed * Time.deltaTime);
-            activeCamera.transform.position += delta;
+            TranslateCameraOrbit(activeCamera, delta);
         }
 
         private void DragPanCamera(Camera activeCamera, Vector3 delta)
@@ -1256,15 +1261,26 @@ namespace IronKingdoms.Combat
             var forward = GetPlanarForward(activeCamera.transform.forward);
             var right = GetPlanarRight(forward);
             var pan = (-right * delta.x - forward * delta.y) * cameraDragPanSensitivity;
-            activeCamera.transform.position += pan;
+            TranslateCameraOrbit(activeCamera, pan);
         }
 
         private void RotateCamera(Camera activeCamera, Vector3 delta)
         {
+            if (!cameraOrbitPivotInitialized)
+            {
+                InitializeCameraOrbitPivot(activeCamera);
+                if (!cameraOrbitPivotInitialized)
+                {
+                    return;
+                }
+            }
+
             var yaw = delta.x * cameraRotationSensitivity;
             cameraPitchDegrees = Mathf.Clamp(cameraPitchDegrees - (delta.y * cameraRotationSensitivity), cameraMinPitch, cameraMaxPitch);
             var euler = activeCamera.transform.rotation.eulerAngles;
             activeCamera.transform.rotation = Quaternion.Euler(cameraPitchDegrees, euler.y + yaw, 0f);
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
         }
 
         private void InitializeCameraPitch()
@@ -1282,6 +1298,63 @@ namespace IronKingdoms.Combat
 
             cameraPitchDegrees = Mathf.Clamp(NormalizeSignedAngle(activeCamera.transform.eulerAngles.x), cameraMinPitch, cameraMaxPitch);
             cameraPitchInitialized = true;
+            InitializeCameraOrbitPivot(activeCamera);
+        }
+
+        private void InitializeCameraOrbitPivot(Camera activeCamera)
+        {
+            if (cameraOrbitPivotInitialized || activeCamera == null)
+            {
+                return;
+            }
+
+            if (!TryGetGroundPointFromScreenCenter(activeCamera, out cameraOrbitGroundPivot))
+            {
+                var planarForward = GetPlanarForward(activeCamera.transform.forward);
+                cameraOrbitGroundPivot = activeCamera.transform.position + (planarForward * CameraOrbitFallbackForwardDistance);
+                cameraOrbitGroundPivot.y = 0f;
+            }
+
+            cameraOrbitDistance = Vector3.Distance(activeCamera.transform.position, cameraOrbitGroundPivot);
+            if (cameraOrbitDistance < CameraOrbitMinimumDistance)
+            {
+                cameraOrbitDistance = CameraOrbitMinimumDistance;
+            }
+
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
+            cameraOrbitPivotInitialized = true;
+        }
+
+        private void TranslateCameraOrbit(Camera activeCamera, Vector3 planarDelta)
+        {
+            if (!cameraOrbitPivotInitialized)
+            {
+                InitializeCameraOrbitPivot(activeCamera);
+                if (!cameraOrbitPivotInitialized)
+                {
+                    return;
+                }
+            }
+
+            cameraOrbitGroundPivot += planarDelta;
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
+        }
+
+        private bool TryGetGroundPointFromScreenCenter(Camera activeCamera, out Vector3 groundPoint)
+        {
+            var screenCenter = new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
+            var centerRay = activeCamera.ScreenPointToRay(screenCenter);
+            if (boardPlane.Raycast(centerRay, out var enter))
+            {
+                groundPoint = centerRay.GetPoint(enter);
+                groundPoint.y = 0f;
+                return true;
+            }
+
+            groundPoint = Vector3.zero;
+            return false;
         }
 
         private bool TryConsumeUiClick()
