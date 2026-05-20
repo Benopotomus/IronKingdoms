@@ -26,8 +26,8 @@ namespace IronKingdoms.Combat
         private const float RosterAreaHeight = 300f;
         private const float SelectedUnitPanelWidth = 280f;
         private const float SelectedUnitPanelHeight = 310f;
-        private const float SelectedUnitPanelLeftMargin = 12f;
-        private const float SelectedUnitPanelBottomMargin = 12f;
+        private const float SelectedUnitPanelOffsetX = 12f;
+        private const float SelectedUnitPanelOffsetY = 12f;
         private const float ActionBarWidth = 560f;
         private const float ActionBarHeight = 96f;
         private const float ActionBarBottomMargin = 12f;
@@ -1357,8 +1357,8 @@ namespace IronKingdoms.Combat
 
         private static Rect GetSelectedUnitPanelRect()
         {
-            var areaY = Screen.height - SelectedUnitPanelHeight - SelectedUnitPanelBottomMargin;
-            return new Rect(SelectedUnitPanelLeftMargin, areaY, SelectedUnitPanelWidth, SelectedUnitPanelHeight);
+            var areaY = Screen.height - SelectedUnitPanelHeight - SelectedUnitPanelOffsetY;
+            return new Rect(SelectedUnitPanelOffsetX, areaY, SelectedUnitPanelWidth, SelectedUnitPanelHeight);
         }
 
         private void HandleCameraInput()
