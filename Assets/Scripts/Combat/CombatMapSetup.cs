@@ -1,5 +1,4 @@
 using Pathfinding;
-using Pathfinding.Graphs.Grid;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
@@ -12,13 +11,12 @@ namespace IronKingdoms.Combat
     public class CombatMapSetup : MonoBehaviour
     {
         // ── Grid configuration ───────────────────────────────────────────────
-        private const int GridNodeCountX = 42;
-        private const int GridNodeCountZ = 42;
-        private const float GridNodeSize = 0.5f;
+        private const float NavmeshBoundsSize = 26f;
 
         // ── Map geometry ─────────────────────────────────────────────────────
         private const float GroundHalfExtent = 11f;
         private const float GroundThickness = 0.2f;
+        private const float GroundShelfThickness = 0.4f;
         private const float WallHeight = 1.8f;
         private const float WallThickness = 0.6f;
         private const float PillarSize = 1.5f;
@@ -55,6 +53,24 @@ namespace IronKingdoms.Combat
             // Ground plane
             var groundScale = new Vector3(GroundHalfExtent * 2f, GroundThickness, GroundHalfExtent * 2f);
             CreateBox(mapRoot.transform, "Ground", Vector3.down * (GroundThickness * 0.5f), groundScale, groundMat);
+            CreateBox(
+                mapRoot.transform,
+                "GroundShelf_North",
+                new Vector3(0f, 0.2f, 6f),
+                new Vector3(13f, GroundShelfThickness, 5f),
+                groundMat);
+            CreateBox(
+                mapRoot.transform,
+                "GroundShelf_South",
+                new Vector3(0f, 0.1f, -5.8f),
+                new Vector3(11f, GroundShelfThickness * 0.5f, 4.5f),
+                groundMat);
+            CreateBox(
+                mapRoot.transform,
+                "GroundShelf_CenterSpine",
+                new Vector3(0f, 0.3f, 0f),
+                new Vector3(4.5f, GroundShelfThickness * 1.5f, 8f),
+                groundMat);
 
             // ── Pillars (four corners of the central area) ───────────────────
             var pillarScale = new Vector3(PillarSize, PillarHeight, PillarSize);
@@ -130,30 +146,16 @@ namespace IronKingdoms.Combat
                 astar = astarGo.AddComponent<AstarPath>();
             }
 
-            // Clear any existing graphs and add a fresh GridGraph.
+            // Clear any existing graphs and add a fresh RecastGraph navmesh.
             astar.data.ClearGraphs();
-            var gg = astar.data.AddGraph<GridGraph>();
-
-            // Cover a 21 × 21 world-unit area centred on the origin.
-            gg.SetDimensions(GridNodeCountX, GridNodeCountZ, GridNodeSize);
-            gg.center = Vector3.zero;
-
-            // Obstacle collision detection: use a sphere at each node.
-            gg.collision.use2D = false;
-            gg.collision.collisionCheck = true;
-            gg.collision.type = ColliderType.Sphere;
-            gg.collision.diameter = 0.85f;   // slightly larger than a unit pawn
-            gg.collision.height = 1.5f;
-            gg.collision.mask = Physics.DefaultRaycastLayers;
-
-            // Height detection so nodes hug the ground surface.
-            gg.collision.heightCheck = true;
-            gg.collision.heightMask = Physics.DefaultRaycastLayers;
-            gg.collision.fromHeight = 10f;
-
-            // Allow diagonal movement.
-            gg.neighbours = NumNeighbours.Eight;
-            gg.cutCorners = false;
+            var recast = astar.data.AddGraph<RecastGraph>();
+            recast.forcedBoundsCenter = Vector3.up * 1.5f;
+            recast.forcedBoundsSize = new Vector3(NavmeshBoundsSize, 6f, NavmeshBoundsSize);
+            recast.cellSize = 0.2f;
+            recast.walkableHeight = 1.5f;
+            recast.walkableClimb = 0.55f;
+            recast.characterRadius = 0.45f;
+            recast.maxSlope = 50f;
 
             // Scan the graph now that the geometry is in place.
             astar.Scan();
