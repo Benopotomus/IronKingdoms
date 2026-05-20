@@ -47,6 +47,7 @@ namespace IronKingdoms.Combat
         private const float TargetRingScaleFactor = 0.6f;
         private const float PathPreviewUpdateDistance = 0.4f;
         private const float PathPreviewMinInterval = 0.08f;
+        private const float PathVisualizationHeight = 0.05f;
 
         private enum TurnSide
         {
@@ -242,10 +243,10 @@ namespace IronKingdoms.Combat
                 var distToHover = planarDelta.magnitude;
                 withinRange = distToHover <= remaining + PositionArrivalTolerance;
                 var effectiveDest = withinRange ? hoverPos : unitPos + planarDelta.normalized * remaining;
-                effectiveDest.y = 0.05f;
+                effectiveDest.y = PathVisualizationHeight;
                 displayPath = new List<Vector3>
                 {
-                    new(unitPos.x, 0.05f, unitPos.z),
+                    new(unitPos.x, PathVisualizationHeight, unitPos.z),
                     effectiveDest
                 };
             }
@@ -333,7 +334,7 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < clamped.Count; i++)
             {
                 var wp = clamped[i];
-                wp.y = 0.05f;
+                wp.y = PathVisualizationHeight;
                 clamped[i] = wp;
             }
 
