@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
@@ -9,17 +8,32 @@ namespace IronKingdoms.Combat
         Ranged = 1
     }
 
-    [Serializable]
-    public class WeaponProfile
+    [CreateAssetMenu(menuName = "Iron Kingdoms/Combat/Weapon", fileName = "Weapon")]
+    public class WeaponProfile : ScriptableObject
     {
-        public string displayName = "Primary Weapon";
-        public WeaponAttackType attackType = WeaponAttackType.Melee;
-        public int power = 5;
-        public float range = 1.5f;
+        [SerializeField] private string displayName = "Primary Weapon";
+        [SerializeField] private WeaponAttackType attackType = WeaponAttackType.Melee;
+        [SerializeField] private int power = 5;
+        [SerializeField] private float range = 1.5f;
+        [SerializeField] private int matModifier;
+        [SerializeField] private int ratModifier;
 
         public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? "Weapon" : displayName;
+        public WeaponAttackType AttackType => attackType;
         public int Power => Mathf.Max(1, power);
         public float Range => Mathf.Max(0.5f, range);
+        public int MatModifier => matModifier;
+        public int RatModifier => ratModifier;
+
+        public int GetAttackModifier()
+        {
+            return attackType == WeaponAttackType.Melee ? matModifier : ratModifier;
+        }
+
+        private void OnValidate()
+        {
+            Sanitize();
+        }
 
         public void Sanitize()
         {
@@ -30,7 +44,8 @@ namespace IronKingdoms.Combat
 
         public static WeaponProfile CreateDefault()
         {
-            var profile = new WeaponProfile();
+            var profile = CreateInstance<WeaponProfile>();
+            profile.name = "Default Weapon";
             profile.Sanitize();
             return profile;
         }

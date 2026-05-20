@@ -24,12 +24,6 @@ MonoBehaviour:
     health: 10
     startingResource: 0
     weapons:
-    - displayName: Long Rifle
-      attackType: 1
-      power: 6
-      range: 10
-    - displayName: Bayonet
-      attackType: 0
-      power: 3
-      range: 1.5
+    - {fileID: 11400000, guid: e8a5dca7ef44425e8fcb45e3e8ef8ba4, type: 2}
+    - {fileID: 11400000, guid: 2d4ea5d59f8d4cf7b8d6c8c53e5c2a13, type: 2}
   designNotes: Mk4-inspired ranged infantry benchmark with a rifle plus melee fallback.
