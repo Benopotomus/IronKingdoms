@@ -74,6 +74,7 @@ namespace IronKingdoms.Combat
         private TurnSide activeTurnSide = TurnSide.Player;
         private float aiThinkTimer;
         private RuntimeUnit activeEnemyUnit;
+        private RuntimeUnit activeEnemyTarget;
         private int enemyActivationIndex;
         private bool enemyIssuedMoveForActiveUnit;
         private bool enemyResolvedActionForActiveUnit;
@@ -681,10 +682,20 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            if (activeEnemyTarget == null || !activeEnemyTarget.IsAlive)
+            {
+                activeEnemyTarget = FindNearestAliveUnit(activeEnemyUnit, playerRuntimeUnits);
+                if (activeEnemyTarget == null)
+                {
+                    CompleteEnemyActivation();
+                    return;
+                }
+            }
+
             if (!enemyIssuedMoveForActiveUnit)
             {
                 enemyIssuedMoveForActiveUnit = true;
-                ResolveEnemyMovement(activeEnemyUnit);
+                ResolveEnemyMovement(activeEnemyUnit, activeEnemyTarget);
                 return;
             }
 
@@ -696,24 +707,24 @@ namespace IronKingdoms.Combat
             if (!enemyResolvedActionForActiveUnit)
             {
                 enemyResolvedActionForActiveUnit = true;
-                ResolveUnitAction(activeEnemyUnit, playerRuntimeUnits);
+                ResolveUnitAction(activeEnemyUnit, activeEnemyTarget);
                 return;
             }
 
             CompleteEnemyActivation();
         }
 
-        private void ResolveEnemyMovement(RuntimeUnit enemy)
+        private void ResolveEnemyMovement(RuntimeUnit enemy, RuntimeUnit target)
         {
-            var target = FindNearestAliveUnit(enemy, playerRuntimeUnits);
             if (target == null)
             {
                 enemy.MoveTarget = null;
                 return;
             }
 
+            var enemyPosition = enemy.Pawn.transform.position;
             var targetPosition = target.Pawn.transform.position;
-            var distance = Vector3.Distance(enemy.Pawn.transform.position, targetPosition);
+            var distance = GetPlanarDistance(enemyPosition, targetPosition);
             var desiredRange = GetLongestWeaponRange(enemy);
             if (distance <= desiredRange * AiInRangeTolerance)
             {
@@ -721,7 +732,15 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var direction = (targetPosition - enemy.Pawn.transform.position).normalized;
+            var toTarget = targetPosition - enemyPosition;
+            toTarget.y = 0f;
+            if (toTarget.sqrMagnitude < MinimumVectorSqrMagnitude)
+            {
+                enemy.MoveTarget = null;
+                return;
+            }
+
+            var direction = toTarget.normalized;
             var stopDistance = Mathf.Max(AiMinimumStopDistance, desiredRange * AiDesiredStopFactor);
             var destination = targetPosition - direction * stopDistance;
             destination.y = PawnYPosition;
@@ -731,12 +750,17 @@ namespace IronKingdoms.Combat
         private bool ResolveUnitAction(RuntimeUnit unit, List<RuntimeUnit> targets)
         {
             var target = FindNearestAliveUnit(unit, targets);
+            return ResolveUnitAction(unit, target);
+        }
+
+        private bool ResolveUnitAction(RuntimeUnit unit, RuntimeUnit target)
+        {
             if (target == null)
             {
                 return false;
             }
 
-            var distance = Vector3.Distance(unit.Pawn.transform.position, target.Pawn.transform.position);
+            var distance = GetPlanarDistance(unit.Pawn.transform.position, target.Pawn.transform.position);
             var weapon = GetBestWeaponForDistance(unit, distance);
             if (weapon == null)
             {
@@ -744,6 +768,7 @@ namespace IronKingdoms.Combat
             }
 
             ResolveAttack(unit, target, weapon);
+            unit.HasActedThisTurn = true;
             return true;
         }
 
@@ -758,6 +783,7 @@ namespace IronKingdoms.Combat
                 }
 
                 activeEnemyUnit = candidate;
+                activeEnemyTarget = FindNearestAliveUnit(candidate, playerRuntimeUnits);
                 enemyIssuedMoveForActiveUnit = false;
                 enemyResolvedActionForActiveUnit = false;
                 return true;
@@ -769,6 +795,7 @@ namespace IronKingdoms.Combat
         private void CompleteEnemyActivation()
         {
             activeEnemyUnit = null;
+            activeEnemyTarget = null;
             enemyIssuedMoveForActiveUnit = false;
             enemyResolvedActionForActiveUnit = false;
         }
@@ -1019,7 +1046,7 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var distance = Vector3.Distance(source.Pawn.transform.position, candidate.Pawn.transform.position);
+                var distance = GetPlanarDistance(source.Pawn.transform.position, candidate.Pawn.transform.position);
                 if (distance < bestDistance)
                 {
                     bestDistance = distance;
@@ -1028,6 +1055,13 @@ namespace IronKingdoms.Combat
             }
 
             return best;
+        }
+
+        private static float GetPlanarDistance(Vector3 a, Vector3 b)
+        {
+            a.y = 0f;
+            b.y = 0f;
+            return Vector3.Distance(a, b);
         }
 
         private void OnGUI()
