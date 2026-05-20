@@ -89,7 +89,6 @@ namespace IronKingdoms.Combat
         private void Start()
         {
             BuildVisualizers();
-            InitializeCameraPitch();
             if (autoSpawnOnStart)
             {
                 SpawnUnits();
@@ -1182,7 +1181,14 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            InitializeCameraPitch(activeCamera);
+            if (!cameraPitchInitialized)
+            {
+                InitializeCameraPitch(activeCamera);
+                if (!cameraPitchInitialized)
+                {
+                    return;
+                }
+            }
             HandleKeyboardCameraPan(activeCamera);
 
             if (Input.GetMouseButtonDown(MiddleMouseButton))
@@ -1230,7 +1236,7 @@ namespace IronKingdoms.Combat
             }
 
             var forward = GetPlanarForward(activeCamera.transform.forward);
-            var right = Vector3.Cross(Vector3.up, forward).normalized;
+            var right = GetPlanarRight(forward);
             var delta = (right * horizontal + forward * vertical) * (cameraKeyboardPanSpeed * Time.deltaTime);
             activeCamera.transform.position += delta;
         }
@@ -1238,7 +1244,7 @@ namespace IronKingdoms.Combat
         private void DragPanCamera(Camera activeCamera, Vector3 delta)
         {
             var forward = GetPlanarForward(activeCamera.transform.forward);
-            var right = Vector3.Cross(Vector3.up, forward).normalized;
+            var right = GetPlanarRight(forward);
             var pan = (-right * delta.x - forward * delta.y) * cameraDragPanSensitivity;
             activeCamera.transform.position += pan;
         }
@@ -1360,6 +1366,11 @@ namespace IronKingdoms.Combat
             }
 
             return planarForward.normalized;
+        }
+
+        private static Vector3 GetPlanarRight(Vector3 planarForward)
+        {
+            return Vector3.Cross(Vector3.up, planarForward).normalized;
         }
 
         private static bool IsAnyMouseButtonDown()
