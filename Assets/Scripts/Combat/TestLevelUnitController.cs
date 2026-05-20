@@ -262,9 +262,10 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var ring = GetOrCreateAttackTargetRing(ringIndex++);
+                var ring = GetOrCreateAttackTargetRing(ringIndex);
                 var radius = GetTargetRingRadius(enemy);
                 DrawRing(ring, enemy.Pawn.transform.position, radius, ringColor);
+                ringIndex++;
             }
         }
 
@@ -308,7 +309,8 @@ namespace IronKingdoms.Combat
             }
 
             var pawnScale = target.Pawn.transform.localScale;
-            return Mathf.Max(DefaultTargetRingRadius, Mathf.Max(pawnScale.x, pawnScale.z) * TargetRingScaleFactor);
+            var scaledRadius = Mathf.Max(pawnScale.x, pawnScale.z) * TargetRingScaleFactor;
+            return Mathf.Max(DefaultTargetRingRadius, scaledRadius);
         }
 
         private void DrawRing(LineRenderer ring, Vector3 center, float radius, Color color)
