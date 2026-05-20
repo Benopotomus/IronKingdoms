@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using Pathfinding;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
@@ -16,7 +17,6 @@ namespace IronKingdoms.Combat
         private const float PawnYPosition = 1f;
         private const float GroundYPosition = 0f;
         private const float MinimumVectorSqrMagnitude = 0.0001f;
-        private const float InputAxisDeadzone = 0.001f;
         private const int LeftMouseButton = 0;
         private const int RightMouseButton = 1;
         private const int MiddleMouseButton = 2;
@@ -31,9 +31,6 @@ namespace IronKingdoms.Combat
         private const float ActionBarWidth = 560f;
         private const float ActionBarHeight = 96f;
         private const float ActionBarBottomMargin = 12f;
-        private const float CameraControlsPanelWidth = 460f;
-        private const float CameraControlsPanelHeight = 54f;
-        private const float CameraControlsPanelTopMargin = 12f;
         private const float HoverPanelWidth = 280f;
         private const float HoverPanelHeight = 122f;
         private const float HoverPanelScreenPadding = 4f;
@@ -43,12 +40,12 @@ namespace IronKingdoms.Combat
         private const float CombatLogPanelRightMargin = 12f;
         private const float CombatLogPanelTopMargin = 12f;
         private const int CombatLogMaxEntries = 20;
-        private const float CameraOrbitFallbackForwardDistance = 1f;
-        private const float CameraOrbitMinimumDistance = 0.1f;
         private const float DoubleClickIntervalSeconds = 0.3f;
-        private const float CameraFocusTransitionSpeed = 12f;
         private const float DefaultTargetRingRadius = 0.6f;
         private const float TargetRingScaleFactor = 0.6f;
+        private const float PathPreviewUpdateDistance = 0.4f;
+        private const float PathPreviewMinInterval = 0.08f;
+        private const float PathVisualizationHeight = 0.05f;
         private const int WeaponRangeRingSegments = 64;
         private const float FloatingDamageLifetime = 1.2f;
         private const float FloatingDamageRiseSpeed = 55f;
@@ -73,13 +70,8 @@ namespace IronKingdoms.Combat
         [SerializeField] private Transform enemySpawnAnchor;
         [SerializeField, Min(0.5f)] private float spawnSpacing = 2f;
         [SerializeField, Min(0.1f)] private float aiThinkInterval = 0.5f;
-        [SerializeField] private Camera selectionCamera;
+        [SerializeField] private CombatCameraManager cameraManager;
         [SerializeField] private bool autoSpawnOnStart = true;
-        [SerializeField, Min(1f)] private float cameraKeyboardPanSpeed = 10f;
-        [SerializeField, Min(0.001f)] private float cameraDragPanSensitivity = 0.02f;
-        [SerializeField, Min(0.01f)] private float cameraRotationSensitivity = 0.2f;
-        [SerializeField, Range(5f, 89f)] private float cameraMinPitch = 25f;
-        [SerializeField, Range(5f, 89f)] private float cameraMaxPitch = 75f;
 
         private readonly List<RuntimeUnit> playerRuntimeUnits = new();
         private readonly List<RuntimeUnit> enemyRuntimeUnits = new();
@@ -115,18 +107,15 @@ namespace IronKingdoms.Combat
         private GUIStyle floatingDamageShadowStyle;
         private GameObject destinationMarkerObject;
         private Material visualizerMaterial;
-        private bool isCameraDragging;
-        private Vector3 lastCameraDragMousePosition;
-        private bool cameraPitchInitialized;
-        private float cameraPitchDegrees;
-        private bool cameraOrbitPivotInitialized;
-        private Vector3 cameraOrbitGroundPivot;
-        private float cameraOrbitDistance;
         private RuntimeUnit lastClickedPlayerUnit;
         private float lastClickedPlayerUnitClickTime = float.NegativeInfinity;
-        private bool isCameraFocusTransitioning;
-        private Vector3 cameraFocusTransitionTarget;
         private int uiCancelFrame = -1;
+
+        private List<Vector3> previewPathWaypoints;
+        private bool previewDestinationReachable;
+        private bool previewPathPending;
+        private Vector3 lastPreviewRequestTarget;
+        private float lastPathPreviewTime;
 
         private void Start()
         {
@@ -139,7 +128,7 @@ namespace IronKingdoms.Combat
 
         private void Update()
         {
-            HandleCameraInput();
+            cameraManager?.Tick(IsMouseOverGameplayUi());
             if (activeTurnSide == TurnSide.Player)
             {
                 HandlePlayerInput();
@@ -228,7 +217,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 movementPathLine.enabled = false;
@@ -248,21 +237,36 @@ namespace IronKingdoms.Combat
             hoverPos.y = PawnYPosition;
 
             var unitPos = selectedUnit.Pawn.transform.position;
-            var planarDelta = hoverPos - unitPos;
-            planarDelta.y = 0f;
-            var distToHover = planarDelta.magnitude;
             var remaining = selectedUnit.RemainingMovementThisTurn;
 
-            var withinRange = distToHover <= remaining + PositionArrivalTolerance;
-            Vector3 effectiveDest;
-            if (withinRange)
+            // Kick off a new A* path request when the hover target shifts enough.
+            if (AstarPath.active != null)
             {
-                effectiveDest = hoverPos;
+                RequestPathPreviewIfNeeded(unitPos, hoverPos);
+            }
+
+            // Decide which path to display: A* cached result or straight-line fallback.
+            List<Vector3> displayPath;
+            bool withinRange;
+            if (!previewPathPending && previewPathWaypoints != null && previewPathWaypoints.Count >= 2)
+            {
+                displayPath = previewPathWaypoints;
+                withinRange = previewDestinationReachable;
             }
             else
             {
-                effectiveDest = unitPos + planarDelta.normalized * remaining;
-                effectiveDest.y = PawnYPosition;
+                // Straight-line placeholder while a path request is in flight or A* is absent.
+                var planarDelta = hoverPos - unitPos;
+                planarDelta.y = 0f;
+                var distToHover = planarDelta.magnitude;
+                withinRange = distToHover <= remaining + PositionArrivalTolerance;
+                var effectiveDest = withinRange ? hoverPos : unitPos + planarDelta.normalized * remaining;
+                effectiveDest.y = PathVisualizationHeight;
+                displayPath = new List<Vector3>
+                {
+                    new(unitPos.x, PathVisualizationHeight, unitPos.z),
+                    effectiveDest
+                };
             }
 
             var pathColor = withinRange
@@ -276,20 +280,83 @@ namespace IronKingdoms.Combat
                 : new Color(0.95f, 0.35f, 0.15f, 0.8f);
 
             movementPathLine.enabled = true;
-            movementPathLine.SetPosition(0, unitPos);
-            movementPathLine.SetPosition(1, effectiveDest);
+            movementPathLine.positionCount = displayPath.Count;
+            for (var i = 0; i < displayPath.Count; i++)
+            {
+                movementPathLine.SetPosition(i, displayPath[i]);
+            }
+
             movementPathLine.startColor = pathColor;
             movementPathLine.endColor = pathFadeColor;
 
             destinationMarkerObject.SetActive(true);
-            var markerPos = effectiveDest;
-            markerPos.y = 0.01f;
-            destinationMarkerObject.transform.position = markerPos;
+            var dest = displayPath[displayPath.Count - 1];
+            dest.y = 0.01f;
+            destinationMarkerObject.transform.position = dest;
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
             if (markerRenderer != null)
             {
                 markerRenderer.material.color = markerColor;
             }
+        }
+
+        private void RequestPathPreviewIfNeeded(Vector3 from, Vector3 to)
+        {
+            if (AstarPath.active == null || previewPathPending)
+            {
+                return;
+            }
+
+            if (Time.unscaledTime - lastPathPreviewTime < PathPreviewMinInterval)
+            {
+                return;
+            }
+
+            var horizontalDist = new Vector2(lastPreviewRequestTarget.x - to.x, lastPreviewRequestTarget.z - to.z).magnitude;
+            if (horizontalDist < PathPreviewUpdateDistance)
+            {
+                return;
+            }
+
+            lastPreviewRequestTarget = to;
+            lastPathPreviewTime = Time.unscaledTime;
+            previewPathPending = true;
+
+            var path = ABPath.Construct(from, to, OnPreviewPathComplete);
+            AstarPath.StartPath(path);
+        }
+
+        private void OnPreviewPathComplete(Path p)
+        {
+            previewPathPending = false;
+            if (p.error || p.vectorPath == null || p.vectorPath.Count < 2 || selectedUnit == null)
+            {
+                previewPathWaypoints = null;
+                previewDestinationReachable = false;
+                return;
+            }
+
+            var remaining = selectedUnit.RemainingMovementThisTurn;
+
+            // Measure the full unclamped path length to determine reachability.
+            var fullLength = 0f;
+            for (var i = 1; i < p.vectorPath.Count; i++)
+            {
+                fullLength += Vector3.Distance(p.vectorPath[i - 1], p.vectorPath[i]);
+            }
+
+            previewDestinationReachable = fullLength <= remaining + PositionArrivalTolerance;
+            var clamped = ClampPathToMovementBudget(p.vectorPath, remaining);
+
+            // Lift waypoints just above the ground so the line is visible.
+            for (var i = 0; i < clamped.Count; i++)
+            {
+                var wp = clamped[i];
+                wp.y = PathVisualizationHeight;
+                clamped[i] = wp;
+            }
+
+            previewPathWaypoints = clamped;
         }
 
         private void RefreshAttackRangeRing()
@@ -393,6 +460,10 @@ namespace IronKingdoms.Combat
 
             if (mode != UnitActionMode.Move)
             {
+                previewPathWaypoints = null;
+                previewPathPending = false;
+                lastPreviewRequestTarget = Vector3.positiveInfinity;
+
                 if (movementPathLine != null)
                 {
                     movementPathLine.enabled = false;
@@ -558,7 +629,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -612,7 +683,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -670,7 +741,7 @@ namespace IronKingdoms.Combat
 
             var attackWeapon = GetSelectedAttackWeapon(selectedUnit);
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -726,6 +797,7 @@ namespace IronKingdoms.Combat
                 if (allowedStep <= 0f)
                 {
                     unit.MoveTarget = null;
+                    unit.PathWaypoints = null;
                     continue;
                 }
 
@@ -735,9 +807,27 @@ namespace IronKingdoms.Combat
                 unit.Pawn.transform.position = nextPosition;
                 unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movedDistance);
 
-                if (Vector3.Distance(nextPosition, targetPosition) <= PositionArrivalTolerance || unit.RemainingMovementThisTurn <= MovementBudgetEpsilon)
+                var reachedCurrentTarget = Vector3.Distance(nextPosition, targetPosition) <= PositionArrivalTolerance
+                    || unit.RemainingMovementThisTurn <= MovementBudgetEpsilon;
+
+                if (reachedCurrentTarget)
                 {
-                    unit.MoveTarget = null;
+                    // Advance to the next waypoint if one is available.
+                    var waypoints = unit.PathWaypoints;
+                    var nextIndex = unit.PathWaypointIndex + 1;
+                    if (waypoints != null && nextIndex < waypoints.Count
+                        && unit.RemainingMovementThisTurn > MovementBudgetEpsilon)
+                    {
+                        unit.PathWaypointIndex = nextIndex;
+                        var nextWaypoint = waypoints[nextIndex];
+                        nextWaypoint.y = PawnYPosition;
+                        unit.MoveTarget = nextWaypoint;
+                    }
+                    else
+                    {
+                        unit.MoveTarget = null;
+                        unit.PathWaypoints = null;
+                    }
                 }
             }
         }
@@ -920,16 +1010,42 @@ namespace IronKingdoms.Combat
             if (remaining <= 0f)
             {
                 unit.MoveTarget = null;
+                unit.PathWaypoints = null;
                 return;
             }
 
             var current = unit.Pawn.transform.position;
+
+            // Try A* pathfinding first (synchronous for immediate movement response).
+            if (AstarPath.active != null)
+            {
+                var path = ABPath.Construct(current, destination);
+                AstarPath.StartPath(path);
+                AstarPath.BlockUntilCalculated(path);
+
+                if (!path.error && path.vectorPath != null && path.vectorPath.Count >= 2)
+                {
+                    var waypoints = ClampPathToMovementBudget(path.vectorPath, remaining);
+                    if (waypoints.Count >= 2)
+                    {
+                        unit.PathWaypoints = waypoints;
+                        unit.PathWaypointIndex = 0;
+                        var firstTarget = waypoints[1];
+                        firstTarget.y = PawnYPosition;
+                        unit.MoveTarget = firstTarget;
+                        return;
+                    }
+                }
+            }
+
+            // Fallback: straight-line movement.
             var planarDelta = destination - current;
             planarDelta.y = 0f;
             var distanceToDestination = planarDelta.magnitude;
             if (distanceToDestination <= PositionArrivalTolerance)
             {
                 unit.MoveTarget = null;
+                unit.PathWaypoints = null;
                 return;
             }
 
@@ -937,6 +1053,40 @@ namespace IronKingdoms.Combat
             var clampedDestination = current + planarDelta.normalized * moveDistance;
             clampedDestination.y = PawnYPosition;
             unit.MoveTarget = clampedDestination;
+            unit.PathWaypoints = null;
+        }
+
+        private static List<Vector3> ClampPathToMovementBudget(List<Vector3> waypoints, float budget)
+        {
+            var result = new List<Vector3>();
+            if (waypoints == null || waypoints.Count == 0)
+            {
+                return result;
+            }
+
+            result.Add(waypoints[0]);
+            var distanceCovered = 0f;
+
+            for (var i = 1; i < waypoints.Count; i++)
+            {
+                var segmentLength = Vector3.Distance(waypoints[i - 1], waypoints[i]);
+                if (distanceCovered + segmentLength >= budget - MovementBudgetEpsilon)
+                {
+                    var segmentRemaining = budget - distanceCovered;
+                    if (segmentRemaining > MovementBudgetEpsilon && segmentLength > MovementBudgetEpsilon)
+                    {
+                        var t = segmentRemaining / segmentLength;
+                        result.Add(Vector3.Lerp(waypoints[i - 1], waypoints[i], t));
+                    }
+
+                    break;
+                }
+
+                result.Add(waypoints[i]);
+                distanceCovered += segmentLength;
+            }
+
+            return result;
         }
 
         private void StartPlayerTurn()
@@ -987,6 +1137,7 @@ namespace IronKingdoms.Combat
                 unit.RemainingMovementThisTurn = unit.Definition.Stats.speed;
                 unit.HasActedThisTurn = false;
                 unit.MoveTarget = null;
+                unit.PathWaypoints = null;
             }
         }
 
@@ -1131,7 +1282,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -1207,32 +1358,9 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
-            if (activeCamera == null)
-            {
-                return;
-            }
-
-            if (!cameraPitchInitialized)
-            {
-                InitializeCameraPitch(activeCamera);
-            }
-
-            if (!cameraOrbitPivotInitialized)
-            {
-                InitializeCameraOrbitPivot(activeCamera);
-            }
-
             var focusPoint = unit.Pawn.transform.position;
             focusPoint.y = GroundYPosition;
-            if (cameraOrbitDistance < CameraOrbitMinimumDistance)
-            {
-                cameraOrbitDistance = Mathf.Max(CameraOrbitMinimumDistance, Vector3.Distance(activeCamera.transform.position, focusPoint));
-            }
-
-            cameraOrbitPivotInitialized = true;
-            cameraFocusTransitionTarget = focusPoint;
-            isCameraFocusTransitioning = true;
+            cameraManager?.FocusOnPoint(focusPoint);
         }
 
         private WeaponProfile GetSelectedAttackWeapon(RuntimeUnit unit)
@@ -1307,7 +1435,7 @@ namespace IronKingdoms.Combat
         private void UpdateHoveredEnemy()
         {
             hoveredEnemyUnit = null;
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -1396,7 +1524,7 @@ namespace IronKingdoms.Combat
 
         private void OnGUI()
         {
-            DrawCameraControlsPanel();
+            cameraManager?.DrawGui();
             DrawFloatingDamageNumbers();
             DrawCombatLog();
 
@@ -1472,15 +1600,6 @@ namespace IronKingdoms.Combat
             GUILayout.EndArea();
             DrawActionBar();
             DrawHoveredEnemyHealth();
-        }
-
-        private void DrawCameraControlsPanel()
-        {
-            var areaX = (Screen.width - CameraControlsPanelWidth) * 0.5f;
-            var areaY = CameraControlsPanelTopMargin;
-            GUILayout.BeginArea(new Rect(areaX, areaY, CameraControlsPanelWidth, CameraControlsPanelHeight), "Camera Controls", GUI.skin.window);
-            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan");
-            GUILayout.EndArea();
         }
 
         private void DrawActionBar()
@@ -1565,201 +1684,6 @@ namespace IronKingdoms.Combat
             return new Rect(SelectedUnitPanelOffsetX, areaY, SelectedUnitPanelWidth, SelectedUnitPanelHeight);
         }
 
-        private void HandleCameraInput()
-        {
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
-            if (activeCamera == null)
-            {
-                return;
-            }
-
-            if (!cameraPitchInitialized)
-            {
-                InitializeCameraPitch(activeCamera);
-                if (!cameraPitchInitialized)
-                {
-                    return;
-                }
-            }
-            HandleKeyboardCameraPan(activeCamera);
-
-            if (Input.GetMouseButtonDown(MiddleMouseButton))
-            {
-                isCameraDragging = !IsMouseOverGameplayUi();
-                lastCameraDragMousePosition = Input.mousePosition;
-            }
-
-            if (Input.GetMouseButtonUp(MiddleMouseButton))
-            {
-                isCameraDragging = false;
-            }
-
-            TickCameraFocusTransition(activeCamera);
-
-            if (!isCameraDragging || !Input.GetMouseButton(MiddleMouseButton))
-            {
-                return;
-            }
-
-            var mousePosition = Input.mousePosition;
-            var delta = mousePosition - lastCameraDragMousePosition;
-            lastCameraDragMousePosition = mousePosition;
-
-            if (delta.sqrMagnitude < MinimumVectorSqrMagnitude)
-            {
-                return;
-            }
-
-            if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
-            {
-                DragPanCamera(activeCamera, delta);
-            }
-            else
-            {
-                RotateCamera(activeCamera, delta);
-            }
-        }
-
-        private void HandleKeyboardCameraPan(Camera activeCamera)
-        {
-            var horizontal = Input.GetAxisRaw("Horizontal");
-            var vertical = Input.GetAxisRaw("Vertical");
-            if (Mathf.Abs(horizontal) <= InputAxisDeadzone && Mathf.Abs(vertical) <= InputAxisDeadzone)
-            {
-                return;
-            }
-
-            isCameraFocusTransitioning = false;
-            var forward = GetPlanarForward(activeCamera.transform.forward);
-            var right = GetPlanarRight(forward);
-            var delta = (right * horizontal + forward * vertical) * (cameraKeyboardPanSpeed * Time.deltaTime);
-            TranslateCameraOrbit(activeCamera, delta);
-        }
-
-        private void DragPanCamera(Camera activeCamera, Vector3 delta)
-        {
-            isCameraFocusTransitioning = false;
-            var forward = GetPlanarForward(activeCamera.transform.forward);
-            var right = GetPlanarRight(forward);
-            var pan = (-right * delta.x - forward * delta.y) * cameraDragPanSensitivity;
-            TranslateCameraOrbit(activeCamera, pan);
-        }
-
-        private void RotateCamera(Camera activeCamera, Vector3 delta)
-        {
-            if (!cameraOrbitPivotInitialized)
-            {
-                InitializeCameraOrbitPivot(activeCamera);
-                if (!cameraOrbitPivotInitialized)
-                {
-                    return;
-                }
-            }
-
-            isCameraFocusTransitioning = false;
-            var yaw = delta.x * cameraRotationSensitivity;
-            cameraPitchDegrees = Mathf.Clamp(cameraPitchDegrees - (delta.y * cameraRotationSensitivity), cameraMinPitch, cameraMaxPitch);
-            var euler = activeCamera.transform.rotation.eulerAngles;
-            activeCamera.transform.rotation = Quaternion.Euler(cameraPitchDegrees, euler.y + yaw, 0f);
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
-        }
-
-        private void TickCameraFocusTransition(Camera activeCamera)
-        {
-            if (!isCameraFocusTransitioning)
-            {
-                return;
-            }
-
-            cameraOrbitGroundPivot = Vector3.MoveTowards(
-                cameraOrbitGroundPivot,
-                cameraFocusTransitionTarget,
-                CameraFocusTransitionSpeed * Time.deltaTime);
-
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
-
-            if (Vector3.Distance(cameraOrbitGroundPivot, cameraFocusTransitionTarget) < 0.001f)
-            {
-                isCameraFocusTransitioning = false;
-            }
-        }
-
-        private void InitializeCameraPitch()
-        {
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
-            InitializeCameraPitch(activeCamera);
-        }
-
-        private void InitializeCameraPitch(Camera activeCamera)
-        {
-            if (cameraPitchInitialized || activeCamera == null)
-            {
-                return;
-            }
-
-            cameraPitchDegrees = Mathf.Clamp(NormalizeSignedAngle(activeCamera.transform.eulerAngles.x), cameraMinPitch, cameraMaxPitch);
-            cameraPitchInitialized = true;
-            InitializeCameraOrbitPivot(activeCamera);
-        }
-
-        private void InitializeCameraOrbitPivot(Camera activeCamera)
-        {
-            if (cameraOrbitPivotInitialized || activeCamera == null)
-            {
-                return;
-            }
-
-            if (!TryGetGroundPointFromScreenCenter(activeCamera, out cameraOrbitGroundPivot))
-            {
-                var planarForward = GetPlanarForward(activeCamera.transform.forward);
-                cameraOrbitGroundPivot = activeCamera.transform.position + (planarForward * CameraOrbitFallbackForwardDistance);
-                cameraOrbitGroundPivot.y = 0f;
-            }
-
-            cameraOrbitDistance = Vector3.Distance(activeCamera.transform.position, cameraOrbitGroundPivot);
-            if (cameraOrbitDistance < CameraOrbitMinimumDistance)
-            {
-                cameraOrbitDistance = CameraOrbitMinimumDistance;
-            }
-
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
-            cameraOrbitPivotInitialized = true;
-        }
-
-        private void TranslateCameraOrbit(Camera activeCamera, Vector3 planarDelta)
-        {
-            if (!cameraOrbitPivotInitialized)
-            {
-                InitializeCameraOrbitPivot(activeCamera);
-                if (!cameraOrbitPivotInitialized)
-                {
-                    return;
-                }
-            }
-
-            cameraOrbitGroundPivot += planarDelta;
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
-        }
-
-        private bool TryGetGroundPointFromScreenCenter(Camera activeCamera, out Vector3 groundPoint)
-        {
-            var screenCenter = new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
-            var centerRay = activeCamera.ScreenPointToRay(screenCenter);
-            if (boardPlane.Raycast(centerRay, out var enter))
-            {
-                groundPoint = centerRay.GetPoint(enter);
-                groundPoint.y = 0f;
-                return true;
-            }
-
-            groundPoint = Vector3.zero;
-            return false;
-        }
-
         private bool TryConsumeUiClick()
         {
             if (!IsAnyMouseButtonDown())
@@ -1834,33 +1758,6 @@ namespace IronKingdoms.Combat
         {
             var mousePosition = Input.mousePosition;
             return new Vector2(mousePosition.x, Screen.height - mousePosition.y);
-        }
-
-        private static float NormalizeSignedAngle(float angle)
-        {
-            angle %= 360f;
-            if (angle > 180f)
-            {
-                angle -= 360f;
-            }
-
-            return angle;
-        }
-
-        private static Vector3 GetPlanarForward(Vector3 forward)
-        {
-            var planarForward = Vector3.ProjectOnPlane(forward, Vector3.up);
-            if (planarForward.sqrMagnitude < MinimumVectorSqrMagnitude)
-            {
-                return Vector3.forward;
-            }
-
-            return planarForward.normalized;
-        }
-
-        private static Vector3 GetPlanarRight(Vector3 planarForward)
-        {
-            return Vector3.Cross(Vector3.up, planarForward).normalized;
         }
 
         private static bool IsAnyMouseButtonDown()
@@ -1960,6 +1857,12 @@ namespace IronKingdoms.Combat
             public bool HasActedThisTurn { get; set; }
             public Vector3? MoveTarget { get; set; }
             public bool IsAlive => Health > 0;
+
+            /// <summary>World-space waypoints for the current A* path (null when not path-following).</summary>
+            public List<Vector3> PathWaypoints { get; set; }
+
+            /// <summary>Index of the waypoint the unit is currently moving toward.</summary>
+            public int PathWaypointIndex { get; set; }
         }
     }
 }
