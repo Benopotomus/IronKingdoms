@@ -733,6 +733,12 @@ namespace IronKingdoms.Combat
                     break;
             }
 
+            if (movementBudget > selectedUnit.RemainingMovementThisTurn)
+            {
+                selectedUnit.RemainingMovementThisTurn = movementBudget;
+            }
+
+            selectedUnit.IsAimingThisTurn = false;
             IssueMoveOrder(selectedUnit, destination, movementBudget);
             if (forfeitCombatAction)
             {
@@ -1030,7 +1036,7 @@ namespace IronKingdoms.Combat
 
         private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination, float? movementBudgetOverride = null)
         {
-            if (unit == null || !unit.IsAlive || unit.Pawn == null || unit.HasActedThisTurn)
+            if (unit == null || !unit.IsAlive || unit.Pawn == null || unit.HasActedThisTurn || unit.IsAimingThisTurn)
             {
                 return;
             }
@@ -1044,13 +1050,6 @@ namespace IronKingdoms.Combat
                 unit.PathWaypoints = null;
                 return;
             }
-
-            if (remaining > unit.RemainingMovementThisTurn)
-            {
-                unit.RemainingMovementThisTurn = remaining;
-            }
-
-            unit.IsAimingThisTurn = false;
 
             var current = unit.Pawn.transform.position;
 
@@ -1132,6 +1131,7 @@ namespace IronKingdoms.Combat
             activeTurnSide = TurnSide.Player;
             ResetMovementForTurn(playerRuntimeUnits);
             selectedUnit = FindFirstAlive(playerRuntimeUnits);
+            selectedMovementOption = MovementStepOption.Advance;
             SetCurrentMode(UnitActionMode.None);
         }
 
@@ -1189,7 +1189,11 @@ namespace IronKingdoms.Combat
             var atkDie1 = Random.Range(1, 7);
             var atkDie2 = Random.Range(1, 7);
             var attackRoll = atkDie1 + atkDie2 + attackValue + attackModifier;
-            var modifierText = attackModifier != 0 ? $" +{attackModifier}" : string.Empty;
+            var modifierText = attackModifier > 0
+                ? $" +{attackModifier}"
+                : attackModifier < 0
+                    ? $" {attackModifier}"
+                    : string.Empty;
             if (!DoesAttackRollHit(atkDie1, atkDie2, attackRoll, defender.Definition.Stats.defense))
             {
                 SpawnFloatingText(defender.Pawn.transform.position, "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
@@ -1404,6 +1408,7 @@ namespace IronKingdoms.Combat
         {
             selectedUnit = unit != null && unit.IsAlive ? unit : null;
             selectedAttackWeaponIndex = 0;
+            selectedMovementOption = MovementStepOption.Advance;
             SetCurrentMode(UnitActionMode.None);
         }
 
