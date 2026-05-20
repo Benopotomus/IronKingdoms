@@ -1050,7 +1050,7 @@ namespace IronKingdoms.Combat
             var selectedWeapon = GetSelectedAttackWeapon(selectedUnit);
             GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
             GUILayout.Label($"Type: {selectedWeapon.attackType}  |  Range: {selectedWeapon.Range:0.0}\"");
-            GUILayout.Label($"Weapon POW: {selectedWeapon.Power}");
+            GUILayout.Label($"Weapon Power: {selectedWeapon.Power}");
 
             GUILayout.EndArea();
             DrawActionBar();
@@ -1071,7 +1071,7 @@ namespace IronKingdoms.Combat
             GUILayout.BeginArea(new Rect(areaX, areaY, areaWidth, areaHeight), "Actions", GUI.skin.window);
 
             GUILayout.Label("Left Click / 1-9: Select unit | Enter: End turn | Esc/Right Click: Cancel");
-            GUILayout.Label("Activation is staged: move first, then combat action. After attacking, movement is locked.");
+            GUILayout.Label("Activation is staged: move first, then combat action. After taking a combat action, movement is locked.");
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
 
