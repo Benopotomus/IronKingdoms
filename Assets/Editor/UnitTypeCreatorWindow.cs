@@ -106,7 +106,7 @@ namespace IronKingdoms.Editor
             weaponsProperty.arraySize = Mathf.Max(1, weapons.Count);
             for (var i = 0; i < weaponsProperty.arraySize; i++)
             {
-                var source = i < weapons.Count ? weapons[i] : weapons[0];
+                var source = weapons[i];
                 var weaponProperty = weaponsProperty.GetArrayElementAtIndex(i);
                 weaponProperty.FindPropertyRelative("displayName").stringValue = source.displayName;
                 weaponProperty.FindPropertyRelative("attackType").enumValueIndex = (int)source.attackType;

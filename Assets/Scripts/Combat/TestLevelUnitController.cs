@@ -5,6 +5,10 @@ namespace IronKingdoms.Combat
 {
     public class TestLevelUnitController : MonoBehaviour
     {
+        private const float AiInRangeTolerance = 0.95f;
+        private const float AiDesiredStopFactor = 0.85f;
+        private const float AiMinimumStopDistance = 0.2f;
+
         [SerializeField] private List<UnitTypeDefinition> playerUnits = new();
         [SerializeField] private List<UnitTypeDefinition> enemyUnits = new();
         [SerializeField] private Transform playerSpawnAnchor;
@@ -206,14 +210,14 @@ namespace IronKingdoms.Combat
 
                 var targetPosition = target.Pawn.transform.position;
                 var distance = Vector3.Distance(enemy.Pawn.transform.position, targetPosition);
-                if (distance <= enemy.Weapon.Range * 0.95f)
+                if (distance <= enemy.Weapon.Range * AiInRangeTolerance)
                 {
                     enemy.MoveTarget = null;
                 }
                 else
                 {
                     var direction = (targetPosition - enemy.Pawn.transform.position).normalized;
-                    var stopDistance = Mathf.Max(0.2f, enemy.Weapon.Range * 0.85f);
+                    var stopDistance = Mathf.Max(AiMinimumStopDistance, enemy.Weapon.Range * AiDesiredStopFactor);
                     enemy.MoveTarget = targetPosition - direction * stopDistance;
                 }
             }
