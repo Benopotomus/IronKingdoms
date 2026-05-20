@@ -16,7 +16,6 @@ namespace IronKingdoms.Combat
         private const float PawnYPosition = 1f;
         private const float GroundYPosition = 0f;
         private const float MinimumVectorSqrMagnitude = 0.0001f;
-        private const float InputAxisDeadzone = 0.001f;
         private const int LeftMouseButton = 0;
         private const int RightMouseButton = 1;
         private const int MiddleMouseButton = 2;
@@ -31,17 +30,11 @@ namespace IronKingdoms.Combat
         private const float ActionBarWidth = 560f;
         private const float ActionBarHeight = 96f;
         private const float ActionBarBottomMargin = 12f;
-        private const float CameraControlsPanelWidth = 460f;
-        private const float CameraControlsPanelHeight = 54f;
-        private const float CameraControlsPanelTopMargin = 12f;
         private const float HoverPanelWidth = 280f;
         private const float HoverPanelHeight = 86f;
         private const float HoverPanelScreenPadding = 4f;
         private const float HoverPanelMouseOffset = 14f;
-        private const float CameraOrbitFallbackForwardDistance = 1f;
-        private const float CameraOrbitMinimumDistance = 0.1f;
         private const float DoubleClickIntervalSeconds = 0.3f;
-        private const float CameraFocusTransitionSpeed = 12f;
         private const float DefaultTargetRingRadius = 0.6f;
         private const float TargetRingScaleFactor = 0.6f;
         private const int WeaponRangeRingSegments = 64;
@@ -68,13 +61,8 @@ namespace IronKingdoms.Combat
         [SerializeField] private Transform enemySpawnAnchor;
         [SerializeField, Min(0.5f)] private float spawnSpacing = 2f;
         [SerializeField, Min(0.1f)] private float aiThinkInterval = 0.5f;
-        [SerializeField] private Camera selectionCamera;
+        [SerializeField] private CombatCameraManager cameraManager;
         [SerializeField] private bool autoSpawnOnStart = true;
-        [SerializeField, Min(1f)] private float cameraKeyboardPanSpeed = 10f;
-        [SerializeField, Min(0.001f)] private float cameraDragPanSensitivity = 0.02f;
-        [SerializeField, Min(0.01f)] private float cameraRotationSensitivity = 0.2f;
-        [SerializeField, Range(5f, 89f)] private float cameraMinPitch = 25f;
-        [SerializeField, Range(5f, 89f)] private float cameraMaxPitch = 75f;
 
         private readonly List<RuntimeUnit> playerRuntimeUnits = new();
         private readonly List<RuntimeUnit> enemyRuntimeUnits = new();
@@ -108,17 +96,8 @@ namespace IronKingdoms.Combat
         private GUIStyle floatingDamageShadowStyle;
         private GameObject destinationMarkerObject;
         private Material visualizerMaterial;
-        private bool isCameraDragging;
-        private Vector3 lastCameraDragMousePosition;
-        private bool cameraPitchInitialized;
-        private float cameraPitchDegrees;
-        private bool cameraOrbitPivotInitialized;
-        private Vector3 cameraOrbitGroundPivot;
-        private float cameraOrbitDistance;
         private RuntimeUnit lastClickedPlayerUnit;
         private float lastClickedPlayerUnitClickTime = float.NegativeInfinity;
-        private bool isCameraFocusTransitioning;
-        private Vector3 cameraFocusTransitionTarget;
         private int uiCancelFrame = -1;
 
         private void Start()
@@ -132,7 +111,7 @@ namespace IronKingdoms.Combat
 
         private void Update()
         {
-            HandleCameraInput();
+            cameraManager?.Tick(IsMouseOverGameplayUi());
             if (activeTurnSide == TurnSide.Player)
             {
                 HandlePlayerInput();
@@ -221,7 +200,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 movementPathLine.enabled = false;
@@ -551,7 +530,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -605,7 +584,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -663,7 +642,7 @@ namespace IronKingdoms.Combat
 
             var attackWeapon = GetSelectedAttackWeapon(selectedUnit);
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -1104,7 +1083,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -1180,32 +1159,9 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
-            if (activeCamera == null)
-            {
-                return;
-            }
-
-            if (!cameraPitchInitialized)
-            {
-                InitializeCameraPitch(activeCamera);
-            }
-
-            if (!cameraOrbitPivotInitialized)
-            {
-                InitializeCameraOrbitPivot(activeCamera);
-            }
-
             var focusPoint = unit.Pawn.transform.position;
             focusPoint.y = GroundYPosition;
-            if (cameraOrbitDistance < CameraOrbitMinimumDistance)
-            {
-                cameraOrbitDistance = Mathf.Max(CameraOrbitMinimumDistance, Vector3.Distance(activeCamera.transform.position, focusPoint));
-            }
-
-            cameraOrbitPivotInitialized = true;
-            cameraFocusTransitionTarget = focusPoint;
-            isCameraFocusTransitioning = true;
+            cameraManager?.FocusOnPoint(focusPoint);
         }
 
         private WeaponProfile GetSelectedAttackWeapon(RuntimeUnit unit)
@@ -1280,7 +1236,7 @@ namespace IronKingdoms.Combat
         private void UpdateHoveredEnemy()
         {
             hoveredEnemyUnit = null;
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
                 return;
@@ -1369,7 +1325,7 @@ namespace IronKingdoms.Combat
 
         private void OnGUI()
         {
-            DrawCameraControlsPanel();
+            cameraManager?.DrawGui();
             DrawFloatingDamageNumbers();
 
             GUILayout.BeginArea(new Rect(RosterAreaX, RosterAreaY, RosterAreaWidth, RosterAreaHeight), "Player-Controlled Units", GUI.skin.window);
@@ -1444,15 +1400,6 @@ namespace IronKingdoms.Combat
             GUILayout.EndArea();
             DrawActionBar();
             DrawHoveredEnemyHealth();
-        }
-
-        private void DrawCameraControlsPanel()
-        {
-            var areaX = (Screen.width - CameraControlsPanelWidth) * 0.5f;
-            var areaY = CameraControlsPanelTopMargin;
-            GUILayout.BeginArea(new Rect(areaX, areaY, CameraControlsPanelWidth, CameraControlsPanelHeight), "Camera Controls", GUI.skin.window);
-            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan");
-            GUILayout.EndArea();
         }
 
         private void DrawActionBar()
@@ -1537,201 +1484,6 @@ namespace IronKingdoms.Combat
             return new Rect(SelectedUnitPanelOffsetX, areaY, SelectedUnitPanelWidth, SelectedUnitPanelHeight);
         }
 
-        private void HandleCameraInput()
-        {
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
-            if (activeCamera == null)
-            {
-                return;
-            }
-
-            if (!cameraPitchInitialized)
-            {
-                InitializeCameraPitch(activeCamera);
-                if (!cameraPitchInitialized)
-                {
-                    return;
-                }
-            }
-            HandleKeyboardCameraPan(activeCamera);
-
-            if (Input.GetMouseButtonDown(MiddleMouseButton))
-            {
-                isCameraDragging = !IsMouseOverGameplayUi();
-                lastCameraDragMousePosition = Input.mousePosition;
-            }
-
-            if (Input.GetMouseButtonUp(MiddleMouseButton))
-            {
-                isCameraDragging = false;
-            }
-
-            TickCameraFocusTransition(activeCamera);
-
-            if (!isCameraDragging || !Input.GetMouseButton(MiddleMouseButton))
-            {
-                return;
-            }
-
-            var mousePosition = Input.mousePosition;
-            var delta = mousePosition - lastCameraDragMousePosition;
-            lastCameraDragMousePosition = mousePosition;
-
-            if (delta.sqrMagnitude < MinimumVectorSqrMagnitude)
-            {
-                return;
-            }
-
-            if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
-            {
-                DragPanCamera(activeCamera, delta);
-            }
-            else
-            {
-                RotateCamera(activeCamera, delta);
-            }
-        }
-
-        private void HandleKeyboardCameraPan(Camera activeCamera)
-        {
-            var horizontal = Input.GetAxisRaw("Horizontal");
-            var vertical = Input.GetAxisRaw("Vertical");
-            if (Mathf.Abs(horizontal) <= InputAxisDeadzone && Mathf.Abs(vertical) <= InputAxisDeadzone)
-            {
-                return;
-            }
-
-            isCameraFocusTransitioning = false;
-            var forward = GetPlanarForward(activeCamera.transform.forward);
-            var right = GetPlanarRight(forward);
-            var delta = (right * horizontal + forward * vertical) * (cameraKeyboardPanSpeed * Time.deltaTime);
-            TranslateCameraOrbit(activeCamera, delta);
-        }
-
-        private void DragPanCamera(Camera activeCamera, Vector3 delta)
-        {
-            isCameraFocusTransitioning = false;
-            var forward = GetPlanarForward(activeCamera.transform.forward);
-            var right = GetPlanarRight(forward);
-            var pan = (-right * delta.x - forward * delta.y) * cameraDragPanSensitivity;
-            TranslateCameraOrbit(activeCamera, pan);
-        }
-
-        private void RotateCamera(Camera activeCamera, Vector3 delta)
-        {
-            if (!cameraOrbitPivotInitialized)
-            {
-                InitializeCameraOrbitPivot(activeCamera);
-                if (!cameraOrbitPivotInitialized)
-                {
-                    return;
-                }
-            }
-
-            isCameraFocusTransitioning = false;
-            var yaw = delta.x * cameraRotationSensitivity;
-            cameraPitchDegrees = Mathf.Clamp(cameraPitchDegrees - (delta.y * cameraRotationSensitivity), cameraMinPitch, cameraMaxPitch);
-            var euler = activeCamera.transform.rotation.eulerAngles;
-            activeCamera.transform.rotation = Quaternion.Euler(cameraPitchDegrees, euler.y + yaw, 0f);
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
-        }
-
-        private void TickCameraFocusTransition(Camera activeCamera)
-        {
-            if (!isCameraFocusTransitioning)
-            {
-                return;
-            }
-
-            cameraOrbitGroundPivot = Vector3.MoveTowards(
-                cameraOrbitGroundPivot,
-                cameraFocusTransitionTarget,
-                CameraFocusTransitionSpeed * Time.deltaTime);
-
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
-
-            if (Vector3.Distance(cameraOrbitGroundPivot, cameraFocusTransitionTarget) < 0.001f)
-            {
-                isCameraFocusTransitioning = false;
-            }
-        }
-
-        private void InitializeCameraPitch()
-        {
-            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
-            InitializeCameraPitch(activeCamera);
-        }
-
-        private void InitializeCameraPitch(Camera activeCamera)
-        {
-            if (cameraPitchInitialized || activeCamera == null)
-            {
-                return;
-            }
-
-            cameraPitchDegrees = Mathf.Clamp(NormalizeSignedAngle(activeCamera.transform.eulerAngles.x), cameraMinPitch, cameraMaxPitch);
-            cameraPitchInitialized = true;
-            InitializeCameraOrbitPivot(activeCamera);
-        }
-
-        private void InitializeCameraOrbitPivot(Camera activeCamera)
-        {
-            if (cameraOrbitPivotInitialized || activeCamera == null)
-            {
-                return;
-            }
-
-            if (!TryGetGroundPointFromScreenCenter(activeCamera, out cameraOrbitGroundPivot))
-            {
-                var planarForward = GetPlanarForward(activeCamera.transform.forward);
-                cameraOrbitGroundPivot = activeCamera.transform.position + (planarForward * CameraOrbitFallbackForwardDistance);
-                cameraOrbitGroundPivot.y = 0f;
-            }
-
-            cameraOrbitDistance = Vector3.Distance(activeCamera.transform.position, cameraOrbitGroundPivot);
-            if (cameraOrbitDistance < CameraOrbitMinimumDistance)
-            {
-                cameraOrbitDistance = CameraOrbitMinimumDistance;
-            }
-
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
-            cameraOrbitPivotInitialized = true;
-        }
-
-        private void TranslateCameraOrbit(Camera activeCamera, Vector3 planarDelta)
-        {
-            if (!cameraOrbitPivotInitialized)
-            {
-                InitializeCameraOrbitPivot(activeCamera);
-                if (!cameraOrbitPivotInitialized)
-                {
-                    return;
-                }
-            }
-
-            cameraOrbitGroundPivot += planarDelta;
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
-        }
-
-        private bool TryGetGroundPointFromScreenCenter(Camera activeCamera, out Vector3 groundPoint)
-        {
-            var screenCenter = new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f);
-            var centerRay = activeCamera.ScreenPointToRay(screenCenter);
-            if (boardPlane.Raycast(centerRay, out var enter))
-            {
-                groundPoint = centerRay.GetPoint(enter);
-                groundPoint.y = 0f;
-                return true;
-            }
-
-            groundPoint = Vector3.zero;
-            return false;
-        }
-
         private bool TryConsumeUiClick()
         {
             if (!IsAnyMouseButtonDown())
@@ -1806,33 +1558,6 @@ namespace IronKingdoms.Combat
         {
             var mousePosition = Input.mousePosition;
             return new Vector2(mousePosition.x, Screen.height - mousePosition.y);
-        }
-
-        private static float NormalizeSignedAngle(float angle)
-        {
-            angle %= 360f;
-            if (angle > 180f)
-            {
-                angle -= 360f;
-            }
-
-            return angle;
-        }
-
-        private static Vector3 GetPlanarForward(Vector3 forward)
-        {
-            var planarForward = Vector3.ProjectOnPlane(forward, Vector3.up);
-            if (planarForward.sqrMagnitude < MinimumVectorSqrMagnitude)
-            {
-                return Vector3.forward;
-            }
-
-            return planarForward.normalized;
-        }
-
-        private static Vector3 GetPlanarRight(Vector3 planarForward)
-        {
-            return Vector3.Cross(Vector3.up, planarForward).normalized;
         }
 
         private static bool IsAnyMouseButtonDown()
