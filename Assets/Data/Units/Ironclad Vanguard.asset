@@ -16,14 +16,13 @@ MonoBehaviour:
   role: 1
   stats:
     speed: 4.5
+    modelSize: 2
     meleeAttack: 8
     rangedAttack: 3
     defense: 11
     armor: 18
     health: 20
     startingResource: 2
-    weaponPower: 9
-    weaponRange: 1.5
     weapons:
     - displayName: Siege Hammer
       attackType: 0

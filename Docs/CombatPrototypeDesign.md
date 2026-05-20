@@ -37,13 +37,14 @@ This implementation intentionally stays at the "starter combat harness" level ra
 Each `UnitTypeDefinition` captures:
 - role,
 - movement speed,
+- model size (Mk4 base diameter and volume height),
 - melee attack,
 - ranged attack,
 - defense,
 - armor,
 - health,
 - starting resource,
-- weapon profiles (name, attack type, power, range), plus legacy primary power/range compatibility values.
+- weapon profiles (name, attack type, power, range).
 
 ## Test scene layout
 `Assets/Scenes/TestCombatScene.unity` contains:

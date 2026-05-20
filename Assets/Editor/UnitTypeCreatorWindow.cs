@@ -19,6 +19,7 @@ namespace IronKingdoms.Editor
         private string unitName = "New Unit";
         private UnitRole role = UnitRole.Infantry;
         private float speed = 5f;
+        private ModelSize modelSize = ModelSize.Base30mm;
         private int meleeAttack = 5;
         private int rangedAttack = 4;
         private int defense = 12;
@@ -44,6 +45,7 @@ namespace IronKingdoms.Editor
             unitName = EditorGUILayout.TextField("Display Name", unitName);
             role = (UnitRole)EditorGUILayout.EnumPopup("Role", role);
             speed = EditorGUILayout.FloatField("Speed", speed);
+            modelSize = (ModelSize)EditorGUILayout.EnumPopup("Model Size", modelSize);
             meleeAttack = EditorGUILayout.IntField("Melee Attack", meleeAttack);
             rangedAttack = EditorGUILayout.IntField("Ranged Attack", rangedAttack);
             defense = EditorGUILayout.IntField("Defense", defense);
@@ -94,14 +96,13 @@ namespace IronKingdoms.Editor
 
             var statsProperty = serializedObject.FindProperty("stats");
             statsProperty.FindPropertyRelative("speed").floatValue = speed;
+            statsProperty.FindPropertyRelative("modelSize").enumValueIndex = (int)modelSize;
             statsProperty.FindPropertyRelative("meleeAttack").intValue = meleeAttack;
             statsProperty.FindPropertyRelative("rangedAttack").intValue = rangedAttack;
             statsProperty.FindPropertyRelative("defense").intValue = defense;
             statsProperty.FindPropertyRelative("armor").intValue = armor;
             statsProperty.FindPropertyRelative("health").intValue = health;
             statsProperty.FindPropertyRelative("startingResource").intValue = startingResource;
-            var weaponPowerProperty = statsProperty.FindPropertyRelative("weaponPower");
-            var weaponRangeProperty = statsProperty.FindPropertyRelative("weaponRange");
             var weaponsProperty = statsProperty.FindPropertyRelative("weapons");
             weaponsProperty.arraySize = Mathf.Max(1, weapons.Count);
             for (var i = 0; i < weaponsProperty.arraySize; i++)
@@ -114,9 +115,6 @@ namespace IronKingdoms.Editor
                 weaponProperty.FindPropertyRelative("range").floatValue = source.range;
             }
 
-            var primaryWeapon = weapons[0];
-            weaponPowerProperty.intValue = primaryWeapon.power;
-            weaponRangeProperty.floatValue = primaryWeapon.range;
             serializedObject.FindProperty("designNotes").stringValue = designNotes;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
