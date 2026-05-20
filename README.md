@@ -16,6 +16,6 @@ Open `/home/runner/work/IronKingdoms/IronKingdoms` in Unity 6000.3.10f1, then lo
 - let simple enemy AI drive enemy units, and
 - view a live roster panel plus a lower-left selected-unit details panel.
 
-Player activation is staged in the current prototype: move first, then take a combat action. Once a unit has taken its combat action, it cannot use movement for the rest of that activation.
+Player activation is staged in the current prototype. Units move first, then take a combat action. After taking a combat action, a unit cannot use movement for the rest of that activation.
 
 Design notes live in `Docs/CombatPrototypeDesign.md`.
