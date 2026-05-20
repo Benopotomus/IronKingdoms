@@ -1083,24 +1083,31 @@ namespace IronKingdoms.Combat
             {
                 GUILayout.Space(6f);
                 GUILayout.Label("Select weapon, then left-click an enemy in range:");
-                GUILayout.BeginHorizontal();
-                for (var i = 0; i < selectedUnit.Weapons.Length; i++)
+                if (selectedUnit.Weapons == null || selectedUnit.Weapons.Length == 0)
                 {
-                    var weapon = selectedUnit.Weapons[i];
-                    var label = $"{weapon.DisplayName} ({weapon.Range:0.0}\")";
-                    if (i == selectedAttackWeaponIndex)
-                    {
-                        label = $"[ {label} ]";
-                    }
-
-                    if (GUILayout.Button(label))
-                    {
-                        selectedAttackWeaponIndex = i;
-                        RefreshAttackRangeRing();
-                    }
+                    GUILayout.Label("No weapons available.");
                 }
+                else
+                {
+                    GUILayout.BeginHorizontal();
+                    for (var i = 0; i < selectedUnit.Weapons.Length; i++)
+                    {
+                        var weapon = selectedUnit.Weapons[i];
+                        var label = $"{weapon.DisplayName} ({weapon.Range:0.0}\")";
+                        if (i == selectedAttackWeaponIndex)
+                        {
+                            label = $"[ {label} ]";
+                        }
 
-                GUILayout.EndHorizontal();
+                        if (GUILayout.Button(label))
+                        {
+                            selectedAttackWeaponIndex = i;
+                            RefreshAttackRangeRing();
+                        }
+                    }
+
+                    GUILayout.EndHorizontal();
+                }
             }
             else if (currentPlayerMode == UnitActionMode.Move)
             {
