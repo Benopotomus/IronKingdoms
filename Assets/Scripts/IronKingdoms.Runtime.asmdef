@@ -1,6 +1,7 @@
 {
   "name": "IronKingdoms.Runtime",
   "references": [
-    "GUID:efa45043feb7e4147a305b73b5cea642"
+    "GUID:efa45043feb7e4147a305b73b5cea642",
+    "GUID:f4059aaf6c60a4a58a177a2609feb769"
   ]
 }
