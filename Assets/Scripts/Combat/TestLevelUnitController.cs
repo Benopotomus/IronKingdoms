@@ -729,14 +729,15 @@ namespace IronKingdoms.Combat
                     forfeitCombatAction = true;
                     break;
                 case MovementStepOption.Charge:
-                    movementBudget += ChargeMovementBonus;
+                    if (GetSelectedAttackWeapon(selectedUnit).attackType == WeaponAttackType.Melee)
+                    {
+                        movementBudget += ChargeMovementBonus;
+                    }
+
                     break;
             }
 
-            if (movementBudget > selectedUnit.RemainingMovementThisTurn)
-            {
-                selectedUnit.RemainingMovementThisTurn = movementBudget;
-            }
+            selectedUnit.RemainingMovementThisTurn = movementBudget;
 
             selectedUnit.IsAimingThisTurn = false;
             IssueMoveOrder(selectedUnit, destination, movementBudget);
@@ -1036,7 +1037,7 @@ namespace IronKingdoms.Combat
 
         private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination, float? movementBudgetOverride = null)
         {
-            if (unit == null || !unit.IsAlive || unit.Pawn == null || unit.HasActedThisTurn || unit.IsAimingThisTurn)
+            if (unit == null || !unit.IsAlive || unit.Pawn == null || unit.HasActedThisTurn)
             {
                 return;
             }
@@ -1184,16 +1185,12 @@ namespace IronKingdoms.Combat
         {
             var isMeleeAttack = weapon.attackType == WeaponAttackType.Melee;
             var attackValue = GetAttackStatForWeapon(attacker, weapon);
-            var attackModifier = GetToHitModifier(attacker, weapon);
+            var attackModifier = GetToHitModifier(attacker);
             var attackStatLabel = isMeleeAttack ? "MAT" : "RAT";
             var atkDie1 = Random.Range(1, 7);
             var atkDie2 = Random.Range(1, 7);
             var attackRoll = atkDie1 + atkDie2 + attackValue + attackModifier;
-            var modifierText = attackModifier > 0
-                ? $" +{attackModifier}"
-                : attackModifier < 0
-                    ? $" {attackModifier}"
-                    : string.Empty;
+            var modifierText = FormatAttackModifierText(attackModifier);
             if (!DoesAttackRollHit(atkDie1, atkDie2, attackRoll, defender.Definition.Stats.defense))
             {
                 SpawnFloatingText(defender.Pawn.transform.position, "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
@@ -1305,7 +1302,7 @@ namespace IronKingdoms.Combat
         private static float CalculateHitChancePercent(RuntimeUnit attacker, RuntimeUnit defender, WeaponProfile weapon)
         {
             var attackStat = GetAttackStatForWeapon(attacker, weapon);
-            var attackModifier = GetToHitModifier(attacker, weapon);
+            var attackModifier = GetToHitModifier(attacker);
             var hits = 0;
             for (var d1 = 1; d1 <= 6; d1++)
             {
@@ -1329,14 +1326,29 @@ namespace IronKingdoms.Combat
                 : attacker.Definition.Stats.rangedAttack;
         }
 
-        private static int GetToHitModifier(RuntimeUnit attacker, WeaponProfile weapon)
+        private static int GetToHitModifier(RuntimeUnit attacker)
         {
-            if (attacker == null || weapon == null)
+            if (attacker == null)
             {
                 return 0;
             }
 
             return attacker.IsAimingThisTurn ? AimToHitBonus : 0;
+        }
+
+        private static string FormatAttackModifierText(int attackModifier)
+        {
+            if (attackModifier > 0)
+            {
+                return $" +{attackModifier}";
+            }
+
+            if (attackModifier < 0)
+            {
+                return $" {attackModifier}";
+            }
+
+            return string.Empty;
         }
 
         private static bool DoesAttackRollHit(int die1, int die2, int totalAttackRoll, int targetDefense)
@@ -1774,7 +1786,7 @@ namespace IronKingdoms.Combat
                 }
 
                 GUI.enabled = canMove;
-                if (GUILayout.Button($"Aim (+{AimToHitBonus} Hit)"))
+                if (GUILayout.Button($"Aim (+{AimToHitBonus} to hit)"))
                 {
                     if (!WasUiCancelTriggeredThisFrame())
                     {
