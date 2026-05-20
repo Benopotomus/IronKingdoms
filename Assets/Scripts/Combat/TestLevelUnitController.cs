@@ -1079,8 +1079,8 @@ namespace IronKingdoms.Combat
 
         private static float CalculateHitChancePercent(RuntimeUnit attacker, RuntimeUnit defender, WeaponProfile weapon)
         {
-            var isMelee = weapon.attackType == WeaponAttackType.Melee;
-            var attackStat = isMelee ? attacker.Definition.Stats.meleeAttack : attacker.Definition.Stats.rangedAttack;
+            var isMeleeWeapon = weapon.attackType == WeaponAttackType.Melee;
+            var attackStat = isMeleeWeapon ? attacker.Definition.Stats.meleeAttack : attacker.Definition.Stats.rangedAttack;
             var needed = defender.Definition.Stats.defense - attackStat;
             var hits = 0;
             for (var d1 = 1; d1 <= 6; d1++)
@@ -1125,7 +1125,7 @@ namespace IronKingdoms.Combat
             {
                 var entry = floatingDamageEntries[i];
                 var t = entry.Age / FloatingDamageLifetime;
-                var fade = 1f - (t * t);
+                var fadeAlpha = 1f - (t * t);
                 var screenPos = activeCamera.WorldToScreenPoint(entry.WorldPosition);
                 if (screenPos.z <= 0f)
                 {
@@ -1138,9 +1138,9 @@ namespace IronKingdoms.Combat
                 var labelRect = new Rect(guiX, guiY, 80f, 30f);
 
                 var textColor = entry.Color;
-                textColor.a = fade;
+                textColor.a = fadeAlpha;
                 floatingDamageStyle.normal.textColor = textColor;
-                floatingDamageShadowStyle.normal.textColor = new Color(0f, 0f, 0f, fade * 0.65f);
+                floatingDamageShadowStyle.normal.textColor = new Color(0f, 0f, 0f, fadeAlpha * 0.65f);
 
                 GUI.Label(new Rect(guiX + 1f, guiY + 1f, 80f, 30f), entry.Text, floatingDamageShadowStyle);
                 GUI.Label(labelRect, entry.Text, floatingDamageStyle);
