@@ -7,14 +7,13 @@ namespace IronKingdoms.Combat
     public class CombatStats
     {
         public float speed = 5f;
+        public ModelSize modelSize = ModelSize.Base30mm;
         public int meleeAttack = 5;
         public int rangedAttack = 4;
         public int defense = 12;
         public int armor = 14;
         public int health = 10;
         public int startingResource = 0;
-        public int weaponPower = 5;
-        public float weaponRange = 1.5f;
         public WeaponProfile[] weapons = Array.Empty<WeaponProfile>();
 
         public WeaponProfile GetPrimaryWeapon()
@@ -29,13 +28,7 @@ namespace IronKingdoms.Combat
             {
                 weapons = new[]
                 {
-                    new WeaponProfile
-                    {
-                        displayName = "Primary Weapon",
-                        power = Mathf.Max(1, weaponPower),
-                        range = Mathf.Max(0.5f, weaponRange),
-                        attackType = weaponRange <= 1.5f ? WeaponAttackType.Melee : WeaponAttackType.Ranged
-                    }
+                    WeaponProfile.CreateDefault()
                 };
                 return;
             }
