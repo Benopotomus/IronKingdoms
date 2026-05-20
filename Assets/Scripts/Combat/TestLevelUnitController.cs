@@ -1144,12 +1144,12 @@ namespace IronKingdoms.Combat
         private void ResolveAttack(RuntimeUnit attacker, RuntimeUnit defender, WeaponProfile weapon)
         {
             var isMeleeAttack = weapon.attackType == WeaponAttackType.Melee;
-            var attackValue = isMeleeAttack ? attacker.Definition.Stats.meleeAttack : attacker.Definition.Stats.rangedAttack;
+            var attackValue = GetAttackStatForWeapon(attacker, weapon);
             var attackStatLabel = isMeleeAttack ? "MAT" : "RAT";
             var atkDie1 = Random.Range(1, 7);
             var atkDie2 = Random.Range(1, 7);
             var attackRoll = atkDie1 + atkDie2 + attackValue;
-            if (attackRoll < defender.Definition.Stats.defense)
+            if (!DoesAttackRollHit(atkDie1, atkDie2, attackRoll, defender.Definition.Stats.defense))
             {
                 SpawnFloatingText(defender.Pawn.transform.position, "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
                 AddCombatLogEntry(
@@ -1257,15 +1257,14 @@ namespace IronKingdoms.Combat
 
         private static float CalculateHitChancePercent(RuntimeUnit attacker, RuntimeUnit defender, WeaponProfile weapon)
         {
-            var isMeleeWeapon = weapon.attackType == WeaponAttackType.Melee;
-            var attackStat = isMeleeWeapon ? attacker.Definition.Stats.meleeAttack : attacker.Definition.Stats.rangedAttack;
-            var needed = defender.Definition.Stats.defense - attackStat;
+            var attackStat = GetAttackStatForWeapon(attacker, weapon);
             var hits = 0;
             for (var d1 = 1; d1 <= 6; d1++)
             {
                 for (var d2 = 1; d2 <= 6; d2++)
                 {
-                    if (d1 + d2 >= needed)
+                    var attackRoll = d1 + d2 + attackStat;
+                    if (DoesAttackRollHit(d1, d2, attackRoll, defender.Definition.Stats.defense))
                     {
                         hits++;
                     }
@@ -1273,6 +1272,28 @@ namespace IronKingdoms.Combat
             }
 
             return hits / 36f * 100f;
+        }
+
+        private static int GetAttackStatForWeapon(RuntimeUnit attacker, WeaponProfile weapon)
+        {
+            return weapon.attackType == WeaponAttackType.Melee
+                ? attacker.Definition.Stats.meleeAttack
+                : attacker.Definition.Stats.rangedAttack;
+        }
+
+        private static bool DoesAttackRollHit(int die1, int die2, int totalAttackRoll, int targetDefense)
+        {
+            if (die1 == 1 && die2 == 1)
+            {
+                return false;
+            }
+
+            if (die1 == 6 && die2 == 6)
+            {
+                return true;
+            }
+
+            return totalAttackRoll >= targetDefense;
         }
 
         private void DrawFloatingDamageNumbers()
