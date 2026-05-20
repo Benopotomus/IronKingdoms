@@ -31,5 +31,5 @@ MonoBehaviour:
     - displayName: Hand Cannon
       attackType: 1
       power: 6
-      range: 8
+      range: 12
   designNotes: Mk4-style heavy bruiser with a primary melee polearm and backup ranged sidearm.
