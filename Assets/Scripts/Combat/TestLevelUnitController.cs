@@ -14,6 +14,7 @@ namespace IronKingdoms.Combat
         private const float VisualizerLineWidth = 0.06f;
         private const int AttackRingSegments = 48;
         private const float PawnYPosition = 1f;
+        private const float MinimumPlanarMagnitude = 0.0001f;
 
         private enum TurnSide
         {
@@ -36,6 +37,11 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(0.1f)] private float aiThinkInterval = 0.5f;
         [SerializeField] private Camera selectionCamera;
         [SerializeField] private bool autoSpawnOnStart = true;
+        [SerializeField, Min(1f)] private float cameraKeyboardPanSpeed = 10f;
+        [SerializeField, Min(0.001f)] private float cameraDragPanSensitivity = 0.02f;
+        [SerializeField, Min(0.01f)] private float cameraRotationSensitivity = 0.2f;
+        [SerializeField, Range(5f, 89f)] private float cameraMinPitch = 25f;
+        [SerializeField, Range(5f, 89f)] private float cameraMaxPitch = 75f;
 
         private readonly List<RuntimeUnit> playerRuntimeUnits = new();
         private readonly List<RuntimeUnit> enemyRuntimeUnits = new();
@@ -56,10 +62,16 @@ namespace IronKingdoms.Combat
         private LineRenderer attackRangeRing;
         private GameObject destinationMarkerObject;
         private Material visualizerMaterial;
+        private bool isCameraDragging;
+        private Vector3 lastCameraDragMousePosition;
+        private bool cameraPitchInitialized;
+        private float cameraPitchDegrees;
+        private int uiCancelFrame = -1;
 
         private void Start()
         {
             BuildVisualizers();
+            InitializeCameraPitch();
             if (autoSpawnOnStart)
             {
                 SpawnUnits();
@@ -68,6 +80,7 @@ namespace IronKingdoms.Combat
 
         private void Update()
         {
+            HandleCameraInput();
             if (activeTurnSide == TurnSide.Player)
             {
                 HandlePlayerInput();
@@ -367,6 +380,11 @@ namespace IronKingdoms.Combat
 
         private void HandlePlayerInput()
         {
+            if (TryConsumeUiClick())
+            {
+                return;
+            }
+
             if (Input.GetKeyDown(KeyCode.Return))
             {
                 EndPlayerTurn();
@@ -986,7 +1004,10 @@ namespace IronKingdoms.Combat
             GUILayout.Label($"Active Turn: {activeTurnSide}");
             if (activeTurnSide == TurnSide.Player && GUILayout.Button("End Turn"))
             {
-                EndPlayerTurn();
+                if (!WasUiCancelTriggeredThisFrame())
+                {
+                    EndPlayerTurn();
+                }
             }
 
             GUILayout.Space(6f);
@@ -1007,7 +1028,10 @@ namespace IronKingdoms.Combat
 
                     if (GUILayout.Button(label))
                     {
-                        SelectUnit(unit);
+                        if (!WasUiCancelTriggeredThisFrame())
+                        {
+                            SelectUnit(unit);
+                        }
                     }
                 }
             }
@@ -1063,7 +1087,7 @@ namespace IronKingdoms.Combat
             var areaY = Screen.height - areaHeight - 12f;
             GUILayout.BeginArea(new Rect(areaX, areaY, areaWidth, areaHeight), "Actions", GUI.skin.window);
 
-            GUILayout.Label("Left Click / 1-9: Select unit | Enter: End turn | Esc/Right Click: Cancel");
+            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan | Left Click / 1-9: Select | Enter: End turn | Esc/Right Click: Cancel");
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
 
@@ -1072,7 +1096,10 @@ namespace IronKingdoms.Combat
             var moveLabel = currentPlayerMode == UnitActionMode.Move ? "[ Move ]" : "Move";
             if (GUILayout.Button(moveLabel, GUILayout.Height(30f)))
             {
-                SetCurrentMode(currentPlayerMode == UnitActionMode.Move ? UnitActionMode.None : UnitActionMode.Move);
+                if (!WasUiCancelTriggeredThisFrame())
+                {
+                    SetCurrentMode(currentPlayerMode == UnitActionMode.Move ? UnitActionMode.None : UnitActionMode.Move);
+                }
             }
 
             var canAttack = !selectedUnit.HasActedThisTurn;
@@ -1080,7 +1107,10 @@ namespace IronKingdoms.Combat
             var attackLabel = currentPlayerMode == UnitActionMode.Attack ? "[ Attack ]" : "Attack";
             if (GUILayout.Button(attackLabel, GUILayout.Height(30f)))
             {
-                SetCurrentMode(currentPlayerMode == UnitActionMode.Attack ? UnitActionMode.None : UnitActionMode.Attack);
+                if (!WasUiCancelTriggeredThisFrame())
+                {
+                    SetCurrentMode(currentPlayerMode == UnitActionMode.Attack ? UnitActionMode.None : UnitActionMode.Attack);
+                }
             }
 
             GUI.enabled = true;
@@ -1108,8 +1138,11 @@ namespace IronKingdoms.Combat
 
                         if (GUILayout.Button(label))
                         {
-                            selectedAttackWeaponIndex = i;
-                            RefreshAttackRangeRing();
+                            if (!WasUiCancelTriggeredThisFrame())
+                            {
+                                selectedAttackWeaponIndex = i;
+                                RefreshAttackRangeRing();
+                            }
                         }
                     }
 
@@ -1123,6 +1156,198 @@ namespace IronKingdoms.Combat
             }
 
             GUILayout.EndArea();
+        }
+
+        private void HandleCameraInput()
+        {
+            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            if (activeCamera == null)
+            {
+                return;
+            }
+
+            InitializeCameraPitch(activeCamera);
+            HandleKeyboardCameraPan(activeCamera);
+
+            if (Input.GetMouseButtonDown(2))
+            {
+                isCameraDragging = !IsMouseOverGameplayUi();
+                lastCameraDragMousePosition = Input.mousePosition;
+            }
+
+            if (Input.GetMouseButtonUp(2))
+            {
+                isCameraDragging = false;
+            }
+
+            if (!isCameraDragging || !Input.GetMouseButton(2))
+            {
+                return;
+            }
+
+            var mousePosition = Input.mousePosition;
+            var delta = mousePosition - lastCameraDragMousePosition;
+            lastCameraDragMousePosition = mousePosition;
+
+            if (delta.sqrMagnitude <= 0f)
+            {
+                return;
+            }
+
+            if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+            {
+                DragPanCamera(activeCamera, delta);
+            }
+            else
+            {
+                RotateCamera(activeCamera, delta);
+            }
+        }
+
+        private void HandleKeyboardCameraPan(Camera activeCamera)
+        {
+            var horizontal = Input.GetAxisRaw("Horizontal");
+            var vertical = Input.GetAxisRaw("Vertical");
+            if (Mathf.Abs(horizontal) <= 0.001f && Mathf.Abs(vertical) <= 0.001f)
+            {
+                return;
+            }
+
+            var forward = GetPlanarForward(activeCamera.transform.forward);
+            var right = Vector3.Cross(Vector3.up, forward).normalized;
+            var delta = (right * horizontal + forward * vertical) * (cameraKeyboardPanSpeed * Time.deltaTime);
+            activeCamera.transform.position += delta;
+        }
+
+        private void DragPanCamera(Camera activeCamera, Vector3 delta)
+        {
+            var forward = GetPlanarForward(activeCamera.transform.forward);
+            var right = Vector3.Cross(Vector3.up, forward).normalized;
+            var pan = (-right * delta.x - forward * delta.y) * cameraDragPanSensitivity;
+            activeCamera.transform.position += pan;
+        }
+
+        private void RotateCamera(Camera activeCamera, Vector3 delta)
+        {
+            var yaw = delta.x * cameraRotationSensitivity;
+            cameraPitchDegrees = Mathf.Clamp(cameraPitchDegrees - (delta.y * cameraRotationSensitivity), cameraMinPitch, cameraMaxPitch);
+            var euler = activeCamera.transform.rotation.eulerAngles;
+            activeCamera.transform.rotation = Quaternion.Euler(cameraPitchDegrees, euler.y + yaw, 0f);
+        }
+
+        private void InitializeCameraPitch()
+        {
+            var activeCamera = selectionCamera != null ? selectionCamera : Camera.main;
+            InitializeCameraPitch(activeCamera);
+        }
+
+        private void InitializeCameraPitch(Camera activeCamera)
+        {
+            if (cameraPitchInitialized || activeCamera == null)
+            {
+                return;
+            }
+
+            cameraPitchDegrees = Mathf.Clamp(NormalizeSignedAngle(activeCamera.transform.eulerAngles.x), cameraMinPitch, cameraMaxPitch);
+            cameraPitchInitialized = true;
+        }
+
+        private bool TryConsumeUiClick()
+        {
+            if (!Input.GetMouseButtonDown(0) && !Input.GetMouseButtonDown(1) && !Input.GetMouseButtonDown(2))
+            {
+                return false;
+            }
+
+            if (!IsMouseOverGameplayUi())
+            {
+                return false;
+            }
+
+            if (currentPlayerMode != UnitActionMode.None)
+            {
+                SetCurrentMode(UnitActionMode.None);
+                uiCancelFrame = Time.frameCount;
+            }
+
+            return true;
+        }
+
+        private bool WasUiCancelTriggeredThisFrame()
+        {
+            return uiCancelFrame == Time.frameCount;
+        }
+
+        private bool IsMouseOverGameplayUi()
+        {
+            var mouseGuiPosition = GetMouseGuiPosition();
+            if (new Rect(12f, 12f, 320f, 300f).Contains(mouseGuiPosition))
+            {
+                return true;
+            }
+
+            if (selectedUnit != null)
+            {
+                if (new Rect(Screen.width - 292f, 12f, 280f, 310f).Contains(mouseGuiPosition))
+                {
+                    return true;
+                }
+
+                if (activeTurnSide == TurnSide.Player)
+                {
+                    var areaWidth = 560f;
+                    var areaHeight = 150f;
+                    var areaX = (Screen.width - areaWidth) * 0.5f;
+                    var areaY = Screen.height - areaHeight - 12f;
+                    if (new Rect(areaX, areaY, areaWidth, areaHeight).Contains(mouseGuiPosition))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (hoveredEnemyUnit != null && hoveredEnemyUnit.IsAlive)
+            {
+                var width = 280f;
+                var height = 86f;
+                var mousePosition = Input.mousePosition;
+                var x = Mathf.Clamp(mousePosition.x + 14f, 4f, Screen.width - width - 4f);
+                var y = Mathf.Clamp(Screen.height - mousePosition.y + 14f, 4f, Screen.height - height - 4f);
+                if (new Rect(x, y, width, height).Contains(mouseGuiPosition))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static Vector2 GetMouseGuiPosition()
+        {
+            var mousePosition = Input.mousePosition;
+            return new Vector2(mousePosition.x, Screen.height - mousePosition.y);
+        }
+
+        private static float NormalizeSignedAngle(float angle)
+        {
+            angle %= 360f;
+            if (angle > 180f)
+            {
+                angle -= 360f;
+            }
+
+            return angle;
+        }
+
+        private static Vector3 GetPlanarForward(Vector3 forward)
+        {
+            var planarForward = Vector3.ProjectOnPlane(forward, Vector3.up);
+            if (planarForward.sqrMagnitude < MinimumPlanarMagnitude)
+            {
+                return Vector3.forward;
+            }
+
+            return planarForward.normalized;
         }
 
         private void DrawHoveredEnemyHealth()
