@@ -14,7 +14,7 @@ namespace IronKingdoms.Combat
         private const float VisualizerLineWidth = 0.06f;
         private const int AttackRingSegments = 48;
         private const float PawnYPosition = 1f;
-        private const float MinimumPlanarMagnitude = 0.0001f;
+        private const float MinimumVectorSqrMagnitude = 0.0001f;
         private const float InputAxisDeadzone = 0.001f;
         private const int LeftMouseButton = 0;
         private const int RightMouseButton = 1;
@@ -1205,7 +1205,7 @@ namespace IronKingdoms.Combat
             var delta = mousePosition - lastCameraDragMousePosition;
             lastCameraDragMousePosition = mousePosition;
 
-            if (delta.sqrMagnitude < MinimumPlanarMagnitude)
+            if (delta.sqrMagnitude < MinimumVectorSqrMagnitude)
             {
                 return;
             }
@@ -1270,9 +1270,7 @@ namespace IronKingdoms.Combat
 
         private bool TryConsumeUiClick()
         {
-            if (!Input.GetMouseButtonDown(LeftMouseButton)
-                && !Input.GetMouseButtonDown(RightMouseButton)
-                && !Input.GetMouseButtonDown(MiddleMouseButton))
+            if (!IsAnyMouseButtonDown())
             {
                 return false;
             }
@@ -1284,8 +1282,8 @@ namespace IronKingdoms.Combat
 
             if (currentPlayerMode != UnitActionMode.None)
             {
-                SetCurrentMode(UnitActionMode.None);
                 uiCancelFrame = Time.frameCount;
+                SetCurrentMode(UnitActionMode.None);
             }
 
             return true;
@@ -1356,12 +1354,19 @@ namespace IronKingdoms.Combat
         private static Vector3 GetPlanarForward(Vector3 forward)
         {
             var planarForward = Vector3.ProjectOnPlane(forward, Vector3.up);
-            if (planarForward.sqrMagnitude < MinimumPlanarMagnitude)
+            if (planarForward.sqrMagnitude < MinimumVectorSqrMagnitude)
             {
                 return Vector3.forward;
             }
 
             return planarForward.normalized;
+        }
+
+        private static bool IsAnyMouseButtonDown()
+        {
+            return Input.GetMouseButtonDown(LeftMouseButton)
+                || Input.GetMouseButtonDown(RightMouseButton)
+                || Input.GetMouseButtonDown(MiddleMouseButton);
         }
 
         private void DrawHoveredEnemyHealth()
