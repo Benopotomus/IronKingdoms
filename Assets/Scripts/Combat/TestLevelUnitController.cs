@@ -415,7 +415,8 @@ namespace IronKingdoms.Combat
             }
 
             if (Input.GetKeyDown(KeyCode.M) && selectedUnit != null && selectedUnit.IsAlive
-                && selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon)
+                && selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon
+                && !selectedUnit.HasActedThisTurn)
             {
                 SetCurrentMode(currentPlayerMode == UnitActionMode.Move ? UnitActionMode.None : UnitActionMode.Move);
             }
@@ -501,6 +502,12 @@ namespace IronKingdoms.Combat
 
             if (selectedUnit == null || !selectedUnit.IsAlive)
             {
+                return;
+            }
+
+            if (selectedUnit.HasActedThisTurn)
+            {
+                SetCurrentMode(UnitActionMode.None);
                 return;
             }
 
@@ -760,7 +767,7 @@ namespace IronKingdoms.Combat
 
         private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination)
         {
-            if (unit == null || !unit.IsAlive || unit.Pawn == null)
+            if (unit == null || !unit.IsAlive || unit.Pawn == null || unit.HasActedThisTurn)
             {
                 return;
             }
@@ -1084,7 +1091,7 @@ namespace IronKingdoms.Combat
             var selectedWeapon = GetSelectedAttackWeapon(selectedUnit);
             GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
             GUILayout.Label($"Type: {selectedWeapon.attackType}  |  Range: {selectedWeapon.Range:0.0}\"");
-            GUILayout.Label($"Power: {selectedWeapon.Power}");
+            GUILayout.Label($"Weapon Power: {selectedWeapon.Power}");
 
             GUILayout.EndArea();
             DrawActionBar();
@@ -1103,10 +1110,13 @@ namespace IronKingdoms.Combat
             GUILayout.BeginArea(new Rect(areaX, areaY, ActionBarWidth, ActionBarHeight), "Actions", GUI.skin.window);
 
             GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan | Left Click / 1-9: Select | Enter: End turn | Esc/Right Click: Cancel");
+            GUILayout.Label("Activation is staged: move first, then combat action. After taking a combat action, movement is locked.");
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
 
-            var canMove = selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon && !selectedUnit.MoveTarget.HasValue;
+            var canMove = selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon
+                && !selectedUnit.MoveTarget.HasValue
+                && !selectedUnit.HasActedThisTurn;
             GUI.enabled = canMove;
             var moveLabel = currentPlayerMode == UnitActionMode.Move ? "[ Move ]" : "Move";
             if (GUILayout.Button(moveLabel, GUILayout.Height(30f)))
