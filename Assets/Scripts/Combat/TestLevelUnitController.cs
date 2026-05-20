@@ -1319,15 +1319,7 @@ namespace IronKingdoms.Combat
             if (currentPlayerMode == UnitActionMode.Attack)
             {
                 GUILayout.Space(6f);
-                if (selectedUnit.Weapons == null || selectedUnit.Weapons.Length == 0)
-                {
-                    GUILayout.BeginHorizontal();
-                    GUI.enabled = false;
-                    GUILayout.Button("No Weapons");
-                    GUI.enabled = true;
-                    GUILayout.EndHorizontal();
-                }
-                else
+                if (selectedUnit.Weapons != null && selectedUnit.Weapons.Length > 0)
                 {
                     GUILayout.BeginHorizontal();
                     for (var i = 0; i < selectedUnit.Weapons.Length; i++)
