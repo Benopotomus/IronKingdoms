@@ -10,27 +10,27 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c8ec8f491bc14c339b6932efc14ec56e, type: 3}
-  m_Name: Line Rifleman
+  m_Name: Tempest Gun Mage
   m_EditorClassIdentifier: 
-  displayName: Line Rifleman
-  role: 2
+  displayName: Tempest Gun Mage
+  role: 0
   stats:
-    speed: 5
-    meleeAttack: 4
-    rangedAttack: 6
-    defense: 13
-    armor: 12
-    health: 10
-    startingResource: 0
-    weaponPower: 6
-    weaponRange: 10
+    speed: 6
+    meleeAttack: 5
+    rangedAttack: 8
+    defense: 14
+    armor: 13
+    health: 12
+    startingResource: 2
+    weaponPower: 7
+    weaponRange: 12
     weapons:
-    - displayName: Long Rifle
+    - displayName: Arcane Hand Cannon
       attackType: 1
-      power: 6
-      range: 10
-    - displayName: Bayonet
+      power: 7
+      range: 12
+    - displayName: Shock Baton
       attackType: 0
-      power: 3
+      power: 4
       range: 1.5
-  designNotes: Mk4-inspired ranged infantry benchmark with a rifle plus melee fallback.
+  designNotes: Mk4-style elite ranged officer unit with resource-fueled precision attacks.
