@@ -17,6 +17,8 @@ namespace IronKingdoms.Combat
         private const float GroundHalfExtent = 11f;
         private const float GroundThickness = 0.2f;
         private const float GroundShelfThickness = 0.4f;
+        private const float SouthShelfThicknessMultiplier = 0.5f;
+        private const float CenterSpineThicknessMultiplier = 1.5f;
         private const float WallHeight = 1.8f;
         private const float WallThickness = 0.6f;
         private const float PillarSize = 1.5f;
@@ -63,13 +65,13 @@ namespace IronKingdoms.Combat
                 mapRoot.transform,
                 "GroundShelf_South",
                 new Vector3(0f, 0.1f, -5.8f),
-                new Vector3(11f, GroundShelfThickness * 0.5f, 4.5f),
+                new Vector3(11f, GroundShelfThickness * SouthShelfThicknessMultiplier, 4.5f),
                 groundMat);
             CreateBox(
                 mapRoot.transform,
                 "GroundShelf_CenterSpine",
                 new Vector3(0f, 0.3f, 0f),
-                new Vector3(4.5f, GroundShelfThickness * 1.5f, 8f),
+                new Vector3(4.5f, GroundShelfThickness * CenterSpineThicknessMultiplier, 8f),
                 groundMat);
 
             // ── Pillars (four corners of the central area) ───────────────────
