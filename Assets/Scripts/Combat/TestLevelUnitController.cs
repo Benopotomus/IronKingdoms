@@ -26,9 +26,10 @@ namespace IronKingdoms.Combat
         private const float RosterAreaHeight = 300f;
         private const float SelectedUnitPanelWidth = 280f;
         private const float SelectedUnitPanelHeight = 310f;
-        private const float SelectedUnitPanelOffsetX = 292f;
+        private const float SelectedUnitPanelOffsetX = 12f;
+        private const float SelectedUnitPanelOffsetY = 12f;
         private const float ActionBarWidth = 560f;
-        private const float ActionBarHeight = 150f;
+        private const float ActionBarHeight = 96f;
         private const float ActionBarBottomMargin = 12f;
         private const float CameraControlsPanelWidth = 460f;
         private const float CameraControlsPanelHeight = 54f;
@@ -1252,7 +1253,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            GUILayout.BeginArea(new Rect(Screen.width - SelectedUnitPanelOffsetX, RosterAreaY, SelectedUnitPanelWidth, SelectedUnitPanelHeight), "Selected Unit", GUI.skin.window);
+            GUILayout.BeginArea(GetSelectedUnitPanelRect(), "Selected Unit", GUI.skin.window);
             GUILayout.Label(selectedUnit.Definition.DisplayName);
             GUILayout.Label($"Role: {selectedUnit.Definition.Role}");
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
@@ -1285,14 +1286,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var areaX = (Screen.width - ActionBarWidth) * 0.5f;
-            var areaY = Screen.height - ActionBarHeight - ActionBarBottomMargin;
-            GUILayout.BeginArea(new Rect(areaX, areaY, ActionBarWidth, ActionBarHeight), "Actions", GUI.skin.window);
-
-            GUILayout.Label("Left Click / 1-9: Select | Double Left Click: Focus camera");
-            GUILayout.Label("Enter: End turn | Esc/Right Click: Cancel");
-            GUILayout.Label("Activation is staged: move first, then combat action. After taking a combat action, movement is locked.");
-            GUILayout.Space(4f);
+            GUILayout.BeginArea(GetActionBarRect(), string.Empty, GUI.skin.window);
             GUILayout.BeginHorizontal();
 
             var canMove = selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon
@@ -1325,12 +1319,7 @@ namespace IronKingdoms.Combat
             if (currentPlayerMode == UnitActionMode.Attack)
             {
                 GUILayout.Space(6f);
-                GUILayout.Label("Select weapon, then left-click an enemy in range:");
-                if (selectedUnit.Weapons == null || selectedUnit.Weapons.Length == 0)
-                {
-                    GUILayout.Label("No weapons available.");
-                }
-                else
+                if (selectedUnit.Weapons != null && selectedUnit.Weapons.Length > 0)
                 {
                     GUILayout.BeginHorizontal();
                     for (var i = 0; i < selectedUnit.Weapons.Length; i++)
@@ -1355,13 +1344,21 @@ namespace IronKingdoms.Combat
                     GUILayout.EndHorizontal();
                 }
             }
-            else if (currentPlayerMode == UnitActionMode.Move)
-            {
-                GUILayout.Space(6f);
-                GUILayout.Label("Left-click board to confirm move destination. Right-click to cancel.");
-            }
 
             GUILayout.EndArea();
+        }
+
+        private static Rect GetActionBarRect()
+        {
+            var areaX = (Screen.width - ActionBarWidth) * 0.5f;
+            var areaY = Screen.height - ActionBarHeight - ActionBarBottomMargin;
+            return new Rect(areaX, areaY, ActionBarWidth, ActionBarHeight);
+        }
+
+        private static Rect GetSelectedUnitPanelRect()
+        {
+            var areaY = Screen.height - SelectedUnitPanelHeight - SelectedUnitPanelOffsetY;
+            return new Rect(SelectedUnitPanelOffsetX, areaY, SelectedUnitPanelWidth, SelectedUnitPanelHeight);
         }
 
         private void HandleCameraInput()
@@ -1569,16 +1566,14 @@ namespace IronKingdoms.Combat
 
             if (selectedUnit != null)
             {
-                if (new Rect(Screen.width - SelectedUnitPanelOffsetX, RosterAreaY, SelectedUnitPanelWidth, SelectedUnitPanelHeight).Contains(mouseGuiPosition))
+                if (GetSelectedUnitPanelRect().Contains(mouseGuiPosition))
                 {
                     return true;
                 }
 
                 if (activeTurnSide == TurnSide.Player)
                 {
-                    var areaX = (Screen.width - ActionBarWidth) * 0.5f;
-                    var areaY = Screen.height - ActionBarHeight - ActionBarBottomMargin;
-                    if (new Rect(areaX, areaY, ActionBarWidth, ActionBarHeight).Contains(mouseGuiPosition))
+                    if (GetActionBarRect().Contains(mouseGuiPosition))
                     {
                         return true;
                     }
