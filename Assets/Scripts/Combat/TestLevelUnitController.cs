@@ -32,9 +32,14 @@ namespace IronKingdoms.Combat
         private const float ActionBarHeight = 96f;
         private const float ActionBarBottomMargin = 12f;
         private const float HoverPanelWidth = 280f;
-        private const float HoverPanelHeight = 86f;
+        private const float HoverPanelHeight = 122f;
         private const float HoverPanelScreenPadding = 4f;
         private const float HoverPanelMouseOffset = 14f;
+        private const float CombatLogPanelWidth = 380f;
+        private const float CombatLogPanelHeight = 240f;
+        private const float CombatLogPanelRightMargin = 12f;
+        private const float CombatLogPanelTopMargin = 12f;
+        private const int CombatLogMaxEntries = 20;
         private const float DoubleClickIntervalSeconds = 0.3f;
         private const float DefaultTargetRingRadius = 0.6f;
         private const float TargetRingScaleFactor = 0.6f;
@@ -96,6 +101,8 @@ namespace IronKingdoms.Combat
         private LineRenderer weaponRangeRingLine;
         private readonly List<LineRenderer> attackTargetRings = new();
         private readonly List<FloatingDamageEntry> floatingDamageEntries = new();
+        private readonly List<string> combatLog = new();
+        private Vector2 combatLogScrollPosition;
         private GUIStyle floatingDamageStyle;
         private GUIStyle floatingDamageShadowStyle;
         private GameObject destinationMarkerObject;
@@ -1138,22 +1145,36 @@ namespace IronKingdoms.Combat
         {
             var isMeleeAttack = weapon.attackType == WeaponAttackType.Melee;
             var attackValue = isMeleeAttack ? attacker.Definition.Stats.meleeAttack : attacker.Definition.Stats.rangedAttack;
-            var attackRoll = Roll2d6() + attackValue;
+            var attackStatLabel = isMeleeAttack ? "MAT" : "RAT";
+            var atkDie1 = Random.Range(1, 7);
+            var atkDie2 = Random.Range(1, 7);
+            var attackRoll = atkDie1 + atkDie2 + attackValue;
             if (attackRoll < defender.Definition.Stats.defense)
             {
                 SpawnFloatingText(defender.Pawn.transform.position, "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
+                AddCombatLogEntry(
+                    $"{attacker.Definition.DisplayName} → {defender.Definition.DisplayName}  " +
+                    $"ATK [{atkDie1}+{atkDie2}]+{attackValue} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Miss");
                 return;
             }
 
-            var damageRoll = Roll2d6() + weapon.Power;
+            var dmgDie1 = Random.Range(1, 7);
+            var dmgDie2 = Random.Range(1, 7);
+            var damageRoll = dmgDie1 + dmgDie2 + weapon.Power;
             var damage = Mathf.Max(0, damageRoll - defender.Definition.Stats.armor);
             defender.Health = Mathf.Max(0, defender.Health - damage);
             var damageText = damage > 0 ? $"-{damage}" : "Blocked";
             var damageColor = damage > 0 ? new Color(1f, 0.15f, 0.15f, 1f) : new Color(0.7f, 0.7f, 0.7f, 1f);
             SpawnFloatingText(defender.Pawn.transform.position, damageText, damageColor);
+            var logResult = damage > 0 ? $"-{damage} HP" : "Blocked";
+            AddCombatLogEntry(
+                $"{attacker.Definition.DisplayName} → {defender.Definition.DisplayName}  " +
+                $"ATK [{atkDie1}+{atkDie2}]+{attackValue} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Hit!  " +
+                $"DMG [{dmgDie1}+{dmgDie2}]+{weapon.Power} POW = {damageRoll} vs ARM {defender.Definition.Stats.armor} → {logResult}");
             if (!defender.IsAlive)
             {
                 defender.Pawn.SetActive(false);
+                AddCombatLogEntry($"{defender.Definition.DisplayName} defeated!");
                 if (ReferenceEquals(defender, selectedUnit))
                 {
                     selectedUnit = FindFirstAlive(playerRuntimeUnits);
@@ -1161,9 +1182,15 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private static int Roll2d6()
+        private void AddCombatLogEntry(string entry)
         {
-            return Random.Range(1, 7) + Random.Range(1, 7);
+            combatLog.Add(entry);
+            if (combatLog.Count > CombatLogMaxEntries)
+            {
+                combatLog.RemoveAt(0);
+            }
+
+            combatLogScrollPosition = new Vector2(0f, float.MaxValue);
         }
 
         private void UpdateWeaponRangeRing()
@@ -1499,6 +1526,7 @@ namespace IronKingdoms.Combat
         {
             cameraManager?.DrawGui();
             DrawFloatingDamageNumbers();
+            DrawCombatLog();
 
             GUILayout.BeginArea(new Rect(RosterAreaX, RosterAreaY, RosterAreaWidth, RosterAreaHeight), "Player-Controlled Units", GUI.skin.window);
             GUILayout.Label($"Active Turn: {activeTurnSide}");
@@ -1763,6 +1791,7 @@ namespace IronKingdoms.Combat
             GUILayout.Label(hoveredEnemyUnit.Definition.DisplayName);
             GUILayout.Label($"HP: {hoveredEnemyUnit.Health}/{hoveredEnemyUnit.Definition.Stats.health}");
             GUILayout.Label(BuildHealthBoxes(hoveredEnemyUnit.Health, hoveredEnemyUnit.Definition.Stats.health));
+            GUILayout.Label($"DEF: {hoveredEnemyUnit.Definition.Stats.defense}  |  ARM: {hoveredEnemyUnit.Definition.Stats.armor}");
             if (currentPlayerMode == UnitActionMode.Attack && selectedUnit != null && selectedUnit.IsAlive && activeTurnSide == TurnSide.Player)
             {
                 var weapon = GetSelectedAttackWeapon(selectedUnit);
@@ -1778,6 +1807,25 @@ namespace IronKingdoms.Combat
                 }
             }
 
+            GUILayout.EndArea();
+        }
+
+        private void DrawCombatLog()
+        {
+            if (combatLog.Count == 0)
+            {
+                return;
+            }
+
+            var x = Screen.width - CombatLogPanelWidth - CombatLogPanelRightMargin;
+            GUILayout.BeginArea(new Rect(x, CombatLogPanelTopMargin, CombatLogPanelWidth, CombatLogPanelHeight), "Combat Log", GUI.skin.window);
+            combatLogScrollPosition = GUILayout.BeginScrollView(combatLogScrollPosition);
+            foreach (var entry in combatLog)
+            {
+                GUILayout.Label(entry);
+            }
+
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
 
