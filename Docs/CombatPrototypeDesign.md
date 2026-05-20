@@ -25,6 +25,10 @@ This implementation intentionally stays at the "starter combat harness" level ra
 - Combat alternates by round.
 - Each model turn is resolved as Maintenance -> Control -> Activation.
 - The acting unit refreshes its command resource during Control.
+- Activation is staged for the player and enemy prototype flows:
+  1. Resolve movement (or skip it).
+  2. Resolve one combat action.
+  3. After the combat action is taken, movement is no longer available for that unit this activation.
 
 ### Combat resolution
 - Attacks use 2d6 plus the relevant attack stat.
@@ -55,7 +59,7 @@ Each `UnitTypeDefinition` captures:
 - `CombatFlowBootstrap`, and
 - `TestLevelUnitController` (attached to the bootstrap object).
 
-`TestLevelUnitController` exposes inspector-assigned player/enemy unit arrays, spawns assigned units in the test level, gives player-issued move orders to selected units, runs a simple enemy pursuit/attack loop, and draws a roster + selected-unit popout UI in play mode.
+`TestLevelUnitController` exposes inspector-assigned player/enemy unit arrays, spawns assigned units in the test level, gives player-issued move orders to selected units, enforces staged activation (movement before combat action), runs a simple enemy pursuit/attack loop, and draws a roster + lower-left selected-unit panel UI in play mode.
 
 ## Authoring workflow
 ### Unit types
