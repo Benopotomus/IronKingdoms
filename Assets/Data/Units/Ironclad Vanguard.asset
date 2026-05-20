@@ -10,27 +10,27 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c8ec8f491bc14c339b6932efc14ec56e, type: 3}
-  m_Name: Steam Knight
+  m_Name: Ironclad Vanguard
   m_EditorClassIdentifier: 
-  displayName: Steam Knight
+  displayName: Ironclad Vanguard
   role: 1
   stats:
-    speed: 5
-    meleeAttack: 7
-    rangedAttack: 2
-    defense: 12
-    armor: 17
-    health: 18
-    startingResource: 3
-    weaponPower: 8
+    speed: 4.5
+    meleeAttack: 8
+    rangedAttack: 3
+    defense: 11
+    armor: 18
+    health: 20
+    startingResource: 2
+    weaponPower: 9
     weaponRange: 1.5
     weapons:
-    - displayName: Steam Halberd
+    - displayName: Siege Hammer
       attackType: 0
-      power: 8
+      power: 9
       range: 1.5
-    - displayName: Hand Cannon
+    - displayName: Steam Mortar
       attackType: 1
-      power: 6
-      range: 8
-  designNotes: Mk4-style heavy bruiser with a primary melee polearm and backup ranged sidearm.
+      power: 7
+      range: 9
+  designNotes: Mk4-inspired armored warjack profile for heavy front-line engagements.

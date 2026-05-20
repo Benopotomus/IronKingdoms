@@ -10,11 +10,13 @@ The requested Google Drive rules document was not reachable from this sandbox, s
 - Unity version pinned to `6000.3.10f1`.
 - One playable verification scene: `Assets/Scenes/TestCombatScene.unity`.
 - ScriptableObject-driven unit definitions for authoring unit archetypes and their stat blocks.
+- Weapon profile assignment per unit (power/range/type) to mirror Mk4-style loadouts.
 - A small runtime combat simulator that exercises a three-phase turn loop:
   1. Maintenance
   2. Control
   3. Activation
-- A lightweight editor window for rapidly creating new unit types.
+- A lightweight editor window for creating and editing unit types.
+- A test-level runtime controller for assigning player/enemy armies in inspector and validating command + AI behavior.
 
 ## Warmachine-inspired rules digest used here
 This implementation intentionally stays at the "starter combat harness" level rather than a full rules engine.
@@ -41,8 +43,7 @@ Each `UnitTypeDefinition` captures:
 - armor,
 - health,
 - starting resource,
-- weapon power, and
-- weapon range.
+- weapon profiles (name, attack type, power, range), plus legacy primary power/range compatibility values.
 
 ## Test scene layout
 `Assets/Scenes/TestCombatScene.unity` contains:
@@ -50,13 +51,14 @@ Each `UnitTypeDefinition` captures:
 - a `Directional Light`,
 - `AttackerSpawn`,
 - `DefenderSpawn`, and
-- `CombatFlowBootstrap`.
+- `CombatFlowBootstrap`, and
+- `TestLevelUnitController` (attached to the bootstrap object).
 
-`CombatFlowBootstrap` references `Assets/Data/Scenarios/TestCombatScenario.asset` and automatically runs the sample duel on play, logging the full round-by-round report to the Console and caching the latest report in the inspector.
+`TestLevelUnitController` exposes inspector-assigned player/enemy unit arrays, spawns assigned units in the test level, gives player-issued move orders to selected units, runs a simple enemy pursuit/attack loop, and draws a roster + selected-unit popout UI in play mode.
 
 ## Authoring workflow
 ### Unit types
-Use `Iron Kingdoms/Tools/Unit Type Creator` from the Unity menu to create new `UnitTypeDefinition` assets with defaulted stats.
+Use `Iron Kingdoms/Tools/Unit Type Creator` from the Unity menu to create and edit `UnitTypeDefinition` assets with weapon profile assignment.
 
 ### Test scenarios
 Create or duplicate `TestCombatScenarioAsset` assets and point them at different attacker/defender unit definitions to validate new balance ideas.
@@ -64,11 +66,13 @@ Create or duplicate `TestCombatScenarioAsset` assets and point them at different
 ## Included sample content
 - `Assets/Data/Units/Steam Knight.asset`: short-range armored bruiser with resource boosts.
 - `Assets/Data/Units/Line Rifleman.asset`: ranged infantry target for combat-flow verification.
+- `Assets/Data/Units/Ironclad Vanguard.asset`: heavy Mk4-inspired armored warjack-style profile.
+- `Assets/Data/Units/Tempest Gun Mage.asset`: elite Mk4-inspired ranged command unit profile.
 - `Assets/Data/Scenarios/TestCombatScenario.asset`: sample duel used by the scene.
 
 ## Known limitations
 - No board, terrain, line-of-sight, or scenario objective rules yet.
-- No UI beyond inspector-driven logging.
+- No polished production UI beyond prototype IMGUI command panels.
 - No animation, VFX, or map logic yet.
 - The inaccessible source document still needs a pass to reconcile terminology and any custom deviations from baseline Warmachine Mk4 rules.
 

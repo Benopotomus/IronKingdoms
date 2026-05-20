@@ -296,6 +296,7 @@ GameObject:
   m_Component:
   - component: {fileID: 300001}
   - component: {fileID: 300002}
+  - component: {fileID: 300003}
   m_Layer: 0
   m_Name: CombatFlowBootstrap
   m_TagString: Untagged
@@ -331,9 +332,34 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   scenario: {fileID: 11400000, guid: c9d53ff4998e45d6b2575bdce68b48cb, type: 2}
-  autoRunOnStart: 1
+  autoRunOnStart: 0
   logToConsole: 1
   lastReportPreview: 
+--- !u!114 &300003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 300000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5f903d2fd6be42c4a77c8b5d79122631, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  playerUnits:
+  - {fileID: 11400000, guid: 4b53030b572b4c45bfd1830cf5fcf4ee, type: 2}
+  - {fileID: 11400000, guid: 8f9a5accf4a74616bc654e0c49d8b8dd, type: 2}
+  enemyUnits:
+  - {fileID: 11400000, guid: 6b3caac2bc2545b4848213f8c8697915, type: 2}
+  - {fileID: 11400000, guid: f73f36ca77fd470a94d62f4d8302b6bf, type: 2}
+  playerSpawnAnchor: {fileID: 400001}
+  enemySpawnAnchor: {fileID: 500001}
+  spawnSpacing: 2
+  aiThinkInterval: 0.5
+  attackCooldownSeconds: 1.2
+  selectionCamera: {fileID: 100002}
+  autoSpawnOnStart: 1
 --- !u!1 &400000
 GameObject:
   m_ObjectHideFlags: 0

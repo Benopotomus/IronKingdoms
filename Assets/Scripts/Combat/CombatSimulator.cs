@@ -73,13 +73,14 @@ namespace IronKingdoms.Combat
                 AdvanceIntoRange(actor, ref distance, result);
             }
 
-            if (distance > actor.Definition.Stats.weaponRange)
+            var weapon = actor.PrimaryWeapon;
+            if (distance > weapon.Range)
             {
                 result.AddLine($"  {actor.Name} ends activation at {distance:0.0}\" and cannot attack.");
                 return;
             }
 
-            var inMelee = distance <= MeleeRangeThreshold;
+            var inMelee = weapon.attackType == WeaponAttackType.Melee;
             var attackStat = inMelee ? actor.Definition.Stats.meleeAttack : actor.Definition.Stats.rangedAttack;
             var boostedAttack = actor.Resource > 0 && actor.Role != UnitRole.Infantry;
             if (boostedAttack)
@@ -103,7 +104,7 @@ namespace IronKingdoms.Combat
                 boostedDamage = true;
             }
 
-            var damageRoll = Roll(random, autoBoostDamage || boostedDamage ? 3 : 2) + actor.Definition.Stats.weaponPower;
+            var damageRoll = Roll(random, autoBoostDamage || boostedDamage ? 3 : 2) + weapon.Power;
             var appliedDamage = Math.Max(0, damageRoll - target.Definition.Stats.armor);
             target.Health = Math.Max(0, target.Health - appliedDamage);
 
@@ -114,27 +115,27 @@ namespace IronKingdoms.Combat
 
         private static bool TryCharge(CombatantState actor, CombatantState target, ref float distance, CombatSimulationResult result)
         {
-            if (actor.Definition.Stats.weaponRange > MeleeRangeThreshold || actor.Role == UnitRole.Infantry)
+            if (actor.PrimaryWeapon.attackType != WeaponAttackType.Melee || actor.Role == UnitRole.Infantry)
             {
                 return false;
             }
 
             var reachableDistance = actor.Definition.Stats.speed + 3f;
-            var remainingGap = distance - actor.Definition.Stats.weaponRange;
+            var remainingGap = distance - actor.PrimaryWeapon.Range;
             if (remainingGap <= 0f || remainingGap > reachableDistance || actor.Resource <= 0)
             {
                 return false;
             }
 
             actor.Resource -= 1;
-            distance = actor.Definition.Stats.weaponRange;
+            distance = actor.PrimaryWeapon.Range;
             result.AddLine($"  {actor.Name} charges into melee with {target.Name}.");
             return true;
         }
 
         private static void AdvanceIntoRange(CombatantState actor, ref float distance, CombatSimulationResult result)
         {
-            var targetDistance = actor.Definition.Stats.weaponRange;
+            var targetDistance = actor.PrimaryWeapon.Range;
             if (distance <= targetDistance)
             {
                 result.AddLine($"  {actor.Name} is already in range.");
@@ -169,6 +170,7 @@ namespace IronKingdoms.Combat
             public UnitTypeDefinition Definition { get; }
             public string Name => Definition.DisplayName;
             public UnitRole Role => Definition.Role;
+            public WeaponProfile PrimaryWeapon => Definition.Stats.GetPrimaryWeapon();
             public int Health { get; set; }
             public int Resource { get; set; }
             public bool IsDefeated => Health <= 0;
