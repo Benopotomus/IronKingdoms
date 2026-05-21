@@ -19,3 +19,4 @@ Open `/home/runner/work/IronKingdoms/IronKingdoms` in Unity 6000.3.10f1, then lo
 Player activation is staged in the current prototype. Units move first, then take a combat action. After taking a combat action, a unit cannot use movement for the rest of that activation.
 
 Design notes live in `Docs/CombatPrototypeDesign.md`.
+Rulebook-derived reference notes live in `Docs/WMH_MK4_Rules_Reference.md`.

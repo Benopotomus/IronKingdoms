@@ -80,10 +80,10 @@ Create or duplicate `TestCombatScenarioAsset` assets and point them at different
 - No board, terrain, line-of-sight, or scenario objective rules yet.
 - No polished production UI beyond prototype IMGUI command panels.
 - No animation, VFX, or map logic yet.
-- The inaccessible source document still needs a pass to reconcile terminology and any custom deviations from baseline Warmachine Mk4 rules.
+- The prototype still implements only a small subset of the full Mk4 rules captured in `Docs/WMH_MK4_Rules_Reference.md`.
 
 ## Recommended next pass
-1. Reconcile this document with the intended Google Drive rules pack.
+1. Reconcile the current simulator behavior against `Docs/WMH_MK4_Rules_Reference.md`.
 2. Expand the simulator from duel resolution into multi-model activations.
 3. Add scenario objectives and grid/zone validation.
 4. Add dedicated Unity edit mode or play mode tests once Unity CI/editor access is available.
