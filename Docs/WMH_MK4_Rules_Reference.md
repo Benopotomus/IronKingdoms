@@ -663,7 +663,7 @@ The following rules from the actual Mk4 rulebook should be reconciled with the c
 
 ### Turn Flow Corrections
 
-The correct three-phase turn structure is **Maintenance → Control → Activation** (not "Maintenance → Control → Activation" with the old assumption that it cycles per-unit). The correct flow:
+The correct three-phase turn structure is **Maintenance → Control → Activation** as a full player turn, not a three-phase cycle repeated separately for each unit. The correct flow:
 
 1. **Maintenance**: Remove excess focus/fury, resolve continuous effects.
 2. **Control**: Replenish warcaster focus, power up warjacks, allocate focus, maintain upkeep spells.
