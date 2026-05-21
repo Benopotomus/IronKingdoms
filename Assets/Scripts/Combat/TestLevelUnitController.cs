@@ -1197,7 +1197,7 @@ namespace IronKingdoms.Combat
 
         private static bool TryGetRecastGraphMask(out GraphMask graphMask)
         {
-            graphMask = GraphMask.everything;
+            graphMask = default;
 
             if (AstarPath.active == null || AstarPath.active.data == null)
             {
