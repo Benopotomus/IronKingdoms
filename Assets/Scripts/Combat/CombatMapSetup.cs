@@ -1,14 +1,20 @@
+using Pathfinding;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Loads a dedicated combat map scene additively and applies map-authored spawn points.
-    /// The A* navmesh is expected to be pre-baked inside the combat map scene itself.
+    /// Loads a dedicated combat map scene additively, applies map-authored spawn points,
+    /// and scans an A* grid graph over the map geometry.
     /// </summary>
     public class CombatMapSetup : MonoBehaviour
     {
+        private const int NavGridWidth = 44;
+        private const int NavGridDepth = 36;
+        private const float NavNodeSize = 0.5f;
+        private const float NavMaxSlope = 45f;
+
         [SerializeField] private string combatMapSceneName = "CombatMapScene";
         [SerializeField] private TestLevelUnitController unitController;
 
@@ -16,6 +22,27 @@ namespace IronKingdoms.Combat
         {
             var mapScene = LoadMapScene();
             ApplySpawnAnchors(mapScene);
+            ScanNavmesh();
+        }
+
+        private void ScanNavmesh()
+        {
+            if (AstarPath.active != null)
+            {
+                AstarPath.active.Scan();
+                return;
+            }
+
+            var astarObject = new GameObject("A* Pathfinder");
+            var astar = astarObject.AddComponent<AstarPath>();
+            astar.scanOnStartup = false;
+
+            var gg = astar.data.AddGraph<GridGraph>();
+            gg.center = Vector3.zero;
+            gg.SetDimensions(NavGridWidth, NavGridDepth, NavNodeSize);
+            gg.maxSlope = NavMaxSlope;
+
+            astar.Scan();
         }
 
         private Scene LoadMapScene()

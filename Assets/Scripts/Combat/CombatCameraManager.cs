@@ -4,7 +4,7 @@ namespace IronKingdoms.Combat
 {
     public class CombatCameraManager : MonoBehaviour
     {
-        private const float CameraControlsPanelWidth = 560f;
+        private const float CameraControlsPanelWidth = 460f;
         private const float CameraControlsPanelHeight = 54f;
         private const float CameraControlsPanelTopMargin = 12f;
         private const float CameraOrbitFallbackForwardDistance = 1f;
@@ -20,9 +20,6 @@ namespace IronKingdoms.Combat
         [SerializeField, Range(5f, 89f)] private float cameraMinPitch = 25f;
         [SerializeField, Range(5f, 89f)] private float cameraMaxPitch = 75f;
         [SerializeField, Min(0.1f)] private float cameraFocusTransitionSpeed = 12f;
-        [SerializeField, Min(0.1f)] private float cameraZoomSensitivity = 2f;
-        [SerializeField, Min(0.1f)] private float cameraMinZoomDistance = 3f;
-        [SerializeField, Min(0.1f)] private float cameraMaxZoomDistance = 60f;
 
         private readonly Plane boardPlane = new(Vector3.up, Vector3.zero);
         private bool isCameraDragging;
@@ -55,7 +52,6 @@ namespace IronKingdoms.Combat
             }
 
             HandleKeyboardCameraPan(activeCamera);
-            HandleScrollWheelZoom(activeCamera, isMouseOverUi);
 
             if (Input.GetMouseButtonDown(MiddleMouseButton))
             {
@@ -99,7 +95,7 @@ namespace IronKingdoms.Combat
             var areaX = (Screen.width - CameraControlsPanelWidth) * 0.5f;
             var areaY = CameraControlsPanelTopMargin;
             GUILayout.BeginArea(new Rect(areaX, areaY, CameraControlsPanelWidth, CameraControlsPanelHeight), "Camera Controls", GUI.skin.window);
-            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan | Scroll: Zoom");
+            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan");
             GUILayout.EndArea();
         }
 
@@ -129,37 +125,6 @@ namespace IronKingdoms.Combat
             cameraOrbitPivotInitialized = true;
             cameraFocusTransitionTarget = worldPoint;
             isCameraFocusTransitioning = true;
-        }
-
-        private void HandleScrollWheelZoom(Camera activeCamera, bool isMouseOverUi)
-        {
-            if (isMouseOverUi)
-            {
-                return;
-            }
-
-            var scroll = Input.mouseScrollDelta.y;
-            if (Mathf.Abs(scroll) <= InputAxisDeadzone)
-            {
-                return;
-            }
-
-            if (!cameraOrbitPivotInitialized)
-            {
-                InitializeCameraOrbitPivot(activeCamera);
-                if (!cameraOrbitPivotInitialized)
-                {
-                    return;
-                }
-            }
-
-            cameraOrbitDistance = Mathf.Clamp(
-                cameraOrbitDistance - (scroll * cameraZoomSensitivity),
-                Mathf.Min(cameraMinZoomDistance, cameraMaxZoomDistance),
-                Mathf.Max(cameraMinZoomDistance, cameraMaxZoomDistance));
-
-            var cameraForward = activeCamera.transform.forward;
-            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
         }
 
         private void HandleKeyboardCameraPan(Camera activeCamera)

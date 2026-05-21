@@ -386,7 +386,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   combatMapSceneName: CombatMapScene
-  unitController: {fileID: 0}
+  unitController: {fileID: 300003}
 --- !u!1 &2052885982
 GameObject:
   m_ObjectHideFlags: 0
@@ -416,7 +416,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a98096621d0d423d81cb6c76d9ef5d1d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: IronKingdoms.Runtime::IronKingdoms.Combat.CombatCameraManager
-  targetCamera: {fileID: 0}
+  targetCamera: {fileID: 100002}
   cameraKeyboardPanSpeed: 10
   cameraDragPanSensitivity: 0.02
   cameraRotationSensitivity: 0.2
