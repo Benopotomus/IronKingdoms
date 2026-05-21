@@ -1,136 +1,93 @@
 using Pathfinding;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Procedurally builds the test combat map geometry and initialises an A* RecastGraph
-    /// that covers the play area. Attach this component to any GameObject in the
-    /// TestCombatScene before the <see cref="TestLevelUnitController"/> runs.
+    /// Loads a dedicated combat map scene additively, applies map-authored spawn points,
+    /// and initialises an A* RecastGraph that covers the play area.
     /// </summary>
     public class CombatMapSetup : MonoBehaviour
     {
         // ── Navmesh configuration ────────────────────────────────────────────
         private const float NavmeshBoundsSize = 26f;
-
-        // ── Map geometry ─────────────────────────────────────────────────────
-        private const float GroundHalfExtent = 11f;
-        private const float GroundThickness = 0.2f;
-        private const float GroundShelfThickness = 0.4f;
-        private const float SouthShelfThicknessMultiplier = 0.5f;
-        private const float CenterSpineThicknessMultiplier = 1.5f;
-        private const float WallHeight = 1.8f;
-        private const float WallThickness = 0.6f;
-        private const float PillarSize = 1.5f;
-        private const float PillarHeight = 3f;
-        private const float CrateSize = 1f;
-
-        // ── Materials / colours ──────────────────────────────────────────────
-        private static readonly Color GroundColor = new(0.35f, 0.32f, 0.28f);
-        private static readonly Color WallColor = new(0.55f, 0.50f, 0.45f);
-        private static readonly Color PillarColor = new(0.48f, 0.44f, 0.40f);
-        private static readonly Color CrateColor = new(0.60f, 0.45f, 0.28f);
+        [SerializeField] private string combatMapSceneName = "CombatMapScene";
+        [SerializeField] private TestLevelUnitController unitController;
 
         private void Awake()
         {
-            BuildMap();
+            var mapScene = LoadMapScene();
+            ApplySpawnAnchors(mapScene);
             SetupPathfinding();
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        //  Map geometry
-        // ─────────────────────────────────────────────────────────────────────
-
-        private void BuildMap()
+        private Scene LoadMapScene()
         {
-            var mapRoot = new GameObject("CombatMap");
-            mapRoot.transform.SetParent(transform);
-
-            // Shared materials (one per colour to minimise draw calls).
-            var groundMat = CreateMaterial(GroundColor);
-            var wallMat = CreateMaterial(WallColor);
-            var pillarMat = CreateMaterial(PillarColor);
-            var crateMat = CreateMaterial(CrateColor);
-
-            // Ground plane
-            var groundScale = new Vector3(GroundHalfExtent * 2f, GroundThickness, GroundHalfExtent * 2f);
-            CreateBox(mapRoot.transform, "Ground", Vector3.down * (GroundThickness * 0.5f), groundScale, groundMat);
-            CreateBox(
-                mapRoot.transform,
-                "GroundShelf_North",
-                new Vector3(0f, 0.2f, 6f),
-                new Vector3(13f, GroundShelfThickness, 5f),
-                groundMat);
-            CreateBox(
-                mapRoot.transform,
-                "GroundShelf_South",
-                new Vector3(0f, 0.1f, -5.8f),
-                new Vector3(11f, GroundShelfThickness * SouthShelfThicknessMultiplier, 4.5f),
-                groundMat);
-            CreateBox(
-                mapRoot.transform,
-                "GroundShelf_CenterSpine",
-                new Vector3(0f, 0.3f, 0f),
-                new Vector3(4.5f, GroundShelfThickness * CenterSpineThicknessMultiplier, 8f),
-                groundMat);
-
-            // ── Pillars (four corners of the central area) ───────────────────
-            var pillarScale = new Vector3(PillarSize, PillarHeight, PillarSize);
-            float py = PillarHeight * 0.5f;
-            CreateBox(mapRoot.transform, "Pillar_NW", new Vector3(-4f, py, 3f), pillarScale, pillarMat);
-            CreateBox(mapRoot.transform, "Pillar_NE", new Vector3(4f, py, 3f), pillarScale, pillarMat);
-            CreateBox(mapRoot.transform, "Pillar_SW", new Vector3(-4f, py, -3f), pillarScale, pillarMat);
-            CreateBox(mapRoot.transform, "Pillar_SE", new Vector3(4f, py, -3f), pillarScale, pillarMat);
-
-            // ── Central low wall ─────────────────────────────────────────────
-            CreateBox(mapRoot.transform, "Wall_Central",
-                new Vector3(0f, WallHeight * 0.5f, 0f),
-                new Vector3(5f, WallHeight, WallThickness),
-                wallMat);
-
-            // ── Side wall segments ────────────────────────────────────────────
-            CreateBox(mapRoot.transform, "Wall_Left",
-                new Vector3(-6.5f, WallHeight * 0.5f, 0f),
-                new Vector3(WallThickness, WallHeight, 3.5f),
-                wallMat);
-            CreateBox(mapRoot.transform, "Wall_Right",
-                new Vector3(6.5f, WallHeight * 0.5f, 0f),
-                new Vector3(WallThickness, WallHeight, 3.5f),
-                wallMat);
-
-            // ── Scatter crates ────────────────────────────────────────────────
-            var crateScale = Vector3.one * CrateSize;
-            CreateBox(mapRoot.transform, "Crate_A",
-                new Vector3(-2f, CrateSize * 0.5f, -1.5f),
-                crateScale, crateMat);
-            CreateBox(mapRoot.transform, "Crate_B",
-                new Vector3(2f, CrateSize * 0.5f, 1.5f),
-                crateScale, crateMat);
-            CreateBox(mapRoot.transform, "Crate_C",
-                new Vector3(-1f, CrateSize * 0.5f, 4.5f),
-                crateScale, crateMat);
-            CreateBox(mapRoot.transform, "Crate_D",
-                new Vector3(1f, CrateSize * 0.5f, -4.5f),
-                crateScale, crateMat);
-        }
-
-        private static Material CreateMaterial(Color color)
-        {
-            var shader = Shader.Find("Standard") ?? Shader.Find("Diffuse");
-            return new Material(shader) { color = color };
-        }
-
-        private static void CreateBox(Transform parent, string objName, Vector3 position, Vector3 scale, Material mat)
-        {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            go.name = objName;
-            go.transform.SetParent(parent);
-            go.transform.localPosition = position;
-            go.transform.localScale = scale;
-            var rend = go.GetComponent<Renderer>();
-            if (rend != null)
+            if (string.IsNullOrWhiteSpace(combatMapSceneName))
             {
-                rend.sharedMaterial = mat;
+                Debug.LogWarning("Combat map scene name is not configured.", this);
+                return default;
+            }
+
+            var mapScene = SceneManager.GetSceneByName(combatMapSceneName);
+            if (!mapScene.IsValid() || !mapScene.isLoaded)
+            {
+                SceneManager.LoadScene(combatMapSceneName, LoadSceneMode.Additive);
+                mapScene = SceneManager.GetSceneByName(combatMapSceneName);
+            }
+
+            return mapScene;
+        }
+
+        private void ApplySpawnAnchors(Scene mapScene)
+        {
+            var targetController = unitController != null ? unitController : GetComponent<TestLevelUnitController>();
+            if (targetController == null)
+            {
+                return;
+            }
+
+            Transform playerSpawn = null;
+            Transform enemySpawn = null;
+            if (mapScene.IsValid() && mapScene.isLoaded)
+            {
+                var roots = mapScene.GetRootGameObjects();
+                for (var i = 0; i < roots.Length; i++)
+                {
+                    var spawnPoints = roots[i].GetComponentsInChildren<CombatSpawnPoint>(true);
+                    for (var j = 0; j < spawnPoints.Length; j++)
+                    {
+                        var spawnPoint = spawnPoints[j];
+                        if (spawnPoint.Side == CombatSpawnSide.Player && playerSpawn == null)
+                        {
+                            playerSpawn = spawnPoint.transform;
+                        }
+                        else if (spawnPoint.Side == CombatSpawnSide.Enemy && enemySpawn == null)
+                        {
+                            enemySpawn = spawnPoint.transform;
+                        }
+
+                        if (playerSpawn != null && enemySpawn != null)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (playerSpawn != null && enemySpawn != null)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (playerSpawn != null && enemySpawn != null)
+            {
+                targetController.SetSpawnAnchors(playerSpawn, enemySpawn);
+            }
+            else
+            {
+                Debug.LogWarning("Combat map scene did not provide both player and enemy spawn points.", this);
             }
         }
 

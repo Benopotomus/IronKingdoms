@@ -14,7 +14,6 @@ namespace IronKingdoms.Combat
         private const float MovementBudgetEpsilon = 0.001f;
         private const float VisualizerLineWidth = 0.06f;
         private const int AttackRingSegments = 48;
-        private const float PawnYPosition = 1f;
         private const float GroundYPosition = 0f;
         private const float MinimumVectorSqrMagnitude = 0.0001f;
         private const int LeftMouseButton = 0;
@@ -245,40 +244,27 @@ namespace IronKingdoms.Combat
             }
 
             var hoverPos = ray.GetPoint(enter);
-            hoverPos.y = PawnYPosition;
+            var hoverNavPos = GetNearestNavmeshPosition(hoverPos);
 
             var unitPos = selectedUnit.Pawn.transform.position;
+            var unitNavPos = GetNearestNavmeshPosition(unitPos);
             var remaining = selectedUnit.RemainingMovementThisTurn;
 
             // Kick off a new A* path request when the hover target shifts enough.
             if (AstarPath.active != null)
             {
-                RequestPathPreviewIfNeeded(unitPos, hoverPos);
+                RequestPathPreviewIfNeeded(unitNavPos, hoverNavPos);
             }
 
-            // Decide which path to display: A* cached result or straight-line fallback.
-            List<Vector3> displayPath;
-            bool withinRange;
-            if (!previewPathPending && previewPathWaypoints != null && previewPathWaypoints.Count >= 2)
+            if (previewPathPending || previewPathWaypoints == null || previewPathWaypoints.Count < 2)
             {
-                displayPath = previewPathWaypoints;
-                withinRange = previewDestinationReachable;
+                movementPathLine.enabled = false;
+                destinationMarkerObject.SetActive(false);
+                return;
             }
-            else
-            {
-                // Straight-line placeholder while a path request is in flight or A* is absent.
-                var planarDelta = hoverPos - unitPos;
-                planarDelta.y = 0f;
-                var distToHover = planarDelta.magnitude;
-                withinRange = distToHover <= remaining + PositionArrivalTolerance;
-                var effectiveDest = withinRange ? hoverPos : unitPos + planarDelta.normalized * remaining;
-                effectiveDest.y = PathVisualizationHeight;
-                displayPath = new List<Vector3>
-                {
-                    new(unitPos.x, PathVisualizationHeight, unitPos.z),
-                    effectiveDest
-                };
-            }
+
+            var displayPath = previewPathWaypoints;
+            var withinRange = previewDestinationReachable;
 
             var pathColor = withinRange
                 ? new Color(0.15f, 0.85f, 0.85f, 0.85f)
@@ -302,7 +288,7 @@ namespace IronKingdoms.Combat
 
             destinationMarkerObject.SetActive(true);
             var dest = displayPath[displayPath.Count - 1];
-            dest.y = 0.01f;
+            dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y - PathVisualizationHeight);
             destinationMarkerObject.transform.position = dest;
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
             if (markerRenderer != null)
@@ -363,7 +349,7 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < clamped.Count; i++)
             {
                 var wp = clamped[i];
-                wp.y = PathVisualizationHeight;
+                wp.y += PathVisualizationHeight;
                 clamped[i] = wp;
             }
 
@@ -527,6 +513,12 @@ namespace IronKingdoms.Combat
             StartPlayerTurn();
         }
 
+        public void SetSpawnAnchors(Transform playerAnchor, Transform enemyAnchor)
+        {
+            playerSpawnAnchor = playerAnchor;
+            enemySpawnAnchor = enemyAnchor;
+        }
+
         private void SpawnArmy(List<UnitTypeDefinition> units, Transform anchor, List<RuntimeUnit> destination, bool isPlayerControlled, Color color)
         {
             if (units == null)
@@ -548,7 +540,7 @@ namespace IronKingdoms.Combat
                 var pawnScale = unitDefinition.Stats.modelSize.GetPawnScale();
                 pawn.name = $"{unitDefinition.DisplayName} ({(isPlayerControlled ? "Player" : "Enemy")})";
                 pawn.transform.localScale = pawnScale;
-                pawn.transform.SetPositionAndRotation(origin + new Vector3(i * spawnSpacing, pawnScale.y, 0f), Quaternion.identity);
+                pawn.transform.SetPositionAndRotation(origin + new Vector3(i * spawnSpacing, GroundYPosition + pawnScale.y, 0f), Quaternion.identity);
                 pawn.transform.SetParent(transform);
                 var renderer = pawn.GetComponent<Renderer>();
                 if (renderer != null)
@@ -557,6 +549,7 @@ namespace IronKingdoms.Combat
                 }
 
                 var runtimeUnit = new RuntimeUnit(unitDefinition, isPlayerControlled, pawn);
+                SnapUnitToNavmesh(runtimeUnit);
                 destination.Add(runtimeUnit);
                 allRuntimeUnits.Add(runtimeUnit);
             }
@@ -719,7 +712,7 @@ namespace IronKingdoms.Combat
             }
 
             var destination = ray.GetPoint(enter);
-            destination.y = PawnYPosition;
+            destination = GetGroundedNavmeshPositionForUnit(selectedUnit, destination);
             var movementBudget = selectedUnit.RemainingMovementThisTurn;
             var forfeitCombatAction = false;
             switch (selectedMovementOption)
@@ -745,7 +738,6 @@ namespace IronKingdoms.Combat
             {
                 selectedUnit.HasActedThisTurn = true;
             }
-
             SetCurrentMode(UnitActionMode.None);
         }
 
@@ -839,6 +831,7 @@ namespace IronKingdoms.Combat
 
                 var currentPosition = unit.Pawn.transform.position;
                 var nextPosition = Vector3.MoveTowards(currentPosition, targetPosition, allowedStep);
+                nextPosition = GetGroundedNavmeshPositionForUnit(unit, nextPosition);
                 var movedDistance = Vector3.Distance(currentPosition, nextPosition);
                 unit.Pawn.transform.position = nextPosition;
                 unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movedDistance);
@@ -856,7 +849,7 @@ namespace IronKingdoms.Combat
                     {
                         unit.PathWaypointIndex = nextIndex;
                         var nextWaypoint = waypoints[nextIndex];
-                        nextWaypoint.y = PawnYPosition;
+                        nextWaypoint = GetGroundedNavmeshPositionForUnit(unit, nextWaypoint);
                         unit.MoveTarget = nextWaypoint;
                     }
                     else
@@ -956,7 +949,7 @@ namespace IronKingdoms.Combat
             var direction = toTarget.normalized;
             var stopDistance = Mathf.Max(AiMinimumStopDistance, desiredRange * AiDesiredStopFactor);
             var destination = targetPosition - direction * stopDistance;
-            destination.y = PawnYPosition;
+            destination = GetGroundedNavmeshPositionForUnit(enemy, destination);
             IssueMoveOrder(enemy, destination);
         }
 
@@ -1052,7 +1045,9 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var current = unit.Pawn.transform.position;
+            var current = GetNearestNavmeshPosition(unit.Pawn.transform.position);
+            unit.Pawn.transform.position = GetGroundedNavmeshPositionForUnit(unit, current);
+            destination = GetNearestNavmeshPosition(destination);
 
             // Try A* pathfinding first (synchronous for immediate movement response).
             if (AstarPath.active != null)
@@ -1069,7 +1064,7 @@ namespace IronKingdoms.Combat
                         unit.PathWaypoints = waypoints;
                         unit.PathWaypointIndex = 0;
                         var firstTarget = waypoints[1];
-                        firstTarget.y = PawnYPosition;
+                        firstTarget = GetGroundedNavmeshPositionForUnit(unit, firstTarget);
                         unit.MoveTarget = firstTarget;
                         return;
                     }
@@ -1089,9 +1084,47 @@ namespace IronKingdoms.Combat
 
             var moveDistance = Mathf.Min(remaining, distanceToDestination);
             var clampedDestination = current + planarDelta.normalized * moveDistance;
-            clampedDestination.y = PawnYPosition;
+            clampedDestination = GetGroundedNavmeshPositionForUnit(unit, clampedDestination);
             unit.MoveTarget = clampedDestination;
             unit.PathWaypoints = null;
+        }
+
+        private static Vector3 GetNearestNavmeshPosition(Vector3 worldPosition)
+        {
+            if (AstarPath.active == null)
+            {
+                return worldPosition;
+            }
+
+            var nearest = AstarPath.active.GetNearest(worldPosition, NearestNodeConstraint.Walkable);
+            return nearest.node != null ? nearest.position : worldPosition;
+        }
+
+        private static float GetPawnGroundOffset(RuntimeUnit unit)
+        {
+            if (unit?.Pawn == null)
+            {
+                return 0f;
+            }
+
+            return Mathf.Max(0f, unit.Pawn.transform.localScale.y);
+        }
+
+        private static Vector3 GetGroundedNavmeshPositionForUnit(RuntimeUnit unit, Vector3 worldPosition)
+        {
+            var navPosition = GetNearestNavmeshPosition(worldPosition);
+            navPosition.y += GetPawnGroundOffset(unit);
+            return navPosition;
+        }
+
+        private static void SnapUnitToNavmesh(RuntimeUnit unit)
+        {
+            if (unit?.Pawn == null)
+            {
+                return;
+            }
+
+            unit.Pawn.transform.position = GetGroundedNavmeshPositionForUnit(unit, unit.Pawn.transform.position);
         }
 
         private static List<Vector3> ClampPathToMovementBudget(List<Vector3> waypoints, float budget)
