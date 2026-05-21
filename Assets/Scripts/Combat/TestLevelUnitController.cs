@@ -259,8 +259,6 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var hoverNavPos = GetNearestNavmeshPosition(hoverPos);
-
             var unitPos = selectedUnit.Pawn.transform.position;
             var unitNavPos = GetNearestNavmeshPosition(unitPos);
 
@@ -276,7 +274,7 @@ namespace IronKingdoms.Combat
             // Kick off a new A* path request when the hover target shifts enough.
             if (AstarPath.active != null)
             {
-                RequestPathPreviewIfNeeded(unitNavPos, hoverNavPos);
+                RequestPathPreviewIfNeeded(unitNavPos, hoverPos);
             }
 
             if (previewPathPending || previewPathWaypoints == null || previewPathWaypoints.Count < 2)
@@ -310,7 +308,7 @@ namespace IronKingdoms.Combat
             // cursor position every frame so it never lags or snaps between path recalculations.
             if (withinRange)
             {
-                var exactLineEnd = hoverNavPos;
+                var exactLineEnd = hoverPos;
                 exactLineEnd.y += PathVisualizationHeight;
                 movementPathLine.SetPosition(displayPath.Count - 1, exactLineEnd);
             }
@@ -323,7 +321,7 @@ namespace IronKingdoms.Combat
             if (withinRange)
             {
                 // Marker follows the cursor exactly — no snapping to the stale cached path endpoint.
-                dest = hoverNavPos;
+                dest = hoverPos;
                 dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y);
             }
             else
@@ -776,7 +774,6 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            destination = GetGroundedNavmeshPositionForUnit(selectedUnit, destination);
             var movementBudget = selectedUnit.RemainingMovementThisTurn;
             var forfeitCombatAction = false;
             switch (selectedMovementOption)
@@ -1141,7 +1138,6 @@ namespace IronKingdoms.Combat
 
             var current = GetNearestNavmeshPosition(unit.Pawn.transform.position);
             unit.Pawn.transform.position = GetGroundedNavmeshPositionForUnit(unit, current);
-            destination = GetNearestNavmeshPosition(destination);
 
             // Try A* pathfinding first (synchronous for immediate movement response).
             if (AstarPath.active != null)
