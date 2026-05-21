@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 using Pathfinding;
+using Pathfinding.Pooling;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
@@ -346,17 +347,21 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            // Straighten the raw A* path so the preview line shows the actual walking route
+            // (straight on open terrain, only bending where obstacles require it).
+            var smoothedPath = GetFunnelSmoothedVectorPath((ABPath)p);
+
             var remaining = selectedUnit.RemainingMovementThisTurn;
 
             // Measure the full unclamped path length to determine reachability.
             var fullLength = 0f;
-            for (var i = 1; i < p.vectorPath.Count; i++)
+            for (var i = 1; i < smoothedPath.Count; i++)
             {
-                fullLength += Vector3.Distance(p.vectorPath[i - 1], p.vectorPath[i]);
+                fullLength += Vector3.Distance(smoothedPath[i - 1], smoothedPath[i]);
             }
 
             previewDestinationReachable = fullLength <= remaining + PositionArrivalTolerance;
-            var clamped = ClampPathToMovementBudget(p.vectorPath, remaining);
+            var clamped = ClampPathToMovementBudget(smoothedPath, remaining);
 
             // Lift waypoints just above the ground so the line is visible.
             for (var i = 0; i < clamped.Count; i++)
@@ -1083,7 +1088,10 @@ namespace IronKingdoms.Combat
 
                 if (!path.error && path.vectorPath != null && path.vectorPath.Count >= 2)
                 {
-                    var waypoints = ClampPathToMovementBudget(path.vectorPath, remaining);
+                    // Apply funnel smoothing so the unit walks a straight line on open terrain
+                    // instead of zigzagging through navmesh triangle portals.
+                    var smoothedPath = GetFunnelSmoothedVectorPath(path);
+                    var waypoints = ClampPathToMovementBudget(smoothedPath, remaining);
                     if (waypoints.Count >= 2)
                     {
                         unit.PathWaypoints = waypoints;
@@ -1166,6 +1174,62 @@ namespace IronKingdoms.Combat
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Applies the funnel (string-pulling) algorithm to an already-calculated ABPath and returns
+        /// the resulting world-space waypoint list.  On open terrain with no obstacles the result is
+        /// just [start, end] — a perfectly straight line.  Where the path must bend around obstacles
+        /// only the minimum necessary turn-points are kept, exactly like Baldur's Gate 3.
+        ///
+        /// Returns <paramref name="path"/>.vectorPath unchanged (or an empty list when it is null)
+        /// if the path has no node data or fewer than two waypoints (e.g. start == end).
+        /// </summary>
+        private static List<Vector3> GetFunnelSmoothedVectorPath(ABPath path)
+        {
+            if (path.path == null || path.path.Count == 0
+                || path.vectorPath == null || path.vectorPath.Count < 2)
+            {
+                return path.vectorPath ?? new List<Vector3>();
+            }
+
+            var parts = Funnel.SplitIntoParts(path);
+            if (parts.Count == 0)
+            {
+                return path.vectorPath;
+            }
+
+            var smoothed = new List<Vector3>();
+            for (var i = 0; i < parts.Count; i++)
+            {
+                var part = parts[i];
+                if (part.type == Funnel.PartType.NodeSequence)
+                {
+                    var portals = Funnel.ConstructFunnelPortals(path.path, part);
+                    var result = Funnel.Calculate(portals, splitAtEveryPortal: false);
+                    smoothed.AddRange(result);
+                    // Release the pooled intermediate lists back to the pool.
+                    ListPool<Vector3>.Release(ref portals.left);
+                    ListPool<Vector3>.Release(ref portals.right);
+                    ListPool<Vector3>.Release(ref result);
+                }
+                else
+                {
+                    // Off-mesh link: keep the entry/exit points when there is no adjacent normal segment.
+                    if (i == 0 || parts[i - 1].type == Funnel.PartType.OffMeshLink)
+                    {
+                        smoothed.Add(part.startPoint);
+                    }
+
+                    if (i == parts.Count - 1 || parts[i + 1].type == Funnel.PartType.OffMeshLink)
+                    {
+                        smoothed.Add(part.endPoint);
+                    }
+                }
+            }
+
+            ListPool<Funnel.PathPart>.Release(ref parts);
+            return smoothed.Count >= 2 ? smoothed : path.vectorPath;
         }
 
         private static Vector3 GetNearestNavmeshPosition(Vector3 worldPosition)
