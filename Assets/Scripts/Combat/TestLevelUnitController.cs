@@ -1235,9 +1235,16 @@ namespace IronKingdoms.Combat
             var attackStatLabel = isMeleeAttack ? "MAT" : "RAT";
             var atkDie1 = Random.Range(1, 7);
             var atkDie2 = Random.Range(1, 7);
-            var attackRoll = atkDie1 + atkDie2 + attackValue + attackModifier;
+            var extraDice = weapon.GetAttackDiceCount(false) - 2;
+            var extraDiceTotal = 0;
+            for (var i = 0; i < extraDice; i++)
+            {
+                extraDiceTotal += Random.Range(1, 7);
+            }
+
+            var attackRoll = atkDie1 + atkDie2 + extraDiceTotal + attackValue + attackModifier;
             var modifierText = FormatAttackModifierText(attackModifier);
-            if (!DoesAttackRollHit(atkDie1, atkDie2, attackRoll, defender.Definition.Stats.defense))
+            if (!weapon.EvaluateAttackHit(atkDie1, atkDie2, attackRoll, defender.Definition.Stats.defense))
             {
                 SpawnFloatingText(defender.Pawn.transform.position, "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
                 AddCombatLogEntry(
@@ -1249,8 +1256,15 @@ namespace IronKingdoms.Combat
 
             var dmgDie1 = Random.Range(1, 7);
             var dmgDie2 = Random.Range(1, 7);
-            var damageRoll = dmgDie1 + dmgDie2 + weapon.Power;
-            var damage = Mathf.Max(0, damageRoll - defender.Definition.Stats.armor);
+            var extraDmgDice = weapon.GetDamageDiceCount(false) - 2;
+            var extraDmgTotal = 0;
+            for (var i = 0; i < extraDmgDice; i++)
+            {
+                extraDmgTotal += Random.Range(1, 7);
+            }
+
+            var damageRoll = dmgDie1 + dmgDie2 + extraDmgTotal;
+            var damage = weapon.EvaluateDamage(damageRoll, defender.Definition.Stats.armor);
             defender.Health = Mathf.Max(0, defender.Health - damage);
             var damageText = damage > 0 ? $"-{damage}" : "Blocked";
             var damageColor = damage > 0 ? new Color(1f, 0.15f, 0.15f, 1f) : new Color(0.7f, 0.7f, 0.7f, 1f);
@@ -1259,7 +1273,7 @@ namespace IronKingdoms.Combat
             AddCombatLogEntry(
                 $"{attacker.Definition.DisplayName} → {defender.Definition.DisplayName}  " +
                 $"ATK [{atkDie1}+{atkDie2}]+{attackValue}{modifierText} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Hit!  " +
-                $"DMG [{dmgDie1}+{dmgDie2}]+{weapon.Power} POW = {damageRoll} vs ARM {defender.Definition.Stats.armor} → {logResult}");
+                $"DMG [{dmgDie1}+{dmgDie2}]+{weapon.Power} POW = {damageRoll + weapon.Power} vs ARM {defender.Definition.Stats.armor} → {logResult}");
             attacker.IsAimingThisTurn = false;
             if (!defender.IsAlive)
             {
@@ -1355,7 +1369,7 @@ namespace IronKingdoms.Combat
                 for (var d2 = 1; d2 <= 6; d2++)
                 {
                     var attackRoll = d1 + d2 + attackStat + attackModifier;
-                    if (DoesAttackRollHit(d1, d2, attackRoll, defender.Definition.Stats.defense))
+                    if (weapon.EvaluateAttackHit(d1, d2, attackRoll, defender.Definition.Stats.defense))
                     {
                         hits++;
                     }
@@ -1396,21 +1410,6 @@ namespace IronKingdoms.Combat
             }
 
             return string.Empty;
-        }
-
-        private static bool DoesAttackRollHit(int die1, int die2, int totalAttackRoll, int targetDefense)
-        {
-            if (die1 == 1 && die2 == 1)
-            {
-                return false;
-            }
-
-            if (die1 == 6 && die2 == 6)
-            {
-                return true;
-            }
-
-            return totalAttackRoll >= targetDefense;
         }
 
         private void DrawFloatingDamageNumbers()
@@ -1740,6 +1739,9 @@ namespace IronKingdoms.Combat
                 GUILayout.Label($"Aiming: +{AimToHitBonus} to hit (next attack)");
             }
             GUILayout.Label($"MAT Mod: {selectedWeapon.MatModifier:+#;-#;0}  |  RAT Mod: {selectedWeapon.RatModifier:+#;-#;0}");
+            var effectiveMat = selectedUnit.Definition.Stats.meleeAttack + selectedWeapon.MatModifier;
+            var effectiveRat = selectedUnit.Definition.Stats.rangedAttack + selectedWeapon.RatModifier;
+            GUILayout.Label($"Effective MAT: {effectiveMat}  |  Effective RAT: {effectiveRat}");
 
             GUILayout.EndArea();
             DrawActionBar();

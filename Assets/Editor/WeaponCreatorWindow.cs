@@ -13,6 +13,8 @@ namespace IronKingdoms.Editor
         private float range = 1.5f;
         private int matModifier;
         private int ratModifier;
+        private AttackRollFormula attackFormula;
+        private DamageRollFormula damageFormula;
         private WeaponProfile editTarget;
         private Vector2 scrollPosition;
 
@@ -33,6 +35,8 @@ namespace IronKingdoms.Editor
             range = EditorGUILayout.FloatField("Range", range);
             matModifier = EditorGUILayout.IntField("MAT Modifier", matModifier);
             ratModifier = EditorGUILayout.IntField("RAT Modifier", ratModifier);
+            attackFormula = (AttackRollFormula)EditorGUILayout.ObjectField("Attack Formula", attackFormula, typeof(AttackRollFormula), false);
+            damageFormula = (DamageRollFormula)EditorGUILayout.ObjectField("Damage Formula", damageFormula, typeof(DamageRollFormula), false);
 
             GUILayout.Space(12f);
             if (GUILayout.Button("Create Weapon Asset"))
@@ -75,6 +79,8 @@ namespace IronKingdoms.Editor
             serializedObject.FindProperty("range").floatValue = range;
             serializedObject.FindProperty("matModifier").intValue = matModifier;
             serializedObject.FindProperty("ratModifier").intValue = ratModifier;
+            serializedObject.FindProperty("attackFormula").objectReferenceValue = attackFormula;
+            serializedObject.FindProperty("damageFormula").objectReferenceValue = damageFormula;
             serializedObject.ApplyModifiedPropertiesWithoutUndo();
 
             AssetDatabase.CreateAsset(asset, path);
@@ -93,6 +99,8 @@ namespace IronKingdoms.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("range"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("matModifier"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("ratModifier"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("attackFormula"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("damageFormula"));
             serializedObject.ApplyModifiedProperties();
 
             if (GUILayout.Button("Apply Weapon Changes"))
