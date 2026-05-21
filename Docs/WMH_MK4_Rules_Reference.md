@@ -1,7 +1,8 @@
 # WARMACHINE Mk4 Rules Reference
 
-> Extracted from *WARMACHINE Mk4 Core Book (Abridged Digital Edition)* — Steamforged Games / Privateer Press.  
+> Summarized from *WARMACHINE Mk4 Core Book (Abridged Digital Edition)* — Steamforged Games / Privateer Press.  
 > This document is an authoritative rules digest for use as a design guide for the IronKingdoms prototype.  
+> It is a project summary, not a replacement for the source PDF; use `/home/runner/work/IronKingdoms/IronKingdoms/Assets/WMH-MK4-Rulebook_Digital_144-OP_Abridged.pdf` for exact wording.  
 > All rules here supersede the earlier assumptions in `CombatPrototypeDesign.md`.
 
 ---
@@ -113,7 +114,7 @@ Advantages are always in effect. Marked as icons on the stat bar.
 | Advantage | Effect |
 |---|---|
 | **Advance Deployment** | Deploy after normal deployment, up to 3" beyond zone. |
-| **Ambush** | Can be held off-table and placed at end of any Control Phase after round 1. |
+| **Ambush** | Can be held off-table and placed at the end of any Control Phase after round 1. Choose any table edge except the back of the opponent's deployment zone, place the model/unit completely within 3" of that edge, and models/units brought in this way must forfeit either Normal Movement or Combat Action that turn. |
 | **Amphibious** | Treats shallow water as open terrain while advancing; gains concealment while fully in shallow water; does not block LOS in shallow water. |
 | **Arc Node** | Warjack can channel spells cast by its battlegroup controller. |
 | **Assault** | Can make one ranged attack after charge movement but before Combat Action. Ignores Target in Melee penalty for that attack. |
@@ -172,7 +173,11 @@ Extra-large and huge-based models **never** gain DEF bonuses from concealment, c
 ## 7. Maintenance Phase
 
 Resolve in this order:
-1. Remove all focus points from warjacks. Remove focus points from models with Focus Manipulation that exceed their ARC. Remove fury points from models with Fury Manipulation that exceed their ARC. **Leave fury points on warbeasts.**
+1. Resolve resource cleanup:
+   - Remove all focus points from warjacks.
+   - Remove focus points from models with Focus Manipulation that exceed their ARC.
+   - Remove fury points from models with Fury Manipulation that exceed their ARC.
+   - **Leave fury points on warbeasts.**
 2. Check for expiration of **continuous effects** on your models. Roll d6 per continuous effect: 1–2 = expires; 3–6 = remains and takes effect.
 3. Resolve all other Maintenance Phase effects.
 
@@ -611,7 +616,7 @@ A shakeable effect. Model cannot make attacks. While blind, model suffers –4 M
 | **Open** | Normal movement. No restrictions. |
 | **Rough** | Moving through reduces advance by 2" (minimum 1"). Only affects advancing. |
 | **Elevated** | Elevated large-or-smaller models gain +2 DEF vs. ranged/arcane from lower elevation. LOS rules modified by elevation. |
-| **Difficult** | Cannot be entered by most models (not intended for play, not impassable per se). |
+| **Difficult** | Terrain that is heavily restricted and usually scenario-defined; unlike impassable terrain, it is not automatically out of bounds in all cases. |
 | **Impassable** | Cannot be entered for any reason. |
 
 ### Standard Terrain Features
