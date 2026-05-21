@@ -1183,7 +1183,7 @@ namespace IronKingdoms.Combat
 
         private void ResolveAttack(RuntimeUnit attacker, RuntimeUnit defender, WeaponProfile weapon)
         {
-            var isMeleeAttack = weapon.attackType == WeaponAttackType.Melee;
+            var isMeleeAttack = weapon.AttackType == WeaponAttackType.Melee;
             var attackValue = GetAttackStatForWeapon(attacker, weapon);
             var attackModifier = GetToHitModifier(attacker);
             var attackStatLabel = isMeleeAttack ? "MAT" : "RAT";
@@ -1321,9 +1321,10 @@ namespace IronKingdoms.Combat
 
         private static int GetAttackStatForWeapon(RuntimeUnit attacker, WeaponProfile weapon)
         {
-            return weapon.attackType == WeaponAttackType.Melee
+            var baseAttack = weapon.AttackType == WeaponAttackType.Melee
                 ? attacker.Definition.Stats.meleeAttack
                 : attacker.Definition.Stats.rangedAttack;
+            return baseAttack + weapon.GetAttackModifier();
         }
 
         private static int GetToHitModifier(RuntimeUnit attacker)
@@ -1469,7 +1470,7 @@ namespace IronKingdoms.Combat
         {
             if (unit.Weapons == null || unit.Weapons.Length == 0)
             {
-                return WeaponProfile.CreateDefault().Range;
+                return 1.5f;
             }
 
             var range = unit.Weapons[0].Range;
@@ -1686,12 +1687,13 @@ namespace IronKingdoms.Combat
             GUILayout.Label($"Model Size: {selectedUnit.Definition.Stats.modelSize.DisplayName()}");
             var selectedWeapon = GetSelectedAttackWeapon(selectedUnit);
             GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
-            GUILayout.Label($"Type: {selectedWeapon.attackType}  |  Range: {selectedWeapon.Range:0.0}\"");
+            GUILayout.Label($"Type: {selectedWeapon.AttackType}  |  Range: {selectedWeapon.Range:0.0}\"");
             GUILayout.Label($"Weapon Power: {selectedWeapon.Power}");
             if (selectedUnit.IsAimingThisTurn)
             {
                 GUILayout.Label($"Aiming: +{AimToHitBonus} to hit (next attack)");
             }
+            GUILayout.Label($"MAT Mod: {selectedWeapon.MatModifier:+#;-#;0}  |  RAT Mod: {selectedWeapon.RatModifier:+#;-#;0}");
 
             GUILayout.EndArea();
             DrawActionBar();

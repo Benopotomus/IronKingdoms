@@ -8,14 +8,6 @@ namespace IronKingdoms.Editor
 {
     public class UnitTypeCreatorWindow : EditorWindow
     {
-        private sealed class WeaponDraft
-        {
-            public string displayName = "Primary Weapon";
-            public WeaponAttackType attackType = WeaponAttackType.Melee;
-            public int power = 5;
-            public float range = 1.5f;
-        }
-
         private string unitName = "New Unit";
         private UnitRole role = UnitRole.Infantry;
         private float speed = 5f;
@@ -26,7 +18,7 @@ namespace IronKingdoms.Editor
         private int armor = 14;
         private int health = 10;
         private int startingResource;
-        private readonly List<WeaponDraft> weapons = new() { new WeaponDraft() };
+        private readonly List<WeaponProfile> weapons = new() { null };
         private string designNotes = string.Empty;
         private Vector2 scrollPosition;
         private UnitTypeDefinition editTarget;
@@ -52,7 +44,7 @@ namespace IronKingdoms.Editor
             armor = EditorGUILayout.IntField("Armor", armor);
             health = EditorGUILayout.IntField("Health", health);
             startingResource = EditorGUILayout.IntField("Starting Resource", startingResource);
-            DrawWeaponDraftList(weapons);
+            DrawWeaponReferenceList(weapons);
             designNotes = EditorGUILayout.TextArea(designNotes, GUILayout.MinHeight(60f));
 
             GUILayout.Space(12f);
@@ -103,16 +95,21 @@ namespace IronKingdoms.Editor
             statsProperty.FindPropertyRelative("armor").intValue = armor;
             statsProperty.FindPropertyRelative("health").intValue = health;
             statsProperty.FindPropertyRelative("startingResource").intValue = startingResource;
+            var validWeapons = new List<WeaponProfile>();
+            for (var i = 0; i < weapons.Count; i++)
+            {
+                if (weapons[i] != null)
+                {
+                    validWeapons.Add(weapons[i]);
+                }
+            }
+
             var weaponsProperty = statsProperty.FindPropertyRelative("weapons");
-            weaponsProperty.arraySize = Mathf.Max(1, weapons.Count);
+            weaponsProperty.arraySize = validWeapons.Count;
             for (var i = 0; i < weaponsProperty.arraySize; i++)
             {
-                var source = weapons[i];
                 var weaponProperty = weaponsProperty.GetArrayElementAtIndex(i);
-                weaponProperty.FindPropertyRelative("displayName").stringValue = source.displayName;
-                weaponProperty.FindPropertyRelative("attackType").enumValueIndex = (int)source.attackType;
-                weaponProperty.FindPropertyRelative("power").intValue = source.power;
-                weaponProperty.FindPropertyRelative("range").floatValue = source.range;
+                weaponProperty.objectReferenceValue = validWeapons[i];
             }
 
             serializedObject.FindProperty("designNotes").stringValue = designNotes;
@@ -134,17 +131,16 @@ namespace IronKingdoms.Editor
             return string.IsNullOrWhiteSpace(value) ? "UnitType" : value;
         }
 
-        private static void DrawWeaponDraftList(List<WeaponDraft> draftWeapons)
+        private static void DrawWeaponReferenceList(List<WeaponProfile> draftWeapons)
         {
             GUILayout.Space(8f);
             GUILayout.Label("Weapons", EditorStyles.boldLabel);
 
             for (var i = 0; i < draftWeapons.Count; i++)
             {
-                var weapon = draftWeapons[i];
                 EditorGUILayout.BeginVertical("box");
                 EditorGUILayout.BeginHorizontal();
-                weapon.displayName = EditorGUILayout.TextField("Name", weapon.displayName);
+                draftWeapons[i] = (WeaponProfile)EditorGUILayout.ObjectField("Weapon Asset", draftWeapons[i], typeof(WeaponProfile), false);
                 if (GUILayout.Button("Remove", GUILayout.Width(72f)))
                 {
                     draftWeapons.RemoveAt(i);
@@ -155,20 +151,17 @@ namespace IronKingdoms.Editor
                 }
 
                 EditorGUILayout.EndHorizontal();
-                weapon.attackType = (WeaponAttackType)EditorGUILayout.EnumPopup("Type", weapon.attackType);
-                weapon.power = EditorGUILayout.IntField("Power", weapon.power);
-                weapon.range = EditorGUILayout.FloatField("Range", weapon.range);
                 EditorGUILayout.EndVertical();
             }
 
-            if (GUILayout.Button("Add Weapon"))
+            if (GUILayout.Button("Add Weapon Slot"))
             {
-                draftWeapons.Add(new WeaponDraft());
+                draftWeapons.Add(null);
             }
 
             if (draftWeapons.Count == 0)
             {
-                draftWeapons.Add(new WeaponDraft());
+                draftWeapons.Add(null);
             }
         }
 

@@ -36,7 +36,6 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < weapons.Length; i++)
             {
                 weapons[i] ??= WeaponProfile.CreateDefault();
-                weapons[i].Sanitize();
             }
         }
     }

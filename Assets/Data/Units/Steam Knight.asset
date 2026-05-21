@@ -24,12 +24,6 @@ MonoBehaviour:
     health: 18
     startingResource: 3
     weapons:
-    - displayName: Steam Halberd
-      attackType: 0
-      power: 8
-      range: 1.5
-    - displayName: Hand Cannon
-      attackType: 1
-      power: 6
-      range: 12
+    - {fileID: 11400000, guid: b7e6f6f5a2d1437e8d12b7319bf4a1b1, type: 2}
+    - {fileID: 11400000, guid: 6d3d4b1d3fa24c3aa6c2cc4b4517ce72, type: 2}
   designNotes: Mk4-style heavy bruiser with a primary melee polearm and backup ranged sidearm.
