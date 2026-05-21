@@ -155,8 +155,9 @@ namespace IronKingdoms.Combat
 
         private static int[] RollDice(Random random, int count)
         {
-            var dice = new int[Math.Max(2, count)];
-            for (var i = 0; i < count; i++)
+            var size = Math.Max(2, count);
+            var dice = new int[size];
+            for (var i = 0; i < size; i++)
             {
                 dice[i] = random.Next(1, 7);
             }

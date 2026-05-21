@@ -1235,7 +1235,7 @@ namespace IronKingdoms.Combat
             var attackStatLabel = isMeleeAttack ? "MAT" : "RAT";
             var atkDie1 = Random.Range(1, 7);
             var atkDie2 = Random.Range(1, 7);
-            var extraDice = weapon.GetAttackDiceCount(false) - 2;
+            var extraDice = Mathf.Max(0, weapon.GetAttackDiceCount(false) - 2);
             var extraDiceTotal = 0;
             for (var i = 0; i < extraDice; i++)
             {
@@ -1256,7 +1256,7 @@ namespace IronKingdoms.Combat
 
             var dmgDie1 = Random.Range(1, 7);
             var dmgDie2 = Random.Range(1, 7);
-            var extraDmgDice = weapon.GetDamageDiceCount(false) - 2;
+            var extraDmgDice = Mathf.Max(0, weapon.GetDamageDiceCount(false) - 2);
             var extraDmgTotal = 0;
             for (var i = 0; i < extraDmgDice; i++)
             {
