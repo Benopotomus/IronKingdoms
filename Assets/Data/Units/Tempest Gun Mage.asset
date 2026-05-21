@@ -24,12 +24,6 @@ MonoBehaviour:
     health: 12
     startingResource: 2
     weapons:
-    - displayName: Arcane Hand Cannon
-      attackType: 1
-      power: 7
-      range: 12
-    - displayName: Shock Baton
-      attackType: 0
-      power: 4
-      range: 1.5
+    - {fileID: 11400000, guid: 8f1c7ef91de7464db7cf7f6a7a703f24, type: 2}
+    - {fileID: 11400000, guid: 56c2d652d1b6455c9c7f8ee58bb4e6ab, type: 2}
   designNotes: Mk4-style elite ranged officer unit with resource-fueled precision attacks.

@@ -5,8 +5,8 @@ Turn-based strategy game with narrative storyline.
 This branch now contains a minimal Unity 6000.3.10f1 project scaffold with:
 - a Warmachine Mk4-inspired combat prototype,
 - a `TestCombatScene` for validating turn flow,
-- ScriptableObject-driven unit definitions with Mk4 model sizes and weapon profiles, and
-- an editor tool for creating and editing unit stat assets.
+- ScriptableObject-driven unit/weapon definitions with Mk4 model sizes and shared weapon profiles, and
+- editor tools for creating and editing unit and weapon assets.
 
 Open `/home/runner/work/IronKingdoms/IronKingdoms` in Unity 6000.3.10f1, then load `Assets/Scenes/TestCombatScene.unity` and press Play. The combat map geometry and spawn markers now live in `Assets/Scenes/CombatMapScene.unity`, which is loaded additively at runtime.
 

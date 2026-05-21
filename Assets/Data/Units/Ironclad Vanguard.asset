@@ -24,12 +24,6 @@ MonoBehaviour:
     health: 20
     startingResource: 2
     weapons:
-    - displayName: Siege Hammer
-      attackType: 0
-      power: 9
-      range: 1.5
-    - displayName: Steam Mortar
-      attackType: 1
-      power: 7
-      range: 9
+    - {fileID: 11400000, guid: c4f0d177b2ae4ec0b4e9c447f4eab73e, type: 2}
+    - {fileID: 11400000, guid: 3fca850e8b9d4f33a3f369f4a1a9d8e2, type: 2}
   designNotes: Mk4-inspired armored warjack profile for heavy front-line engagements.
