@@ -358,8 +358,7 @@ MonoBehaviour:
   enemySpawnAnchor: {fileID: 500001}
   spawnSpacing: 2
   aiThinkInterval: 0.5
-  attackCooldownSeconds: 1.2
-  selectionCamera: {fileID: 100002}
+  cameraManager: {fileID: 300004}
   autoSpawnOnStart: 1
 --- !u!114 &300004
 MonoBehaviour:
@@ -373,6 +372,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a3f7c2b14e8d4a9f83c51d6e20b4f7a8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  targetCamera: {fileID: 100002}
+  cameraKeyboardPanSpeed: 10
+  cameraDragPanSensitivity: 0.02
+  cameraRotationSensitivity: 0.2
+  cameraMinPitch: 25
+  cameraMaxPitch: 75
+  cameraFocusTransitionSpeed: 12
 --- !u!1 &400000
 GameObject:
   m_ObjectHideFlags: 0

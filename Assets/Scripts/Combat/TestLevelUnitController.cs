@@ -127,6 +127,11 @@ namespace IronKingdoms.Combat
         private Vector3 lastPreviewRequestTarget;
         private float lastPathPreviewTime;
 
+        private void Awake()
+        {
+            EnsureCameraManagerAssigned();
+        }
+
         private void Start()
         {
             BuildVisualizers();
@@ -150,6 +155,14 @@ namespace IronKingdoms.Combat
             UpdateMovementVisualizer();
             UpdateWeaponRangeRing();
             UpdateHoveredEnemy();
+        }
+
+        private void EnsureCameraManagerAssigned()
+        {
+            if (cameraManager == null)
+            {
+                cameraManager = GetComponent<CombatCameraManager>();
+            }
         }
 
         private void BuildVisualizers()
