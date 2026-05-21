@@ -17,27 +17,30 @@ namespace IronKingdoms.Combat
 
         private void Awake()
         {
-            LoadMapScene();
-            ApplySpawnAnchors();
+            var mapScene = LoadMapScene();
+            ApplySpawnAnchors(mapScene);
             SetupPathfinding();
         }
 
-        private void LoadMapScene()
+        private Scene LoadMapScene()
         {
             if (string.IsNullOrWhiteSpace(combatMapSceneName))
             {
                 Debug.LogWarning("Combat map scene name is not configured.", this);
-                return;
+                return default;
             }
 
             var mapScene = SceneManager.GetSceneByName(combatMapSceneName);
             if (!mapScene.IsValid() || !mapScene.isLoaded)
             {
                 SceneManager.LoadScene(combatMapSceneName, LoadSceneMode.Additive);
+                mapScene = SceneManager.GetSceneByName(combatMapSceneName);
             }
+
+            return mapScene;
         }
 
-        private void ApplySpawnAnchors()
+        private void ApplySpawnAnchors(Scene mapScene)
         {
             var targetController = unitController != null ? unitController : GetComponent<TestLevelUnitController>();
             if (targetController == null)
@@ -45,20 +48,36 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var spawnPoints = FindObjectsByType<CombatSpawnPoint>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
             Transform playerSpawn = null;
             Transform enemySpawn = null;
-
-            for (var i = 0; i < spawnPoints.Length; i++)
+            if (mapScene.IsValid() && mapScene.isLoaded)
             {
-                var spawnPoint = spawnPoints[i];
-                if (spawnPoint.Side == CombatSpawnSide.Player && playerSpawn == null)
+                var roots = mapScene.GetRootGameObjects();
+                for (var i = 0; i < roots.Length; i++)
                 {
-                    playerSpawn = spawnPoint.transform;
-                }
-                else if (spawnPoint.Side == CombatSpawnSide.Enemy && enemySpawn == null)
-                {
-                    enemySpawn = spawnPoint.transform;
+                    var spawnPoints = roots[i].GetComponentsInChildren<CombatSpawnPoint>(true);
+                    for (var j = 0; j < spawnPoints.Length; j++)
+                    {
+                        var spawnPoint = spawnPoints[j];
+                        if (spawnPoint.Side == CombatSpawnSide.Player && playerSpawn == null)
+                        {
+                            playerSpawn = spawnPoint.transform;
+                        }
+                        else if (spawnPoint.Side == CombatSpawnSide.Enemy && enemySpawn == null)
+                        {
+                            enemySpawn = spawnPoint.transform;
+                        }
+
+                        if (playerSpawn != null && enemySpawn != null)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (playerSpawn != null && enemySpawn != null)
+                    {
+                        break;
+                    }
                 }
             }
 
