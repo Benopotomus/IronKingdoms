@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using Pathfinding;
 using UnityEngine;
 
@@ -127,7 +128,7 @@ namespace IronKingdoms.Combat
         private bool previewPathPending;
         private Vector3 lastPreviewRequestTarget;
         private float lastPathPreviewTime;
-        private static bool missingRecastGraphWarningLogged;
+        private static int missingRecastGraphWarningLogged;
 
         private void Awake()
         {
@@ -1207,10 +1208,9 @@ namespace IronKingdoms.Combat
             var recastGraph = AstarPath.active.data.FindGraph(graph => graph is RecastGraph);
             if (recastGraph == null)
             {
-                if (!missingRecastGraphWarningLogged)
+                if (Interlocked.Exchange(ref missingRecastGraphWarningLogged, 1) == 0)
                 {
                     Debug.LogWarning("No RecastGraph is loaded. Combat movement/pathfinding now requires a baked RecastGraph.");
-                    missingRecastGraphWarningLogged = true;
                 }
 
                 return false;
