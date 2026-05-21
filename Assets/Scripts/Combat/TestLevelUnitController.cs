@@ -127,6 +127,7 @@ namespace IronKingdoms.Combat
         private bool previewPathPending;
         private Vector3 lastPreviewRequestTarget;
         private float lastPathPreviewTime;
+        private static bool missingRecastGraphWarningLogged;
 
         private void Awake()
         {
@@ -317,6 +318,11 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            if (!TryGetRecastGraphMask(out var graphMask))
+            {
+                return;
+            }
+
             if (Time.unscaledTime - lastPathPreviewTime < PathPreviewMinInterval)
             {
                 return;
@@ -333,6 +339,7 @@ namespace IronKingdoms.Combat
             previewPathPending = true;
 
             var path = ABPath.Construct(from, to, OnPreviewPathComplete);
+            path.traversalConstraint.graphMask = graphMask;
             AstarPath.StartPath(path);
         }
 
@@ -1075,9 +1082,10 @@ namespace IronKingdoms.Combat
             destination = GetNearestNavmeshPosition(destination);
 
             // Try A* pathfinding first (synchronous for immediate movement response).
-            if (AstarPath.active != null)
+            if (AstarPath.active != null && TryGetRecastGraphMask(out var graphMask))
             {
                 var path = ABPath.Construct(current, destination);
+                path.traversalConstraint.graphMask = graphMask;
                 AstarPath.StartPath(path);
                 AstarPath.BlockUntilCalculated(path);
 
@@ -1170,22 +1178,46 @@ namespace IronKingdoms.Combat
 
         private static Vector3 GetNearestNavmeshPosition(Vector3 worldPosition)
         {
-            if (AstarPath.active == null)
+            if (AstarPath.active == null || !TryGetRecastGraphMask(out var graphMask))
             {
                 return worldPosition;
             }
 
-            var nearest = AstarPath.active.GetNearest(worldPosition, NearestNodeConstraint.Walkable);
+            var nearestConstraint = NearestNodeConstraint.Walkable;
+            nearestConstraint.graphMask = graphMask;
+            var nearest = AstarPath.active.GetNearest(worldPosition, nearestConstraint);
             if (nearest.node == null)
             {
                 return worldPosition;
             }
 
-            // For a RecastGraph (navmesh), nearest.position is already the closest point on the
-            // triangle surface — exact and precise, no grid-centre snapping.
-            // For a GridGraph fallback, nearest.position is the cell centre; the caller receives
-            // a snapped position in that case, which is acceptable given Recast is the target graph.
+            // RecastGraph nearest.position is the closest point on the navmesh surface.
             return nearest.position;
+        }
+
+        private static bool TryGetRecastGraphMask(out GraphMask graphMask)
+        {
+            graphMask = GraphMask.everything;
+
+            if (AstarPath.active == null || AstarPath.active.data == null)
+            {
+                return false;
+            }
+
+            var recastGraph = AstarPath.active.data.FindGraph(graph => graph is RecastGraph);
+            if (recastGraph == null)
+            {
+                if (!missingRecastGraphWarningLogged)
+                {
+                    Debug.LogWarning("No RecastGraph is loaded. Combat movement/pathfinding now requires a baked RecastGraph.");
+                    missingRecastGraphWarningLogged = true;
+                }
+
+                return false;
+            }
+
+            graphMask = GraphMask.FromGraph(recastGraph);
+            return true;
         }
 
         private static float GetPawnGroundOffset(RuntimeUnit unit)
