@@ -1,17 +1,14 @@
-using Pathfinding;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Loads a dedicated combat map scene additively, applies map-authored spawn points,
-    /// and initialises an A* RecastGraph that covers the play area.
+    /// Loads a dedicated combat map scene additively and applies map-authored spawn points.
+    /// The A* navmesh is expected to be pre-baked inside the combat map scene itself.
     /// </summary>
     public class CombatMapSetup : MonoBehaviour
     {
-        // ── Navmesh configuration ────────────────────────────────────────────
-        private const float NavmeshBoundsSize = 26f;
         [SerializeField] private string combatMapSceneName = "CombatMapScene";
         [SerializeField] private TestLevelUnitController unitController;
 
@@ -19,7 +16,6 @@ namespace IronKingdoms.Combat
         {
             var mapScene = LoadMapScene();
             ApplySpawnAnchors(mapScene);
-            SetupPathfinding();
         }
 
         private Scene LoadMapScene()
@@ -91,33 +87,5 @@ namespace IronKingdoms.Combat
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        //  A* Pathfinding setup
-        // ─────────────────────────────────────────────────────────────────────
-
-        private void SetupPathfinding()
-        {
-            // Create AstarPath component if one isn't already present in the scene.
-            var astar = AstarPath.active;
-            if (astar == null)
-            {
-                var astarGo = new GameObject("AstarPath");
-                astar = astarGo.AddComponent<AstarPath>();
-            }
-
-            // Clear any existing graphs and add a fresh RecastGraph navmesh.
-            astar.data.ClearGraphs();
-            var recast = astar.data.AddGraph<RecastGraph>();
-            recast.forcedBoundsCenter = Vector3.up * 1.5f;
-            recast.forcedBoundsSize = new Vector3(NavmeshBoundsSize, 6f, NavmeshBoundsSize);
-            recast.cellSize = 0.2f;
-            recast.walkableHeight = 1.5f;
-            recast.walkableClimb = 0.55f;
-            recast.characterRadius = 0.45f;
-            recast.maxSlope = 50f;
-
-            // Scan the graph now that the geometry is in place.
-            astar.Scan();
-        }
     }
 }
