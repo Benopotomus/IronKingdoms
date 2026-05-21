@@ -13,7 +13,6 @@ namespace IronKingdoms.Combat
         public int defense = 12;
         public int armor = 14;
         public int health = 10;
-        public int startingResource = 0;
         public WeaponProfile[] weapons = Array.Empty<WeaponProfile>();
 
         public WeaponProfile GetPrimaryWeapon()

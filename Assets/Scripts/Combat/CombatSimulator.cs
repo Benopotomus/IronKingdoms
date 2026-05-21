@@ -63,7 +63,6 @@ namespace IronKingdoms.Combat
         private static void ExecuteTurn(CombatantState actor, CombatantState target, Random random, ref float distance, CombatSimulationResult result)
         {
             result.AddLine($"- {actor.Name} Maintenance");
-            actor.Resource = actor.Definition.Stats.startingResource;
             result.AddLine($"- {actor.Name} Control: restore resource to {actor.Resource}");
             result.AddLine($"- {actor.Name} Activation");
 
@@ -182,7 +181,6 @@ namespace IronKingdoms.Combat
             {
                 Definition = definition;
                 Health = definition.Stats.health;
-                Resource = definition.Stats.startingResource;
             }
 
             public UnitTypeDefinition Definition { get; }
