@@ -86,6 +86,7 @@ namespace IronKingdoms.Combat
         private readonly List<RuntimeUnit> enemyRuntimeUnits = new();
         private readonly List<RuntimeUnit> allRuntimeUnits = new();
         private readonly Plane boardPlane = new(Vector3.up, Vector3.zero);
+        private readonly RaycastHit[] terrainRaycastBuffer = new RaycastHit[16];
         private RuntimeUnit selectedUnit;
         private TurnSide activeTurnSide = TurnSide.Player;
         private float aiThinkTimer;
@@ -249,14 +250,13 @@ namespace IronKingdoms.Combat
             }
 
             var ray = activeCamera.ScreenPointToRay(Input.mousePosition);
-            if (!boardPlane.Raycast(ray, out var enter))
+            if (!TryGetTerrainHitPoint(ray, out var hoverPos))
             {
                 movementPathLine.enabled = false;
                 destinationMarkerObject.SetActive(false);
                 return;
             }
 
-            var hoverPos = ray.GetPoint(enter);
             var hoverNavPos = GetNearestNavmeshPosition(hoverPos);
 
             var unitPos = selectedUnit.Pawn.transform.position;
@@ -717,6 +717,8 @@ namespace IronKingdoms.Combat
             }
 
             var ray = activeCamera.ScreenPointToRay(Input.mousePosition);
+
+            // First, check whether the click landed on a player unit (unit-selection shortcut).
             if (Physics.Raycast(ray, out var hit))
             {
                 for (var i = 0; i < playerRuntimeUnits.Count; i++)
@@ -729,12 +731,12 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            if (!boardPlane.Raycast(ray, out var enter))
+            // Resolve the exact terrain point the player clicked (not just a flat plane).
+            if (!TryGetTerrainHitPoint(ray, out var destination))
             {
                 return;
             }
 
-            var destination = ray.GetPoint(enter);
             destination = GetGroundedNavmeshPositionForUnit(selectedUnit, destination);
             var movementBudget = selectedUnit.RemainingMovementThisTurn;
             var forfeitCombatAction = false;
@@ -1112,6 +1114,60 @@ namespace IronKingdoms.Combat
             unit.PathWaypoints = null;
         }
 
+        /// <summary>
+        /// Returns true if <paramref name="go"/> is a pawn belonging to any spawned unit.
+        /// Used to distinguish unit colliders from terrain geometry when raycasting.
+        /// </summary>
+        private bool IsUnitPawn(GameObject go)
+        {
+            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            {
+                if (allRuntimeUnits[i].Pawn == go)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Casts a ray against the 3D scene geometry and returns the first terrain hit point
+        /// (ignoring unit pawns).  Falls back to <paramref name="boardPlane"/> when no geometry
+        /// is hit, so the method always produces a valid world position.
+        /// </summary>
+        private bool TryGetTerrainHitPoint(Ray ray, out Vector3 point)
+        {
+            var hitCount = Physics.RaycastNonAlloc(ray, terrainRaycastBuffer);
+            var closestDist = float.MaxValue;
+            var found = false;
+            point = Vector3.zero;
+            for (var i = 0; i < hitCount; i++)
+            {
+                var h = terrainRaycastBuffer[i];
+                if (!IsUnitPawn(h.collider.gameObject) && h.distance < closestDist)
+                {
+                    closestDist = h.distance;
+                    point = h.point;
+                    found = true;
+                }
+            }
+
+            if (found)
+            {
+                return true;
+            }
+
+            // No terrain geometry hit — fall back to the flat board plane.
+            if (boardPlane.Raycast(ray, out var enter))
+            {
+                point = ray.GetPoint(enter);
+                return true;
+            }
+
+            return false;
+        }
+
         private static Vector3 GetNearestNavmeshPosition(Vector3 worldPosition)
         {
             if (AstarPath.active == null)
@@ -1120,7 +1176,16 @@ namespace IronKingdoms.Combat
             }
 
             var nearest = AstarPath.active.GetNearest(worldPosition, NearestNodeConstraint.Walkable);
-            return nearest.node != null ? nearest.position : worldPosition;
+            if (nearest.node == null)
+            {
+                return worldPosition;
+            }
+
+            // For a RecastGraph (navmesh), nearest.position is already the closest point on the
+            // triangle surface — exact and precise, no grid-centre snapping.
+            // For a GridGraph fallback, nearest.position is the cell centre; the caller receives
+            // a snapped position in that case, which is acceptable given Recast is the target graph.
+            return nearest.position;
         }
 
         private static float GetPawnGroundOffset(RuntimeUnit unit)
