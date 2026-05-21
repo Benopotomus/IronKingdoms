@@ -26,7 +26,7 @@ This implementation intentionally stays at the "starter combat harness" level ra
 - Each model turn is resolved as Maintenance -> Control -> Activation.
 - The acting unit refreshes its command resource during Control.
 - Activation is staged for the player and enemy prototype flows:
-  1. Resolve movement (or skip it).
+  1. Resolve movement (Advance/Run/Charge) or forfeit movement to Aim (+2 to hit on the next attack this activation).
   2. Resolve one combat action.
   3. After the combat action is taken, movement is no longer available for that unit this activation.
 

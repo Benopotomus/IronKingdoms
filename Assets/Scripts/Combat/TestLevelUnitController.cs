@@ -29,7 +29,7 @@ namespace IronKingdoms.Combat
         private const float SelectedUnitPanelOffsetX = 12f;
         private const float SelectedUnitPanelOffsetY = 12f;
         private const float ActionBarWidth = 560f;
-        private const float ActionBarHeight = 96f;
+        private const float ActionBarHeight = 132f;
         private const float ActionBarBottomMargin = 12f;
         private const float HoverPanelWidth = 280f;
         private const float HoverPanelHeight = 122f;
@@ -50,6 +50,9 @@ namespace IronKingdoms.Combat
         private const float FloatingDamageLifetime = 1.2f;
         private const float FloatingDamageRiseSpeed = 55f;
         private const float HoverPanelAttackExtraHeight = 34f;
+        private const float RunMovementMultiplier = 2f;
+        private const float ChargeMovementBonus = 3f;
+        private const int AimToHitBonus = 2;
 
         private enum TurnSide
         {
@@ -62,6 +65,13 @@ namespace IronKingdoms.Combat
             None,
             Move,
             Attack
+        }
+
+        private enum MovementStepOption
+        {
+            Advance,
+            Run,
+            Charge
         }
 
         [SerializeField] private List<UnitTypeDefinition> playerUnits = new();
@@ -96,6 +106,7 @@ namespace IronKingdoms.Combat
         }
 
         private UnitActionMode currentPlayerMode = UnitActionMode.None;
+        private MovementStepOption selectedMovementOption = MovementStepOption.Advance;
         private int selectedAttackWeaponIndex;
         private LineRenderer movementPathLine;
         private LineRenderer weaponRangeRingLine;
@@ -709,7 +720,32 @@ namespace IronKingdoms.Combat
 
             var destination = ray.GetPoint(enter);
             destination.y = PawnYPosition;
-            IssueMoveOrder(selectedUnit, destination);
+            var movementBudget = selectedUnit.RemainingMovementThisTurn;
+            var forfeitCombatAction = false;
+            switch (selectedMovementOption)
+            {
+                case MovementStepOption.Run:
+                    movementBudget *= RunMovementMultiplier;
+                    forfeitCombatAction = true;
+                    break;
+                case MovementStepOption.Charge:
+                    if (GetSelectedAttackWeapon(selectedUnit).attackType == WeaponAttackType.Melee)
+                    {
+                        movementBudget += ChargeMovementBonus;
+                    }
+
+                    break;
+            }
+
+            selectedUnit.RemainingMovementThisTurn = movementBudget;
+
+            selectedUnit.IsAimingThisTurn = false;
+            IssueMoveOrder(selectedUnit, destination, movementBudget);
+            if (forfeitCombatAction)
+            {
+                selectedUnit.HasActedThisTurn = true;
+            }
+
             SetCurrentMode(UnitActionMode.None);
         }
 
@@ -999,14 +1035,16 @@ namespace IronKingdoms.Combat
             return activeEnemyTarget != null;
         }
 
-        private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination)
+        private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination, float? movementBudgetOverride = null)
         {
             if (unit == null || !unit.IsAlive || unit.Pawn == null || unit.HasActedThisTurn)
             {
                 return;
             }
 
-            var remaining = Mathf.Max(0f, unit.RemainingMovementThisTurn);
+            var remaining = movementBudgetOverride.HasValue
+                ? Mathf.Max(0f, movementBudgetOverride.Value)
+                : Mathf.Max(0f, unit.RemainingMovementThisTurn);
             if (remaining <= 0f)
             {
                 unit.MoveTarget = null;
@@ -1094,6 +1132,7 @@ namespace IronKingdoms.Combat
             activeTurnSide = TurnSide.Player;
             ResetMovementForTurn(playerRuntimeUnits);
             selectedUnit = FindFirstAlive(playerRuntimeUnits);
+            selectedMovementOption = MovementStepOption.Advance;
             SetCurrentMode(UnitActionMode.None);
         }
 
@@ -1136,6 +1175,7 @@ namespace IronKingdoms.Combat
                 var unit = units[i];
                 unit.RemainingMovementThisTurn = unit.Definition.Stats.speed;
                 unit.HasActedThisTurn = false;
+                unit.IsAimingThisTurn = false;
                 unit.MoveTarget = null;
                 unit.PathWaypoints = null;
             }
@@ -1145,16 +1185,19 @@ namespace IronKingdoms.Combat
         {
             var isMeleeAttack = weapon.AttackType == WeaponAttackType.Melee;
             var attackValue = GetAttackStatForWeapon(attacker, weapon);
+            var attackModifier = GetToHitModifier(attacker);
             var attackStatLabel = isMeleeAttack ? "MAT" : "RAT";
             var atkDie1 = Random.Range(1, 7);
             var atkDie2 = Random.Range(1, 7);
-            var attackRoll = atkDie1 + atkDie2 + attackValue;
+            var attackRoll = atkDie1 + atkDie2 + attackValue + attackModifier;
+            var modifierText = FormatAttackModifierText(attackModifier);
             if (!DoesAttackRollHit(atkDie1, atkDie2, attackRoll, defender.Definition.Stats.defense))
             {
                 SpawnFloatingText(defender.Pawn.transform.position, "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
                 AddCombatLogEntry(
                     $"{attacker.Definition.DisplayName} → {defender.Definition.DisplayName}  " +
-                    $"ATK [{atkDie1}+{atkDie2}]+{attackValue} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Miss");
+                    $"ATK [{atkDie1}+{atkDie2}]+{attackValue}{modifierText} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Miss");
+                attacker.IsAimingThisTurn = false;
                 return;
             }
 
@@ -1169,8 +1212,9 @@ namespace IronKingdoms.Combat
             var logResult = damage > 0 ? $"-{damage} HP" : "Blocked";
             AddCombatLogEntry(
                 $"{attacker.Definition.DisplayName} → {defender.Definition.DisplayName}  " +
-                $"ATK [{atkDie1}+{atkDie2}]+{attackValue} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Hit!  " +
+                $"ATK [{atkDie1}+{atkDie2}]+{attackValue}{modifierText} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Hit!  " +
                 $"DMG [{dmgDie1}+{dmgDie2}]+{weapon.Power} POW = {damageRoll} vs ARM {defender.Definition.Stats.armor} → {logResult}");
+            attacker.IsAimingThisTurn = false;
             if (!defender.IsAlive)
             {
                 defender.Pawn.SetActive(false);
@@ -1258,12 +1302,13 @@ namespace IronKingdoms.Combat
         private static float CalculateHitChancePercent(RuntimeUnit attacker, RuntimeUnit defender, WeaponProfile weapon)
         {
             var attackStat = GetAttackStatForWeapon(attacker, weapon);
+            var attackModifier = GetToHitModifier(attacker);
             var hits = 0;
             for (var d1 = 1; d1 <= 6; d1++)
             {
                 for (var d2 = 1; d2 <= 6; d2++)
                 {
-                    var attackRoll = d1 + d2 + attackStat;
+                    var attackRoll = d1 + d2 + attackStat + attackModifier;
                     if (DoesAttackRollHit(d1, d2, attackRoll, defender.Definition.Stats.defense))
                     {
                         hits++;
@@ -1280,6 +1325,31 @@ namespace IronKingdoms.Combat
                 ? attacker.Definition.Stats.meleeAttack
                 : attacker.Definition.Stats.rangedAttack;
             return baseAttack + weapon.GetAttackModifier();
+        }
+
+        private static int GetToHitModifier(RuntimeUnit attacker)
+        {
+            if (attacker == null)
+            {
+                return 0;
+            }
+
+            return attacker.IsAimingThisTurn ? AimToHitBonus : 0;
+        }
+
+        private static string FormatAttackModifierText(int attackModifier)
+        {
+            if (attackModifier > 0)
+            {
+                return $" +{attackModifier}";
+            }
+
+            if (attackModifier < 0)
+            {
+                return $" {attackModifier}";
+            }
+
+            return string.Empty;
         }
 
         private static bool DoesAttackRollHit(int die1, int die2, int totalAttackRoll, int targetDefense)
@@ -1351,6 +1421,7 @@ namespace IronKingdoms.Combat
         {
             selectedUnit = unit != null && unit.IsAlive ? unit : null;
             selectedAttackWeaponIndex = 0;
+            selectedMovementOption = MovementStepOption.Advance;
             SetCurrentMode(UnitActionMode.None);
         }
 
@@ -1618,6 +1689,10 @@ namespace IronKingdoms.Combat
             GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
             GUILayout.Label($"Type: {selectedWeapon.AttackType}  |  Range: {selectedWeapon.Range:0.0}\"");
             GUILayout.Label($"Weapon Power: {selectedWeapon.Power}");
+            if (selectedUnit.IsAimingThisTurn)
+            {
+                GUILayout.Label($"Aiming: +{AimToHitBonus} to hit (next attack)");
+            }
             GUILayout.Label($"MAT Mod: {selectedWeapon.MatModifier:+#;-#;0}  |  RAT Mod: {selectedWeapon.RatModifier:+#;-#;0}");
 
             GUILayout.EndArea();
@@ -1690,8 +1765,57 @@ namespace IronKingdoms.Combat
                     GUILayout.EndHorizontal();
                 }
             }
+            else if (currentPlayerMode == UnitActionMode.Move)
+            {
+                GUILayout.Space(6f);
+                GUILayout.BeginHorizontal();
+                var advanceLabel = selectedMovementOption == MovementStepOption.Advance ? "[ Advance ]" : "Advance";
+                if (GUILayout.Button(advanceLabel))
+                {
+                    selectedMovementOption = MovementStepOption.Advance;
+                }
+
+                var runLabel = selectedMovementOption == MovementStepOption.Run ? "[ Run ]" : "Run";
+                if (GUILayout.Button(runLabel))
+                {
+                    selectedMovementOption = MovementStepOption.Run;
+                }
+
+                var chargeLabel = selectedMovementOption == MovementStepOption.Charge ? "[ Charge ]" : "Charge";
+                if (GUILayout.Button(chargeLabel))
+                {
+                    selectedMovementOption = MovementStepOption.Charge;
+                }
+
+                GUI.enabled = canMove;
+                if (GUILayout.Button($"Aim (+{AimToHitBonus} to hit)"))
+                {
+                    if (!WasUiCancelTriggeredThisFrame())
+                    {
+                        ApplyAim(selectedUnit);
+                    }
+                }
+
+                GUI.enabled = true;
+                GUILayout.EndHorizontal();
+            }
 
             GUILayout.EndArea();
+        }
+
+        private void ApplyAim(RuntimeUnit unit)
+        {
+            if (unit == null || !unit.IsAlive || unit.HasActedThisTurn)
+            {
+                return;
+            }
+
+            unit.MoveTarget = null;
+            unit.PathWaypoints = null;
+            unit.RemainingMovementThisTurn = 0f;
+            unit.IsAimingThisTurn = true;
+            AddCombatLogEntry($"{unit.Definition.DisplayName} aims (+{AimToHitBonus} to hit).");
+            SetCurrentMode(UnitActionMode.None);
         }
 
         private static Rect GetActionBarRect()
@@ -1878,6 +2002,7 @@ namespace IronKingdoms.Combat
             public int Health { get; set; }
             public float RemainingMovementThisTurn { get; set; }
             public bool HasActedThisTurn { get; set; }
+            public bool IsAimingThisTurn { get; set; }
             public Vector3? MoveTarget { get; set; }
             public bool IsAlive => Health > 0;
 
