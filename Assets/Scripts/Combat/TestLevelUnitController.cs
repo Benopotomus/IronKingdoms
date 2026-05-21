@@ -532,6 +532,16 @@ namespace IronKingdoms.Combat
             enemySpawnAnchor = enemyAnchor;
         }
 
+        /// <summary>
+        /// Prevents <see cref="SpawnUnits"/> from being called automatically in Start.
+        /// Call this from <see cref="CombatMapSetup"/> before the map scene has finished loading
+        /// so that units are not spawned before their spawn-point anchors are resolved.
+        /// </summary>
+        public void DisableAutoSpawn()
+        {
+            autoSpawnOnStart = false;
+        }
+
         private void SpawnArmy(List<UnitTypeDefinition> units, Transform anchor, List<RuntimeUnit> destination, bool isPlayerControlled, Color color)
         {
             if (units == null)

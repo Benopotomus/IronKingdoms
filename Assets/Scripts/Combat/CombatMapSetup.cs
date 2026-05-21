@@ -1,3 +1,4 @@
+using System.Collections;
 using Pathfinding;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -20,31 +21,70 @@ namespace IronKingdoms.Combat
 
         private void Awake()
         {
-            var mapScene = LoadMapScene();
-            ApplySpawnAnchors(mapScene);
-        }
-
-        private Scene LoadMapScene()
-        {
-            if (string.IsNullOrWhiteSpace(combatMapSceneName))
+            var targetController = unitController != null ? unitController : GetComponent<TestLevelUnitController>();
+            if (targetController != null)
             {
-                Debug.LogWarning("Combat map scene name is not configured.", this);
-                return default;
+                targetController.DisableAutoSpawn();
             }
 
+            StartCoroutine(LoadAndSetup(targetController));
+        }
+
+        /// <summary>
+        /// Async initialization sequence:
+        /// 1. Waits for the combat map scene to finish loading additively.
+        /// 2. Resolves player and enemy <see cref="CombatSpawnPoint"/> markers from the loaded scene.
+        /// 3. Scans the A* navmesh over the map geometry.
+        /// 4. Calls <see cref="TestLevelUnitController.SpawnUnits"/> so units are placed at the
+        ///    correct spawn anchors instead of falling back to origin.
+        /// </summary>
+        private IEnumerator LoadAndSetup(TestLevelUnitController targetController)
+        {
             var mapScene = SceneManager.GetSceneByName(combatMapSceneName);
             if (!mapScene.IsValid() || !mapScene.isLoaded)
             {
-                SceneManager.LoadScene(combatMapSceneName, LoadSceneMode.Additive);
-                mapScene = SceneManager.GetSceneByName(combatMapSceneName);
+                if (string.IsNullOrWhiteSpace(combatMapSceneName))
+                {
+                    Debug.LogWarning("Combat map scene name is not configured.", this);
+                }
+                else
+                {
+                    yield return SceneManager.LoadSceneAsync(combatMapSceneName, LoadSceneMode.Additive);
+                    mapScene = SceneManager.GetSceneByName(combatMapSceneName);
+                }
             }
 
-            return mapScene;
+            ApplySpawnAnchors(mapScene, targetController);
+            ScanNavmesh();
+
+            if (targetController != null)
+            {
+                targetController.SpawnUnits();
+            }
         }
 
-        private void ApplySpawnAnchors(Scene mapScene)
+        private void ScanNavmesh()
         {
-            var targetController = unitController != null ? unitController : GetComponent<TestLevelUnitController>();
+            if (AstarPath.active != null)
+            {
+                AstarPath.active.Scan();
+                return;
+            }
+
+            var astarObject = new GameObject("A* Pathfinder");
+            var astar = astarObject.AddComponent<AstarPath>();
+            astar.scanOnStartup = false;
+
+            var gg = astar.data.AddGraph<GridGraph>();
+            gg.center = Vector3.zero;
+            gg.SetDimensions(NavGridWidth, NavGridDepth, NavNodeSize);
+            gg.maxSlope = NavMaxSlope;
+
+            astar.Scan();
+        }
+
+        private void ApplySpawnAnchors(Scene mapScene, TestLevelUnitController targetController)
+        {
             if (targetController == null)
             {
                 return;
