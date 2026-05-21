@@ -1,4 +1,5 @@
 using System.Collections;
+using Pathfinding;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -10,8 +11,8 @@ namespace IronKingdoms.Combat
     ///
     /// The A* navmesh (RecastGraph) must be baked and saved inside CombatMapScene in the
     /// Unity editor (A* Inspector → Scan, then save the scene).  Set "Scan On Startup" to
-    /// false on the AstarPath component so the cached graph is used directly at runtime —
-    /// no runtime scanning takes place here.
+    /// false on the AstarPath component so the cached graph is used directly at runtime.
+    /// If no scanned data is present, this component performs a one-time runtime scan fallback.
     /// </summary>
     public class CombatMapSetup : MonoBehaviour
     {
@@ -53,12 +54,40 @@ namespace IronKingdoms.Combat
                 }
             }
 
+            EnsureNavigationReady();
             ApplySpawnAnchors(mapScene, targetController);
 
             if (targetController != null)
             {
                 targetController.SpawnUnits();
             }
+        }
+
+        private void EnsureNavigationReady()
+        {
+            if (AstarPath.active == null)
+            {
+                Debug.LogWarning("Combat map loaded without an active AstarPath component; movement will use non-nav fallback positions.", this);
+                return;
+            }
+
+            var graphs = AstarPath.active.data?.graphs;
+            if (graphs == null || graphs.Length == 0)
+            {
+                Debug.LogWarning("AstarPath has no graphs configured after combat map load.", this);
+                return;
+            }
+
+            for (var i = 0; i < graphs.Length; i++)
+            {
+                if (graphs[i] != null && graphs[i].isScanned)
+                {
+                    return;
+                }
+            }
+
+            Debug.LogWarning("Combat map nav graphs are present but not scanned; running AstarPath.Scan() at runtime as fallback.", this);
+            AstarPath.active.Scan();
         }
 
         private void ApplySpawnAnchors(Scene mapScene, TestLevelUnitController targetController)
