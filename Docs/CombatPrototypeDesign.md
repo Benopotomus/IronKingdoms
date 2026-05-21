@@ -4,7 +4,8 @@
 Bootstrap this branch as a Unity 6000.3.10f1 project with a small, testable combat loop inspired by the baseline Warmachine Mk4 turn structure.
 
 ## Source note
-The requested Google Drive rules document was not reachable from this sandbox, so this prototype uses publicly available Warmachine Mk4 high-level concepts as a starting point and calls out assumptions that should be reconciled once the exact source document is available.
+The official Warmachine Mk4 Core Book (Abridged Digital Edition) has been added to `Assets/WMH-MK4-Rulebook_Digital_144-OP_Abridged.pdf`.  
+A comprehensive rules digest extracted from the actual rulebook is in **`Docs/WMH_MK4_Rules_Reference.md`** — that document is the authoritative reference for all design decisions and supersedes the assumptions below.
 
 ## Prototype scope
 - Unity version pinned to `6000.3.10f1`.
