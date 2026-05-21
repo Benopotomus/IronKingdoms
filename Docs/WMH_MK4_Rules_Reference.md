@@ -2,7 +2,7 @@
 
 > Summarized from *WARMACHINE Mk4 Core Book (Abridged Digital Edition)* — Steamforged Games / Privateer Press.  
 > This document is an authoritative rules digest for use as a design guide for the IronKingdoms prototype.  
-> It is a project summary, not a replacement for the source PDF; use `/home/runner/work/IronKingdoms/IronKingdoms/Assets/WMH-MK4-Rulebook_Digital_144-OP_Abridged.pdf` for exact wording.  
+> It is a project summary, not a replacement for the source PDF; use `Assets/WMH-MK4-Rulebook_Digital_144-OP_Abridged.pdf` for exact wording.  
 > All rules here supersede the earlier assumptions in `CombatPrototypeDesign.md`.
 
 ---
