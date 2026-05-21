@@ -86,6 +86,7 @@ namespace IronKingdoms.Combat
         private readonly List<RuntimeUnit> enemyRuntimeUnits = new();
         private readonly List<RuntimeUnit> allRuntimeUnits = new();
         private readonly Plane boardPlane = new(Vector3.up, Vector3.zero);
+        private readonly RaycastHit[] terrainRaycastBuffer = new RaycastHit[16];
         private RuntimeUnit selectedUnit;
         private TurnSide activeTurnSide = TurnSide.Player;
         private float aiThinkTimer;
@@ -1137,16 +1138,24 @@ namespace IronKingdoms.Combat
         /// </summary>
         private bool TryGetTerrainHitPoint(Ray ray, out Vector3 point)
         {
-            var hits = Physics.RaycastAll(ray);
-            // Sort by distance so we use the closest terrain surface.
-            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-            for (var i = 0; i < hits.Length; i++)
+            var hitCount = Physics.RaycastNonAlloc(ray, terrainRaycastBuffer);
+            var closestDist = float.MaxValue;
+            var found = false;
+            point = Vector3.zero;
+            for (var i = 0; i < hitCount; i++)
             {
-                if (!IsUnitPawn(hits[i].collider.gameObject))
+                var h = terrainRaycastBuffer[i];
+                if (!IsUnitPawn(h.collider.gameObject) && h.distance < closestDist)
                 {
-                    point = hits[i].point;
-                    return true;
+                    closestDist = h.distance;
+                    point = h.point;
+                    found = true;
                 }
+            }
+
+            if (found)
+            {
+                return true;
             }
 
             // No terrain geometry hit — fall back to the flat board plane.
@@ -1156,7 +1165,6 @@ namespace IronKingdoms.Combat
                 return true;
             }
 
-            point = Vector3.zero;
             return false;
         }
 
@@ -1173,23 +1181,11 @@ namespace IronKingdoms.Combat
                 return worldPosition;
             }
 
-            var nodeCenter = nearest.position;
-
-            // For grid graphs, preserve the exact XZ when the query point already lies within
-            // the walkable node's cell (same logic BG3 uses: move exactly where you clicked,
-            // not to the nearest grid-center).
-            var gg = AstarPath.active.data.gridGraph;
-            if (gg != null)
-            {
-                var halfSize = gg.nodeSize * 0.5f;
-                if (Mathf.Abs(worldPosition.x - nodeCenter.x) <= halfSize &&
-                    Mathf.Abs(worldPosition.z - nodeCenter.z) <= halfSize)
-                {
-                    return new Vector3(worldPosition.x, nodeCenter.y, worldPosition.z);
-                }
-            }
-
-            return nodeCenter;
+            // For a RecastGraph (navmesh), nearest.position is already the closest point on the
+            // triangle surface — exact and precise, no grid-centre snapping.
+            // For a GridGraph fallback, nearest.position is the cell centre; the caller receives
+            // a snapped position in that case, which is acceptable given Recast is the target graph.
+            return nearest.position;
         }
 
         private static float GetPawnGroundOffset(RuntimeUnit unit)
