@@ -134,17 +134,11 @@ namespace IronKingdoms.Combat
 
         private void Start()
         {
-            EnsureCameraManagerAssigned();
             BuildVisualizers();
             if (autoSpawnOnStart)
             {
                 SpawnUnits();
             }
-        }
-
-        private void OnValidate()
-        {
-            EnsureCameraManagerAssigned();
         }
 
         private void Update()
