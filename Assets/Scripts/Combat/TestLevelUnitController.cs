@@ -260,7 +260,6 @@ namespace IronKingdoms.Combat
             }
 
             var unitPos = selectedUnit.Pawn.transform.position;
-            var unitNavPos = GetNearestNavmeshPosition(unitPos);
 
             // Compute the effective budget for the chosen step option (Advance/Run/Charge).
             // If it changed (e.g. player switched from Advance to Run), force a path recalculation.
@@ -274,7 +273,7 @@ namespace IronKingdoms.Combat
             // Kick off a new A* path request when the hover target shifts enough.
             if (AstarPath.active != null)
             {
-                RequestPathPreviewIfNeeded(unitNavPos, hoverPos);
+                RequestPathPreviewIfNeeded(unitPos, hoverPos);
             }
 
             if (previewPathPending || previewPathWaypoints == null || previewPathWaypoints.Count < 2)
@@ -1141,8 +1140,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var current = GetNearestNavmeshPosition(unit.Pawn.transform.position);
-            unit.Pawn.transform.position = GetGroundedNavmeshPositionForUnit(unit, current);
+            var current = unit.Pawn.transform.position;
 
             // Try A* pathfinding first (synchronous for immediate movement response).
             if (AstarPath.active != null)
@@ -1182,7 +1180,7 @@ namespace IronKingdoms.Combat
 
             var moveDistance = Mathf.Min(remaining, distanceToDestination);
             var clampedDestination = current + planarDelta.normalized * moveDistance;
-            clampedDestination = GetGroundedNavmeshPositionForUnit(unit, clampedDestination);
+            clampedDestination.y = current.y + GetPawnGroundOffset(unit);
             unit.MoveTarget = clampedDestination;
             unit.PathWaypoints = null;
         }
