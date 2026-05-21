@@ -128,6 +128,7 @@ namespace IronKingdoms.Combat
         private bool previewPathPending;
         private Vector3 lastPreviewRequestTarget;
         private float lastPathPreviewTime;
+        private float previewMovementBudget;
 
         private void Awake()
         {
@@ -262,7 +263,15 @@ namespace IronKingdoms.Combat
 
             var unitPos = selectedUnit.Pawn.transform.position;
             var unitNavPos = GetNearestNavmeshPosition(unitPos);
-            var remaining = selectedUnit.RemainingMovementThisTurn;
+
+            // Compute the effective budget for the chosen step option (Advance/Run/Charge).
+            // If it changed (e.g. player switched from Advance to Run), force a path recalculation.
+            var effectiveBudget = GetEffectivePreviewMovementBudget();
+            if (!Mathf.Approximately(effectiveBudget, previewMovementBudget))
+            {
+                previewMovementBudget = effectiveBudget;
+                lastPreviewRequestTarget = Vector3.positiveInfinity;
+            }
 
             // Kick off a new A* path request when the hover target shifts enough.
             if (AstarPath.active != null)
@@ -297,12 +306,33 @@ namespace IronKingdoms.Combat
                 movementPathLine.SetPosition(i, displayPath[i]);
             }
 
+            // When the destination is reachable, pin the line's last point to the exact current
+            // cursor position every frame so it never lags or snaps between path recalculations.
+            if (withinRange)
+            {
+                var exactLineEnd = hoverNavPos;
+                exactLineEnd.y += PathVisualizationHeight;
+                movementPathLine.SetPosition(displayPath.Count - 1, exactLineEnd);
+            }
+
             movementPathLine.startColor = pathColor;
             movementPathLine.endColor = pathFadeColor;
 
             destinationMarkerObject.SetActive(true);
-            var dest = displayPath[displayPath.Count - 1];
-            dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y - PathVisualizationHeight);
+            Vector3 dest;
+            if (withinRange)
+            {
+                // Marker follows the cursor exactly — no snapping to the stale cached path endpoint.
+                dest = hoverNavPos;
+                dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y);
+            }
+            else
+            {
+                // Out of range: show where the unit will actually stop (clamped by budget).
+                dest = displayPath[displayPath.Count - 1];
+                dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y - PathVisualizationHeight);
+            }
+
             destinationMarkerObject.transform.position = dest;
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
             if (markerRenderer != null)
@@ -351,7 +381,11 @@ namespace IronKingdoms.Combat
             // (straight on open terrain, only bending where obstacles require it).
             var smoothedPath = GetFunnelSmoothedVectorPath((ABPath)p);
 
-            var remaining = selectedUnit.RemainingMovementThisTurn;
+            // Use the effective budget that was current when this path request was fired.
+            // This respects Run (2× speed) and Charge (bonus distance) step options.
+            var remaining = previewMovementBudget > 0f
+                ? previewMovementBudget
+                : selectedUnit.RemainingMovementThisTurn;
 
             // Measure the full unclamped path length to determine reachability.
             var fullLength = 0f;
@@ -1056,6 +1090,36 @@ namespace IronKingdoms.Combat
 
             activeEnemyTarget = FindNearestAliveUnit(activeEnemyUnit, playerRuntimeUnits);
             return activeEnemyTarget != null;
+        }
+
+        /// <summary>
+        /// Returns the movement budget that will be applied if the player clicks right now, accounting
+        /// for the current step option (Advance / Run / Charge). Used to keep the preview in sync with
+        /// the actual movement that will be issued on click.
+        /// </summary>
+        private float GetEffectivePreviewMovementBudget()
+        {
+            if (selectedUnit == null)
+            {
+                return 0f;
+            }
+
+            var budget = selectedUnit.RemainingMovementThisTurn;
+            switch (selectedMovementOption)
+            {
+                case MovementStepOption.Run:
+                    budget *= RunMovementMultiplier;
+                    break;
+                case MovementStepOption.Charge:
+                    if (GetSelectedAttackWeapon(selectedUnit).attackType == WeaponAttackType.Melee)
+                    {
+                        budget += ChargeMovementBonus;
+                    }
+
+                    break;
+            }
+
+            return budget;
         }
 
         private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination, float? movementBudgetOverride = null)
