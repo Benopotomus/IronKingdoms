@@ -22,27 +22,6 @@ namespace IronKingdoms.Combat
         {
             var mapScene = LoadMapScene();
             ApplySpawnAnchors(mapScene);
-            ScanNavmesh();
-        }
-
-        private void ScanNavmesh()
-        {
-            if (AstarPath.active != null)
-            {
-                AstarPath.active.Scan();
-                return;
-            }
-
-            var astarObject = new GameObject("A* Pathfinder");
-            var astar = astarObject.AddComponent<AstarPath>();
-            astar.scanOnStartup = false;
-
-            var gg = astar.data.AddGraph<GridGraph>();
-            gg.center = Vector3.zero;
-            gg.SetDimensions(NavGridWidth, NavGridDepth, NavNodeSize);
-            gg.maxSlope = NavMaxSlope;
-
-            astar.Scan();
         }
 
         private Scene LoadMapScene()

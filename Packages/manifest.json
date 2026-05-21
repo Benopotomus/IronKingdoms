@@ -3,6 +3,7 @@
     "com.arongranberg.astar": "file:com.arongranberg.astar",
     "com.unity.burst": "1.8.28",
     "com.unity.collections": "2.6.2",
+    "com.unity.ide.rider": "3.0.40",
     "com.unity.mathematics": "1.3.3",
     "com.unity.modules.ai": "1.0.0",
     "com.unity.modules.animation": "1.0.0",
