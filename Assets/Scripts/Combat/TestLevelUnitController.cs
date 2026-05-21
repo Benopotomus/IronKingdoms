@@ -298,38 +298,40 @@ namespace IronKingdoms.Combat
                 : new Color(0.95f, 0.35f, 0.15f, 0.8f);
 
             movementPathLine.enabled = true;
-            movementPathLine.positionCount = displayPath.Count;
-            for (var i = 0; i < displayPath.Count; i++)
-            {
-                movementPathLine.SetPosition(i, displayPath[i]);
-            }
 
-            // When the destination is reachable, pin the line's last point to the exact current
-            // cursor position every frame so it never lags or snaps between path recalculations.
+            // The line always ends at the exact cursor position.  For reachable destinations the
+            // cached path already ends near the cursor, so we simply overwrite the last point each
+            // frame.  For out-of-range destinations the clamped path only reaches the budget limit,
+            // so we append one extra point at the cursor to extend the line all the way there.
+            var cursorLineEnd = hoverPos;
+            cursorLineEnd.y += PathVisualizationHeight;
+
             if (withinRange)
             {
-                var exactLineEnd = hoverPos;
-                exactLineEnd.y += PathVisualizationHeight;
-                movementPathLine.SetPosition(displayPath.Count - 1, exactLineEnd);
+                movementPathLine.positionCount = displayPath.Count;
+                for (var i = 0; i < displayPath.Count; i++)
+                {
+                    movementPathLine.SetPosition(i, displayPath[i]);
+                }
+                movementPathLine.SetPosition(displayPath.Count - 1, cursorLineEnd);
+            }
+            else
+            {
+                movementPathLine.positionCount = displayPath.Count + 1;
+                for (var i = 0; i < displayPath.Count; i++)
+                {
+                    movementPathLine.SetPosition(i, displayPath[i]);
+                }
+                movementPathLine.SetPosition(displayPath.Count, cursorLineEnd);
             }
 
             movementPathLine.startColor = pathColor;
             movementPathLine.endColor = pathFadeColor;
 
+            // Marker always follows the cursor exactly — never snaps to a navmesh position.
             destinationMarkerObject.SetActive(true);
-            Vector3 dest;
-            if (withinRange)
-            {
-                // Marker follows the cursor exactly — no snapping to the stale cached path endpoint.
-                dest = hoverPos;
-                dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y);
-            }
-            else
-            {
-                // Out of range: show where the unit will actually stop (clamped by budget).
-                dest = displayPath[displayPath.Count - 1];
-                dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y - PathVisualizationHeight);
-            }
+            var dest = hoverPos;
+            dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y);
 
             destinationMarkerObject.transform.position = dest;
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
@@ -892,7 +894,10 @@ namespace IronKingdoms.Combat
 
                 var currentPosition = unit.Pawn.transform.position;
                 var nextPosition = Vector3.MoveTowards(currentPosition, targetPosition, allowedStep);
-                nextPosition = GetGroundedNavmeshPositionForUnit(unit, nextPosition);
+                // Only adjust Y to keep the unit grounded on the terrain surface.
+                // Do NOT snap XZ: applying GetNearest to an interpolated mid-segment position
+                // can pull the unit toward the wrong navmesh polygon near wall corners.
+                nextPosition.y = GetGroundedNavmeshPositionForUnit(unit, nextPosition).y;
                 var movedDistance = Vector3.Distance(currentPosition, nextPosition);
                 unit.Pawn.transform.position = nextPosition;
                 unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movedDistance);
