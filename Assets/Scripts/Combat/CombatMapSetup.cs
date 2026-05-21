@@ -15,6 +15,7 @@ namespace IronKingdoms.Combat
         private const int NavGridDepth = 36;
         private const float NavNodeSize = 0.5f;
         private const float NavMaxSlope = 45f;
+        private const float NavBoundsPadding = 1f;
 
         [SerializeField] private string combatMapSceneName = "CombatMapScene";
         [SerializeField] private TestLevelUnitController unitController;
@@ -55,7 +56,7 @@ namespace IronKingdoms.Combat
             }
 
             ApplySpawnAnchors(mapScene, targetController);
-            ScanNavmesh();
+            ScanNavmesh(mapScene);
 
             if (targetController != null)
             {
@@ -63,24 +64,81 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private void ScanNavmesh()
+        private void ScanNavmesh(Scene mapScene)
         {
-            if (AstarPath.active != null)
+            var astar = AstarPath.active;
+            if (astar == null)
             {
-                AstarPath.active.Scan();
-                return;
+                var astarObject = new GameObject("A* Pathfinder");
+                astar = astarObject.AddComponent<AstarPath>();
+                astar.scanOnStartup = false;
             }
 
-            var astarObject = new GameObject("A* Pathfinder");
-            var astar = astarObject.AddComponent<AstarPath>();
-            astar.scanOnStartup = false;
-
-            var gg = astar.data.AddGraph<GridGraph>();
-            gg.center = Vector3.zero;
-            gg.SetDimensions(NavGridWidth, NavGridDepth, NavNodeSize);
+            var gg = astar.data.gridGraph ?? astar.data.AddGraph<GridGraph>();
+            ConfigureGridGraphBounds(gg, mapScene);
             gg.maxSlope = NavMaxSlope;
 
             astar.Scan();
+        }
+
+        private static void ConfigureGridGraphBounds(GridGraph gridGraph, Scene mapScene)
+        {
+            if (gridGraph == null)
+            {
+                return;
+            }
+
+            var hasBounds = TryGetMapBounds(mapScene, out var mapBounds);
+            if (!hasBounds)
+            {
+                mapBounds = new Bounds(
+                    Vector3.zero,
+                    new Vector3(NavGridWidth * NavNodeSize, 1f, NavGridDepth * NavNodeSize));
+            }
+
+            var widthWorldSize = Mathf.Max(NavGridWidth * NavNodeSize, mapBounds.size.x + (NavBoundsPadding * 2f));
+            var depthWorldSize = Mathf.Max(NavGridDepth * NavNodeSize, mapBounds.size.z + (NavBoundsPadding * 2f));
+            var gridWidth = Mathf.Max(1, Mathf.CeilToInt(widthWorldSize / NavNodeSize));
+            var gridDepth = Mathf.Max(1, Mathf.CeilToInt(depthWorldSize / NavNodeSize));
+
+            gridGraph.center = mapBounds.center;
+            gridGraph.SetDimensions(gridWidth, gridDepth, NavNodeSize);
+        }
+
+        private static bool TryGetMapBounds(Scene mapScene, out Bounds bounds)
+        {
+            bounds = default;
+            if (!mapScene.IsValid() || !mapScene.isLoaded)
+            {
+                return false;
+            }
+
+            var hasBounds = false;
+            var roots = mapScene.GetRootGameObjects();
+            for (var i = 0; i < roots.Length; i++)
+            {
+                var colliders = roots[i].GetComponentsInChildren<Collider>(true);
+                for (var j = 0; j < colliders.Length; j++)
+                {
+                    var collider = colliders[j];
+                    if (collider == null || !collider.enabled || collider.isTrigger)
+                    {
+                        continue;
+                    }
+
+                    if (!hasBounds)
+                    {
+                        bounds = collider.bounds;
+                        hasBounds = true;
+                    }
+                    else
+                    {
+                        bounds.Encapsulate(collider.bounds);
+                    }
+                }
+            }
+
+            return hasBounds;
         }
 
         private void ApplySpawnAnchors(Scene mapScene, TestLevelUnitController targetController)
