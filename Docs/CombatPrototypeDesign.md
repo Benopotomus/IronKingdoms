@@ -4,7 +4,8 @@
 Bootstrap this branch as a Unity 6000.3.10f1 project with a small, testable combat loop inspired by the baseline Warmachine Mk4 turn structure.
 
 ## Source note
-The requested Google Drive rules document was not reachable from this sandbox, so this prototype uses publicly available Warmachine Mk4 high-level concepts as a starting point and calls out assumptions that should be reconciled once the exact source document is available.
+The official Warmachine Mk4 Core Book (Abridged Digital Edition) has been added to `Assets/WMH-MK4-Rulebook_Digital_144-OP_Abridged.pdf`.  
+A comprehensive rules digest extracted from the actual rulebook is in **`Docs/WMH_MK4_Rules_Reference.md`** — that document is the authoritative reference for all design decisions and supersedes the assumptions below.
 
 ## Prototype scope
 - Unity version pinned to `6000.3.10f1`.
@@ -79,10 +80,10 @@ Create or duplicate `TestCombatScenarioAsset` assets and point them at different
 - No board, terrain, line-of-sight, or scenario objective rules yet.
 - No polished production UI beyond prototype IMGUI command panels.
 - No animation, VFX, or map logic yet.
-- The inaccessible source document still needs a pass to reconcile terminology and any custom deviations from baseline Warmachine Mk4 rules.
+- The prototype still implements only a small subset of the full Mk4 rules captured in `Docs/WMH_MK4_Rules_Reference.md`.
 
 ## Recommended next pass
-1. Reconcile this document with the intended Google Drive rules pack.
+1. Reconcile the current simulator behavior against `Docs/WMH_MK4_Rules_Reference.md`.
 2. Expand the simulator from duel resolution into multi-model activations.
 3. Add scenario objectives and grid/zone validation.
 4. Add dedicated Unity edit mode or play mode tests once Unity CI/editor access is available.
