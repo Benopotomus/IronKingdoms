@@ -339,7 +339,7 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private void RequestPathPreviewIfNeeded(Vector3 from, Vector3 to)
+        private void RequestPathPreviewIfNeeded(Vector3 fromPosition, Vector3 toPosition)
         {
             if (AstarPath.active == null || previewPathPending)
             {
@@ -351,17 +351,17 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var horizontalDist = new Vector2(lastPreviewRequestTarget.x - to.x, lastPreviewRequestTarget.z - to.z).magnitude;
+            var horizontalDist = new Vector2(lastPreviewRequestTarget.x - toPosition.x, lastPreviewRequestTarget.z - toPosition.z).magnitude;
             if (horizontalDist < PathPreviewUpdateDistance)
             {
                 return;
             }
 
-            lastPreviewRequestTarget = to;
+            lastPreviewRequestTarget = toPosition;
             lastPathPreviewTime = Time.unscaledTime;
             previewPathPending = true;
 
-            var path = ABPath.Construct(from, to, OnPreviewPathComplete);
+            var path = ABPath.Construct(fromPosition, toPosition, OnPreviewPathComplete);
             AstarPath.StartPath(path);
         }
 
