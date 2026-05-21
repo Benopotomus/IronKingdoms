@@ -89,9 +89,12 @@ namespace IronKingdoms.Combat
                 actor.Resource -= 1;
             }
 
-            var attackRoll = Roll(random, boostedAttack ? 3 : 2) + attackStat;
-            result.AddLine($"  Attack roll: {attackRoll} vs DEF {target.Definition.Stats.defense}" + (boostedAttack ? " (boosted)" : string.Empty));
-            if (attackRoll < target.Definition.Stats.defense)
+            var attackDiceCount = weapon.GetAttackDiceCount(boostedAttack);
+            var attackDice = RollDice(random, attackDiceCount);
+            var attackTotal = Sum(attackDice) + attackStat;
+            var attackNote = boostedAttack ? " (boosted)" : string.Empty;
+            result.AddLine($"  Attack roll: {attackTotal} vs DEF {target.Definition.Stats.defense}{attackNote}");
+            if (!weapon.EvaluateAttackHit(attackDice[0], attackDice[1], attackTotal, target.Definition.Stats.defense))
             {
                 result.AddLine($"  {actor.Name} misses.");
                 return;
@@ -105,12 +108,14 @@ namespace IronKingdoms.Combat
                 boostedDamage = true;
             }
 
-            var damageRoll = Roll(random, autoBoostDamage || boostedDamage ? 3 : 2) + weapon.Power;
-            var appliedDamage = Math.Max(0, damageRoll - target.Definition.Stats.armor);
+            var damageDiceCount = weapon.GetDamageDiceCount(autoBoostDamage || boostedDamage);
+            var damageDice = RollDice(random, damageDiceCount);
+            var damageRoll = Sum(damageDice);
+            var appliedDamage = weapon.EvaluateDamage(damageRoll, target.Definition.Stats.armor);
             target.Health = Math.Max(0, target.Health - appliedDamage);
 
             var damageNote = autoBoostDamage ? " (charge boost)" : boostedDamage ? " (boosted)" : string.Empty;
-            result.AddLine($"  Damage roll: {damageRoll} - ARM {target.Definition.Stats.armor} = {appliedDamage}{damageNote}");
+            result.AddLine($"  Damage roll: {damageRoll + weapon.Power} - ARM {target.Definition.Stats.armor} = {appliedDamage}{damageNote}");
             result.AddLine($"  {target.Name} health remaining: {target.Health}");
         }
 
@@ -148,12 +153,24 @@ namespace IronKingdoms.Combat
             result.AddLine($"  {actor.Name} advances {moveDistance:0.0}\" and closes to {distance:0.0}\".");
         }
 
-        private static int Roll(Random random, int dice)
+        private static int[] RollDice(Random random, int count)
+        {
+            var size = Math.Max(2, count);
+            var dice = new int[size];
+            for (var i = 0; i < size; i++)
+            {
+                dice[i] = random.Next(1, 7);
+            }
+
+            return dice;
+        }
+
+        private static int Sum(int[] dice)
         {
             var total = 0;
-            for (var i = 0; i < dice; i++)
+            foreach (var d in dice)
             {
-                total += random.Next(1, 7);
+                total += d;
             }
 
             return total;
