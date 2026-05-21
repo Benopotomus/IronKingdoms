@@ -80,8 +80,9 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var inMelee = weapon.attackType == WeaponAttackType.Melee;
-            var attackStat = inMelee ? actor.Definition.Stats.meleeAttack : actor.Definition.Stats.rangedAttack;
+            var inMelee = weapon.AttackType == WeaponAttackType.Melee;
+            var baseAttackStat = inMelee ? actor.Definition.Stats.meleeAttack : actor.Definition.Stats.rangedAttack;
+            var attackStat = baseAttackStat + weapon.GetAttackModifier();
             var boostedAttack = actor.Resource > 0 && actor.Role != UnitRole.Infantry;
             if (boostedAttack)
             {
@@ -115,7 +116,7 @@ namespace IronKingdoms.Combat
 
         private static bool TryCharge(CombatantState actor, CombatantState target, ref float distance, CombatSimulationResult result)
         {
-            if (actor.PrimaryWeapon.attackType != WeaponAttackType.Melee || actor.Role == UnitRole.Infantry)
+            if (actor.PrimaryWeapon.AttackType != WeaponAttackType.Melee || actor.Role == UnitRole.Infantry)
             {
                 return false;
             }
