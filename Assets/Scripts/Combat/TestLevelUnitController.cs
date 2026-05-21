@@ -516,6 +516,12 @@ namespace IronKingdoms.Combat
             StartPlayerTurn();
         }
 
+        public void SetSpawnAnchors(Transform playerAnchor, Transform enemyAnchor)
+        {
+            playerSpawnAnchor = playerAnchor;
+            enemySpawnAnchor = enemyAnchor;
+        }
+
         private void SpawnArmy(List<UnitTypeDefinition> units, Transform anchor, List<RuntimeUnit> destination, bool isPlayerControlled, Color color)
         {
             if (units == null)

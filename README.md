@@ -8,7 +8,7 @@ This branch now contains a minimal Unity 6000.3.10f1 project scaffold with:
 - ScriptableObject-driven unit definitions with Mk4 model sizes and weapon profiles, and
 - an editor tool for creating and editing unit stat assets.
 
-Open `/home/runner/work/IronKingdoms/IronKingdoms` in Unity 6000.3.10f1, then load `Assets/Scenes/TestCombatScene.unity` and press Play.
+Open `/home/runner/work/IronKingdoms/IronKingdoms` in Unity 6000.3.10f1, then load `Assets/Scenes/TestCombatScene.unity` and press Play. The combat map geometry and spawn markers now live in `Assets/Scenes/CombatMapScene.unity`, which is loaded additively at runtime.
 
 `TestCombatScene` now includes `TestLevelUnitController`:
 - assign player and enemy unit assets directly in the inspector,
