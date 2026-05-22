@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
 using Pathfinding;
-using Pathfinding.Pooling;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
@@ -123,12 +122,16 @@ namespace IronKingdoms.Combat
         private float lastClickedPlayerUnitClickTime = float.NegativeInfinity;
         private int uiCancelFrame = -1;
 
-        private List<Vector3> previewPathWaypoints;
-        private bool previewDestinationReachable;
+        // Movement preview state ----------------------------------------------------------------
+        // previewPath holds the last NavPathBuilder-computed waypoints for the current hover.
+        // It is set asynchronously; the most recent result is always used for both visualisation
+        // and (on click-confirm) for the actual movement order, so preview and execution are 100%
+        // identical.
+        private List<Vector3> previewPath;
         private bool previewPathPending;
-        private Vector3 lastPreviewRequestTarget;
-        private float lastPathPreviewTime;
+        private Vector3 previewPathTo;
         private float previewMovementBudget;
+        private float lastPathPreviewTime;
 
         private void Awake()
         {
@@ -261,16 +264,50 @@ namespace IronKingdoms.Combat
 
             var unitPos = GetPawnFeetPosition(selectedUnit);
 
-            // Compute the effective budget for the chosen step option (Advance/Run/Charge).
-            // If it changed (e.g. player switched from Advance to Run), force a path recalculation.
+            // Recompute effective budget; invalidate cached path if it changed.
             var effectiveBudget = GetEffectivePreviewMovementBudget();
             if (!Mathf.Approximately(effectiveBudget, previewMovementBudget))
             {
                 previewMovementBudget = effectiveBudget;
-                lastPreviewRequestTarget = Vector3.positiveInfinity;
+                previewPath = null;
+                previewPathTo = Vector3.positiveInfinity;
             }
 
-            var withinRange = Vector3.Distance(unitPos, hoverPos) <= effectiveBudget + PositionArrivalTolerance;
+            // Request a new path from NavPathBuilder when the hover target has moved enough
+            // and no request is already in flight.
+            var horizontalDist = new Vector2(previewPathTo.x - hoverPos.x, previewPathTo.z - hoverPos.z).magnitude;
+            if (!previewPathPending && (horizontalDist >= PathPreviewUpdateDistance
+                || Time.unscaledTime - lastPathPreviewTime >= PathPreviewMinInterval && horizontalDist > 0.01f))
+            {
+                previewPathTo = hoverPos;
+                lastPathPreviewTime = Time.unscaledTime;
+                previewPathPending = true;
+
+                NavPathBuilder.RequestAsync(unitPos, hoverPos, result =>
+                {
+                    previewPathPending = false;
+                    // Only accept the result if we're still in Move mode for the same unit.
+                    if (selectedUnit == null || currentPlayerMode != UnitActionMode.Move)
+                    {
+                        return;
+                    }
+
+                    previewPath = result != null && result.Count >= 2 ? result : null;
+                });
+            }
+
+            // Determine reachability for colour: compare full path length to budget.
+            var withinRange = true;
+            if (previewPath != null && previewPath.Count >= 2)
+            {
+                var fullLength = 0f;
+                for (var i = 1; i < previewPath.Count; i++)
+                {
+                    fullLength += Vector3.Distance(previewPath[i - 1], previewPath[i]);
+                }
+
+                withinRange = fullLength <= effectiveBudget + PositionArrivalTolerance;
+            }
 
             var pathColor = withinRange
                 ? new Color(0.15f, 0.85f, 0.85f, 0.85f)
@@ -282,19 +319,34 @@ namespace IronKingdoms.Combat
                 ? new Color(0.15f, 0.85f, 0.85f, 0.8f)
                 : new Color(0.95f, 0.35f, 0.15f, 0.8f);
 
+            // Draw the path line using the NavPathBuilder waypoints when available,
+            // otherwise fall back to a straight unit→hover line so there's always feedback.
             movementPathLine.enabled = true;
-            movementPathLine.positionCount = 2;
-            var pathStart = unitPos;
-            pathStart.y += PathVisualizationHeight;
-            var pathEnd = hoverPos;
-            pathEnd.y += PathVisualizationHeight;
-            movementPathLine.SetPosition(0, pathStart);
-            movementPathLine.SetPosition(1, pathEnd);
+            if (previewPath != null && previewPath.Count >= 2)
+            {
+                movementPathLine.positionCount = previewPath.Count;
+                for (var i = 0; i < previewPath.Count; i++)
+                {
+                    var wp = previewPath[i];
+                    wp.y += PathVisualizationHeight;
+                    movementPathLine.SetPosition(i, wp);
+                }
+            }
+            else
+            {
+                movementPathLine.positionCount = 2;
+                var pathStart = unitPos;
+                pathStart.y += PathVisualizationHeight;
+                var pathEnd = hoverPos;
+                pathEnd.y += PathVisualizationHeight;
+                movementPathLine.SetPosition(0, pathStart);
+                movementPathLine.SetPosition(1, pathEnd);
+            }
 
             movementPathLine.startColor = pathColor;
             movementPathLine.endColor = pathFadeColor;
 
-            // Marker always stays exactly on the hovered target point.
+            // Destination marker always sits at the exact hovered terrain point.
             destinationMarkerObject.SetActive(true);
             var dest = hoverPos;
             dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y + 0.01f);
@@ -304,76 +356,6 @@ namespace IronKingdoms.Combat
             {
                 markerRenderer.material.color = markerColor;
             }
-        }
-
-        private void RequestPathPreviewIfNeeded(Vector3 fromPosition, Vector3 toPosition)
-        {
-            if (AstarPath.active == null || previewPathPending)
-            {
-                return;
-            }
-
-            if (Time.unscaledTime - lastPathPreviewTime < PathPreviewMinInterval)
-            {
-                return;
-            }
-
-            var horizontalDist = new Vector2(lastPreviewRequestTarget.x - toPosition.x, lastPreviewRequestTarget.z - toPosition.z).magnitude;
-            if (horizontalDist < PathPreviewUpdateDistance)
-            {
-                return;
-            }
-
-            lastPreviewRequestTarget = toPosition;
-            lastPathPreviewTime = Time.unscaledTime;
-            previewPathPending = true;
-
-            var path = ABPath.Construct(fromPosition, toPosition, OnPreviewPathComplete);
-            AstarPath.StartPath(path);
-        }
-
-        private void OnPreviewPathComplete(Path p)
-        {
-            previewPathPending = false;
-            if (p.error || p.vectorPath == null || p.vectorPath.Count < 2 || selectedUnit == null)
-            {
-                previewPathWaypoints = null;
-                previewDestinationReachable = false;
-                return;
-            }
-
-            // Straighten the raw A* path so the preview line shows the actual walking route
-            // (straight on open terrain, only bending where obstacles require it).
-            var smoothedPath = GetFunnelSmoothedVectorPath((ABPath)p);
-            if (smoothedPath.Count > 0)
-            {
-                smoothedPath[0] = GetPawnFeetPosition(selectedUnit);
-            }
-
-            // Use the effective budget that was current when this path request was fired.
-            // This respects Run (2× speed) and Charge (bonus distance) step options.
-            var remaining = previewMovementBudget > 0f
-                ? previewMovementBudget
-                : selectedUnit.RemainingMovementThisTurn;
-
-            // Measure the full unclamped path length to determine reachability.
-            var fullLength = 0f;
-            for (var i = 1; i < smoothedPath.Count; i++)
-            {
-                fullLength += Vector3.Distance(smoothedPath[i - 1], smoothedPath[i]);
-            }
-
-            previewDestinationReachable = fullLength <= remaining + PositionArrivalTolerance;
-
-            // Lift waypoints just above the ground so the line is visible.
-            for (var i = 0; i < smoothedPath.Count; i++)
-            {
-                var wp = smoothedPath[i];
-                wp.y += PathVisualizationHeight;
-                smoothedPath[i] = wp;
-            }
-
-            previewPathWaypoints = smoothedPath;
         }
 
         private void RefreshAttackRangeRing()
@@ -477,9 +459,9 @@ namespace IronKingdoms.Combat
 
             if (mode != UnitActionMode.Move)
             {
-                previewPathWaypoints = null;
+                previewPath = null;
                 previewPathPending = false;
-                lastPreviewRequestTarget = Vector3.positiveInfinity;
+                previewPathTo = Vector3.positiveInfinity;
 
                 if (movementPathLine != null)
                 {
@@ -762,9 +744,23 @@ namespace IronKingdoms.Combat
             }
 
             selectedUnit.RemainingMovementThisTurn = movementBudget;
-
             selectedUnit.IsAimingThisTurn = false;
-            IssueMoveOrder(selectedUnit, destination, movementBudget);
+
+            // Reuse the preview path if it was computed for a position close enough to where
+            // the player just clicked, so the unit follows exactly the path they saw.
+            var clickedNearPreview = previewPath != null && previewPath.Count >= 2
+                && new Vector2(previewPathTo.x - destination.x, previewPathTo.z - destination.z).magnitude
+                   <= PathPreviewUpdateDistance * 1.5f;
+
+            if (clickedNearPreview)
+            {
+                IssueMoveOrderFromPath(selectedUnit, previewPath, movementBudget);
+            }
+            else
+            {
+                IssueMoveOrder(selectedUnit, destination, movementBudget);
+            }
+
             if (forfeitCombatAction)
             {
                 selectedUnit.HasActedThisTurn = true;
@@ -1111,36 +1107,15 @@ namespace IronKingdoms.Combat
 
             var current = GetPawnFeetPosition(unit);
 
-            // Try A* pathfinding first (synchronous for immediate movement response).
-            if (AstarPath.active != null)
+            // Use NavPathBuilder to get a funnel-smoothed path, then clamp to budget.
+            var smoothedPath = NavPathBuilder.BuildSync(current, destination);
+            if (smoothedPath.Count >= 2)
             {
-                var path = ABPath.Construct(current, destination);
-                AstarPath.StartPath(path);
-                AstarPath.BlockUntilCalculated(path);
-
-                if (!path.error && path.vectorPath != null && path.vectorPath.Count >= 2)
-                {
-                    // Apply funnel smoothing so the unit walks a straight line on open terrain
-                    // instead of zigzagging through navmesh triangle portals.
-                    var smoothedPath = GetFunnelSmoothedVectorPath(path);
-                    if (smoothedPath.Count > 0)
-                    {
-                        smoothedPath[0] = current;
-                    }
-                    var waypoints = ClampPathToMovementBudget(smoothedPath, remaining);
-                    if (waypoints.Count >= 2)
-                    {
-                        unit.PathWaypoints = waypoints;
-                        unit.PathWaypointIndex = 0;
-                        var firstTarget = waypoints[1];
-                        firstTarget = GetGroundedPositionKeepingXZ(unit, firstTarget);
-                        unit.MoveTarget = firstTarget;
-                        return;
-                    }
-                }
+                IssueMoveOrderFromPath(unit, smoothedPath, remaining);
+                return;
             }
 
-            // Fallback: straight-line movement.
+            // Fallback: straight-line movement when no navmesh path is available.
             var planarDelta = destination - current;
             planarDelta.y = 0f;
             var distanceToDestination = planarDelta.magnitude;
@@ -1156,6 +1131,29 @@ namespace IronKingdoms.Combat
             clampedDestination = GetGroundedPositionKeepingXZ(unit, clampedDestination);
             unit.MoveTarget = clampedDestination;
             unit.PathWaypoints = null;
+        }
+
+        /// <summary>
+        /// Activates movement for <paramref name="unit"/> using an already-computed
+        /// funnel-smoothed path (e.g. the one displayed during the preview).
+        /// The path is clamped to <paramref name="movementBudget"/> before being assigned.
+        /// </summary>
+        private void IssueMoveOrderFromPath(RuntimeUnit unit, List<Vector3> smoothedPath, float movementBudget)
+        {
+            if (unit == null || !unit.IsAlive || unit.Pawn == null)
+            {
+                return;
+            }
+
+            var waypoints = ClampPathToMovementBudget(smoothedPath, movementBudget);
+            if (waypoints.Count >= 2)
+            {
+                unit.PathWaypoints = waypoints;
+                unit.PathWaypointIndex = 0;
+                var firstTarget = waypoints[1];
+                firstTarget = GetGroundedPositionKeepingXZ(unit, firstTarget);
+                unit.MoveTarget = firstTarget;
+            }
         }
 
         /// <summary>
@@ -1210,62 +1208,6 @@ namespace IronKingdoms.Combat
             }
 
             return false;
-        }
-
-        /// <summary>
-        /// Applies the funnel (string-pulling) algorithm to an already-calculated ABPath and returns
-        /// the resulting world-space waypoint list.  On open terrain with no obstacles the result is
-        /// just [start, end] — a perfectly straight line.  Where the path must bend around obstacles
-        /// only the minimum necessary turn-points are kept, exactly like Baldur's Gate 3.
-        ///
-        /// Returns <paramref name="path"/>.vectorPath unchanged (or an empty list when it is null)
-        /// if the path has no node data or fewer than two waypoints (e.g. start == end).
-        /// </summary>
-        private static List<Vector3> GetFunnelSmoothedVectorPath(ABPath path)
-        {
-            if (path.path == null || path.path.Count == 0
-                || path.vectorPath == null || path.vectorPath.Count < 2)
-            {
-                return path.vectorPath ?? new List<Vector3>();
-            }
-
-            var parts = Funnel.SplitIntoParts(path);
-            if (parts.Count == 0)
-            {
-                return path.vectorPath;
-            }
-
-            var smoothed = new List<Vector3>();
-            for (var i = 0; i < parts.Count; i++)
-            {
-                var part = parts[i];
-                if (part.type == Funnel.PartType.NodeSequence)
-                {
-                    var portals = Funnel.ConstructFunnelPortals(path.path, part);
-                    var result = Funnel.Calculate(portals, splitAtEveryPortal: false);
-                    smoothed.AddRange(result);
-                    // Release the pooled intermediate lists back to the pool.
-                    ListPool<Vector3>.Release(ref portals.left);
-                    ListPool<Vector3>.Release(ref portals.right);
-                    ListPool<Vector3>.Release(ref result);
-                }
-                else
-                {
-                    // Off-mesh link: keep the entry/exit points when there is no adjacent normal segment.
-                    if (i == 0 || parts[i - 1].type == Funnel.PartType.OffMeshLink)
-                    {
-                        smoothed.Add(part.startPoint);
-                    }
-
-                    if (i == parts.Count - 1 || parts[i + 1].type == Funnel.PartType.OffMeshLink)
-                    {
-                        smoothed.Add(part.endPoint);
-                    }
-                }
-            }
-
-            ListPool<Funnel.PathPart>.Release(ref parts);
-            return smoothed.Count >= 2 ? smoothed : path.vectorPath;
         }
 
         private static Vector3 GetNearestNavmeshPosition(Vector3 worldPosition)
