@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Pathfinding;
 using Pathfinding.Pooling;
 using UnityEngine;
+using UnityEngine.Analytics;
 
 namespace IronKingdoms.Combat
 {
@@ -20,36 +21,34 @@ namespace IronKingdoms.Combat
         // Singleton access
         // -----------------------------------------------------------------------------------------
 
-        private static NavPathBuilder _instance;
+        public static NavPathBuilder instance;
+
+        [SerializeField] private FunnelModifier _funnel;
 
         /// <summary>
         /// Returns the first <see cref="NavPathBuilder"/> found in the scene.
         /// Cached after the first lookup.
         /// </summary>
-        public static NavPathBuilder Instance
+        public void Awake()
         {
-            get
+            if (instance == null)
             {
-                if (_instance == null)
+                instance = FindObjectOfType<NavPathBuilder>();
+                if (instance == null)
                 {
-                    _instance = FindObjectOfType<NavPathBuilder>();
-                    if (_instance == null)
-                    {
-                        Debug.LogWarning(
-                            "[NavPathBuilder] No NavPathBuilder instance found in the scene. " +
-                            "Callers should provide or create one before requesting paths.");
-                    }
+                    Debug.LogWarning(
+                        "[NavPathBuilder] No NavPathBuilder instance found in the scene. " +
+                        "Callers should provide or create one before requesting paths.");
                 }
-
-                return _instance;
             }
+            
         }
 
         private void OnDestroy()
         {
-            if (_instance == this)
+            if (instance == this)
             {
-                _instance = null;
+                instance = null;
             }
         }
 
@@ -72,9 +71,11 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            to = AstarPath.active.GetNearest(to).position;
+            
             var path = ABPath.Construct(from, to, p =>
             {
-                var result = Smooth(p as ABPath, from);
+                var result = Smooth(p as ABPath, from, to);
                 onComplete?.Invoke(result.Count >= 2 ? result : null);
             });
             AstarPath.StartPath(path);
@@ -95,72 +96,40 @@ namespace IronKingdoms.Combat
             var path = ABPath.Construct(from, to);
             AstarPath.StartPath(path);
             AstarPath.BlockUntilCalculated(path);
-            return Smooth(path, from);
+            return Smooth(path, from, to);
         }
 
         // -----------------------------------------------------------------------------------------
         // Private helpers
         // -----------------------------------------------------------------------------------------
 
-        private static List<Vector3> Smooth(ABPath path, Vector3 pinnedStart)
+        private static List<Vector3> Smooth(ABPath path, Vector3 pinnedStart, Vector3 pinnedEnd)
         {
             if (path == null || path.error || path.vectorPath == null || path.vectorPath.Count < 2)
             {
-                return new List<Vector3>();
+                return new List<Vector3> {pinnedStart, pinnedEnd};
             }
 
-            var smoothed = FunnelSmooth(path);
-            if (smoothed.Count > 0)
-            {
-                smoothed[0] = pinnedStart;
-            }
-
+            path.vectorPath[0] = pinnedStart;
+            
+            var smoothed = instance.FunnelSmooth(path);
+            
+            smoothed[smoothed.Count - 1] = pinnedEnd;
+            
             return smoothed;
         }
 
-        private static List<Vector3> FunnelSmooth(ABPath path)
+        private List<Vector3> FunnelSmooth(ABPath path)
         {
             if (path.path == null || path.path.Count == 0
                 || path.vectorPath == null || path.vectorPath.Count < 2)
             {
                 return new List<Vector3>(path.vectorPath ?? new List<Vector3>());
             }
+            _funnel.Apply(path);
+            return path.vectorPath;
 
-            var parts = Funnel.SplitIntoParts(path);
-            if (parts.Count == 0)
-            {
-                return new List<Vector3>(path.vectorPath);
-            }
-
-            var smoothed = new List<Vector3>();
-            for (var i = 0; i < parts.Count; i++)
-            {
-                var part = parts[i];
-                if (part.type == Funnel.PartType.NodeSequence)
-                {
-                    var portals = Funnel.ConstructFunnelPortals(path.path, part);
-                    var result = Funnel.Calculate(portals, splitAtEveryPortal: false);
-                    smoothed.AddRange(result);
-                    ListPool<Vector3>.Release(ref portals.left);
-                    ListPool<Vector3>.Release(ref portals.right);
-                    ListPool<Vector3>.Release(ref result);
-                }
-                else
-                {
-                    if (i == 0 || parts[i - 1].type == Funnel.PartType.OffMeshLink)
-                    {
-                        smoothed.Add(part.startPoint);
-                    }
-
-                    if (i == parts.Count - 1 || parts[i + 1].type == Funnel.PartType.OffMeshLink)
-                    {
-                        smoothed.Add(part.endPoint);
-                    }
-                }
-            }
-
-            ListPool<Funnel.PathPart>.Release(ref parts);
-            return smoothed.Count >= 2 ? smoothed : new List<Vector3>(path.vectorPath);
         }
+        
     }
 }
