@@ -320,8 +320,9 @@ namespace IronKingdoms.Combat
             }
 
             // Determine reachability for colour: compare full path length to budget.
-            var withinRange = true;
-            if (previewPath != null && previewPath.Count >= 2)
+            var hasPreviewPath = previewPath != null && previewPath.Count >= 2;
+            var withinRange = hasPreviewPath;
+            if (hasPreviewPath)
             {
                 var fullLength = 0f;
                 for (var i = 1; i < previewPath.Count; i++)
@@ -342,10 +343,9 @@ namespace IronKingdoms.Combat
                 ? new Color(0.15f, 0.85f, 0.85f, 0.8f)
                 : new Color(0.95f, 0.35f, 0.15f, 0.8f);
 
-            // Draw the path line using the NavPathBuilder waypoints when available,
-            // otherwise fall back to a straight unit→hover line so there's always feedback.
-            movementPathLine.enabled = true;
-            if (previewPath != null && previewPath.Count >= 2)
+            // Draw only nav-path waypoints; no straight-line fallback.
+            movementPathLine.enabled = hasPreviewPath;
+            if (hasPreviewPath)
             {
                 movementPathLine.positionCount = previewPath.Count;
                 for (var i = 0; i < previewPath.Count; i++)
@@ -355,19 +355,9 @@ namespace IronKingdoms.Combat
                     movementPathLine.SetPosition(i, wp);
                 }
             }
-            else
-            {
-                movementPathLine.positionCount = 2;
-                var pathStart = unitPos;
-                pathStart.y += PathVisualizationHeight;
-                var pathEnd = hoverPos;
-                pathEnd.y += PathVisualizationHeight;
-                movementPathLine.SetPosition(0, pathStart);
-                movementPathLine.SetPosition(1, pathEnd);
+                movementPathLine.startColor = pathColor;
+                movementPathLine.endColor = pathFadeColor;
             }
-
-            movementPathLine.startColor = pathColor;
-            movementPathLine.endColor = pathFadeColor;
 
             // Destination marker always sits at the exact hovered terrain point.
             destinationMarkerObject.SetActive(true);
@@ -583,6 +573,12 @@ namespace IronKingdoms.Combat
                     renderer.material.color = color;
                 }
 
+                var pawnCollider = pawn.GetComponent<CapsuleCollider>();
+                if (pawnCollider != null)
+                {
+                    pawnCollider.isTrigger = true;
+                }
+
                 var runtimeUnit = new RuntimeUnit(unitDefinition, isPlayerControlled, pawn);
                 SnapUnitToNavmesh(runtimeUnit);
                 destination.Add(runtimeUnit);
@@ -675,7 +671,7 @@ namespace IronKingdoms.Combat
             }
 
             var ray = activeCamera.ScreenPointToRay(Input.mousePosition);
-            if (!Physics.Raycast(ray, out var hit))
+            if (!RaycastForMouseHit(ray, out var hit))
             {
                 return;
             }
@@ -731,7 +727,7 @@ namespace IronKingdoms.Combat
             var ray = activeCamera.ScreenPointToRay(Input.mousePosition);
 
             // First, check whether the click landed on a player unit (unit-selection shortcut).
-            if (Physics.Raycast(ray, out var hit))
+            if (RaycastForMouseHit(ray, out var hit))
             {
                 for (var i = 0; i < playerRuntimeUnits.Count; i++)
                 {
@@ -826,7 +822,7 @@ namespace IronKingdoms.Combat
             }
 
             var ray = activeCamera.ScreenPointToRay(Input.mousePosition);
-            if (!Physics.Raycast(ray, out var hit))
+            if (!RaycastForMouseHit(ray, out var hit))
             {
                 return;
             }
@@ -1141,21 +1137,8 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            // Fallback: straight-line movement when no navmesh path is available.
-            var planarDelta = destination - current;
-            planarDelta.y = 0f;
-            var distanceToDestination = planarDelta.magnitude;
-            if (distanceToDestination <= PositionArrivalTolerance)
-            {
-                unit.MoveTarget = null;
-                unit.PathWaypoints = null;
-                return;
-            }
-
-            var moveDistance = Mathf.Min(remaining, distanceToDestination);
-            var clampedDestination = current + planarDelta.normalized * moveDistance;
-            clampedDestination = GetGroundedPositionKeepingXZ(unit, clampedDestination);
-            unit.MoveTarget = clampedDestination;
+            // Nav-only movement: do not issue direct movement when no nav path is available.
+            unit.MoveTarget = null;
             unit.PathWaypoints = null;
         }
 
@@ -1182,6 +1165,11 @@ namespace IronKingdoms.Combat
             }
         }
 
+        private static bool RaycastForMouseHit(Ray ray, out RaycastHit hit)
+        {
+            return Physics.Raycast(ray, out hit, Mathf.Infinity, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+        }
+
         /// <summary>
         /// Returns true if <paramref name="go"/> is a pawn belonging to any spawned unit.
         /// Used to distinguish unit colliders from terrain geometry when raycasting.
@@ -1206,7 +1194,12 @@ namespace IronKingdoms.Combat
         /// </summary>
         private bool TryGetTerrainHitPoint(Ray ray, out Vector3 point)
         {
-            var hitCount = Physics.RaycastNonAlloc(ray, terrainRaycastBuffer);
+            var hitCount = Physics.RaycastNonAlloc(
+                ray,
+                terrainRaycastBuffer,
+                Mathf.Infinity,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Collide);
             var closestDist = float.MaxValue;
             var found = false;
             point = Vector3.zero;
@@ -1742,7 +1735,7 @@ namespace IronKingdoms.Combat
             }
 
             var ray = activeCamera.ScreenPointToRay(Input.mousePosition);
-            if (!Physics.Raycast(ray, out var hit))
+            if (!RaycastForMouseHit(ray, out var hit))
             {
                 return;
             }
