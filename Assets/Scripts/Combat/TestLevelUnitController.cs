@@ -259,7 +259,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var unitPos = selectedUnit.Pawn.transform.position;
+            var unitPos = GetPawnFeetPosition(selectedUnit);
 
             // Compute the effective budget for the chosen step option (Advance/Run/Charge).
             // If it changed (e.g. player switched from Advance to Run), force a path recalculation.
@@ -379,6 +379,10 @@ namespace IronKingdoms.Combat
             // Straighten the raw A* path so the preview line shows the actual walking route
             // (straight on open terrain, only bending where obstacles require it).
             var smoothedPath = GetFunnelSmoothedVectorPath((ABPath)p);
+            if (smoothedPath.Count > 0)
+            {
+                smoothedPath[0] = GetPawnFeetPosition(selectedUnit);
+            }
 
             // Use the effective budget that was current when this path request was fired.
             // This respects Run (2× speed) and Charge (bonus distance) step options.
@@ -1140,7 +1144,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var current = unit.Pawn.transform.position;
+            var current = GetPawnFeetPosition(unit);
 
             // Try A* pathfinding first (synchronous for immediate movement response).
             if (AstarPath.active != null)
@@ -1154,6 +1158,10 @@ namespace IronKingdoms.Combat
                     // Apply funnel smoothing so the unit walks a straight line on open terrain
                     // instead of zigzagging through navmesh triangle portals.
                     var smoothedPath = GetFunnelSmoothedVectorPath(path);
+                    if (smoothedPath.Count > 0)
+                    {
+                        smoothedPath[0] = current;
+                    }
                     var waypoints = ClampPathToMovementBudget(smoothedPath, remaining);
                     if (waypoints.Count >= 2)
                     {
@@ -1323,6 +1331,18 @@ namespace IronKingdoms.Combat
             }
 
             return Mathf.Max(0f, unit.Pawn.transform.localScale.y);
+        }
+
+        private static Vector3 GetPawnFeetPosition(RuntimeUnit unit)
+        {
+            if (unit?.Pawn == null)
+            {
+                return Vector3.zero;
+            }
+
+            var position = unit.Pawn.transform.position;
+            position.y -= GetPawnGroundOffset(unit);
+            return position;
         }
 
         private static Vector3 GetGroundedNavmeshPositionForUnit(RuntimeUnit unit, Vector3 worldPosition)
