@@ -185,6 +185,11 @@ namespace IronKingdoms.Combat
             {
                 navPathBuilder = NavPathBuilder.Instance;
             }
+
+            if (navPathBuilder == null)
+            {
+                navPathBuilder = gameObject.AddComponent<NavPathBuilder>();
+            }
         }
 
         private void BuildVisualizers()
