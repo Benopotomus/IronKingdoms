@@ -12,7 +12,7 @@ namespace IronKingdoms.Combat
     /// <see cref="TestLevelUnitController.navPathBuilder"/>.
     /// Call <see cref="RequestAsync"/> to kick off a non-blocking path request (e.g. during
     /// movement preview) or <see cref="BuildSync"/> for an immediate result (e.g. on click-confirm).
-    /// Neither method modifies the positions — no snapping is applied.
+    /// The start point is pinned exactly; the destination remains on the computed walkable path.
     /// </summary>
     public class NavPathBuilder : MonoBehaviour
     {
@@ -61,7 +61,7 @@ namespace IronKingdoms.Combat
         /// Begins an asynchronous A* path request.  The <paramref name="onComplete"/> callback is
         /// invoked on the main thread when the path is ready.  The returned list contains the
         /// funnel-smoothed world-space waypoints with <paramref name="from"/> pinned as the first
-        /// point and <paramref name="to"/> pinned as the last point.
+        /// point.
         /// Returns an empty list on error or when A* is unavailable.
         /// </summary>
         public void RequestAsync(Vector3 from, Vector3 to, Action<List<Vector3>> onComplete)
@@ -72,10 +72,9 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var capturedTo = to;
             var path = ABPath.Construct(from, to, p =>
             {
-                var result = Smooth(p as ABPath, from, capturedTo);
+                var result = Smooth(p as ABPath, from);
                 onComplete?.Invoke(result.Count >= 2 ? result : null);
             });
             AstarPath.StartPath(path);
@@ -83,7 +82,7 @@ namespace IronKingdoms.Combat
 
         /// <summary>
         /// Computes a funnel-smoothed path synchronously.  Blocks until A* finishes.
-        /// The first waypoint is pinned to <paramref name="from"/> and the last to <paramref name="to"/>.
+        /// The first waypoint is pinned to <paramref name="from"/>.
         /// Returns an empty list on error or when A* is unavailable.
         /// </summary>
         public List<Vector3> BuildSync(Vector3 from, Vector3 to)
@@ -96,14 +95,14 @@ namespace IronKingdoms.Combat
             var path = ABPath.Construct(from, to);
             AstarPath.StartPath(path);
             AstarPath.BlockUntilCalculated(path);
-            return Smooth(path, from, to);
+            return Smooth(path, from);
         }
 
         // -----------------------------------------------------------------------------------------
         // Private helpers
         // -----------------------------------------------------------------------------------------
 
-        private static List<Vector3> Smooth(ABPath path, Vector3 pinnedStart, Vector3 pinnedEnd)
+        private static List<Vector3> Smooth(ABPath path, Vector3 pinnedStart)
         {
             if (path == null || path.error || path.vectorPath == null || path.vectorPath.Count < 2)
             {
@@ -114,7 +113,6 @@ namespace IronKingdoms.Combat
             if (smoothed.Count > 0)
             {
                 smoothed[0] = pinnedStart;
-                smoothed[smoothed.Count - 1] = pinnedEnd;
             }
 
             return smoothed;
