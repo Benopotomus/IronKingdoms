@@ -276,15 +276,9 @@ namespace IronKingdoms.Combat
                 RequestPathPreviewIfNeeded(unitPos, hoverPos);
             }
 
-            if (previewPathPending || previewPathWaypoints == null || previewPathWaypoints.Count < 2)
-            {
-                movementPathLine.enabled = false;
-                destinationMarkerObject.SetActive(false);
-                return;
-            }
-
-            var displayPath = previewPathWaypoints;
-            var withinRange = previewDestinationReachable;
+            var hasPreviewPath = !previewPathPending && previewPathWaypoints != null && previewPathWaypoints.Count >= 2;
+            var displayPath = hasPreviewPath ? previewPathWaypoints : null;
+            var withinRange = hasPreviewPath ? previewDestinationReachable : true;
 
             var pathColor = withinRange
                 ? new Color(0.15f, 0.85f, 0.85f, 0.85f)
@@ -296,21 +290,23 @@ namespace IronKingdoms.Combat
                 ? new Color(0.15f, 0.85f, 0.85f, 0.8f)
                 : new Color(0.95f, 0.35f, 0.15f, 0.8f);
 
-            movementPathLine.enabled = true;
-
-            movementPathLine.positionCount = displayPath.Count;
-            for (var i = 0; i < displayPath.Count; i++)
+            movementPathLine.enabled = hasPreviewPath;
+            if (hasPreviewPath)
             {
-                movementPathLine.SetPosition(i, displayPath[i]);
+                movementPathLine.positionCount = displayPath.Count;
+                for (var i = 0; i < displayPath.Count; i++)
+                {
+                    movementPathLine.SetPosition(i, displayPath[i]);
+                }
             }
 
             movementPathLine.startColor = pathColor;
             movementPathLine.endColor = pathFadeColor;
 
-            // Marker mirrors the final point the unit will actually move to.
+            // Marker always stays exactly on the hovered target point.
             destinationMarkerObject.SetActive(true);
-            var dest = displayPath[displayPath.Count - 1];
-            dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y - PathVisualizationHeight);
+            var dest = hoverPos;
+            dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y + 0.01f);
             destinationMarkerObject.transform.position = dest;
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
             if (markerRenderer != null)
@@ -377,17 +373,16 @@ namespace IronKingdoms.Combat
             }
 
             previewDestinationReachable = fullLength <= remaining + PositionArrivalTolerance;
-            var clamped = ClampPathToMovementBudget(smoothedPath, remaining);
 
             // Lift waypoints just above the ground so the line is visible.
-            for (var i = 0; i < clamped.Count; i++)
+            for (var i = 0; i < smoothedPath.Count; i++)
             {
-                var wp = clamped[i];
+                var wp = smoothedPath[i];
                 wp.y += PathVisualizationHeight;
-                clamped[i] = wp;
+                smoothedPath[i] = wp;
             }
 
-            previewPathWaypoints = clamped;
+            previewPathWaypoints = smoothedPath;
         }
 
         private void RefreshAttackRangeRing()
