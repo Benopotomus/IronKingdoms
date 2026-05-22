@@ -43,6 +43,7 @@ namespace IronKingdoms.Combat
         private const float DefaultTargetRingRadius = 0.6f;
         private const float TargetRingScaleFactor = 0.6f;
         private const float PathPreviewUpdateDistance = 0.4f;
+        private const float PathPreviewReuseToleranceMultiplier = 1.5f;
         private const float PathPreviewMinInterval = 0.08f;
         private const float PathVisualizationHeight = 0.05f;
         private const int WeaponRangeRingSegments = 64;
@@ -292,7 +293,7 @@ namespace IronKingdoms.Combat
                         return;
                     }
 
-                    previewPath = result != null && result.Count >= 2 ? result : null;
+                    previewPath = result; // null on error; already validated to have >= 2 points by NavPathBuilder
                 });
             }
 
@@ -750,7 +751,7 @@ namespace IronKingdoms.Combat
             // the player just clicked, so the unit follows exactly the path they saw.
             var clickedNearPreview = previewPath != null && previewPath.Count >= 2
                 && new Vector2(previewPathTo.x - destination.x, previewPathTo.z - destination.z).magnitude
-                   <= PathPreviewUpdateDistance * 1.5f;
+                   <= PathPreviewUpdateDistance * PathPreviewReuseToleranceMultiplier;
 
             if (clickedNearPreview)
             {

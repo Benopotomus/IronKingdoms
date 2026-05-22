@@ -30,7 +30,8 @@ namespace IronKingdoms.Combat
 
             var path = ABPath.Construct(from, to, p =>
             {
-                onComplete?.Invoke(Smooth(p as ABPath, from));
+                var result = Smooth(p as ABPath, from);
+                onComplete?.Invoke(result.Count >= 2 ? result : null);
             });
             AstarPath.StartPath(path);
         }
