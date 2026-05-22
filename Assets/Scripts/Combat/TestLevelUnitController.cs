@@ -184,7 +184,7 @@ namespace IronKingdoms.Combat
 
             if (navPathBuilder == null)
             {
-                navPathBuilder = NavPathBuilder.Instance;
+                navPathBuilder = NavPathBuilder.instance;
             }
 
             if (navPathBuilder == null)
