@@ -298,40 +298,19 @@ namespace IronKingdoms.Combat
 
             movementPathLine.enabled = true;
 
-            // The line always ends at the exact cursor position.  For reachable destinations the
-            // cached path already ends near the cursor, so we simply overwrite the last point each
-            // frame.  For out-of-range destinations the clamped path only reaches the budget limit,
-            // so we append one extra point at the cursor to extend the line all the way there.
-            var cursorLineEnd = hoverPos;
-            cursorLineEnd.y += PathVisualizationHeight;
-
-            if (withinRange)
+            movementPathLine.positionCount = displayPath.Count;
+            for (var i = 0; i < displayPath.Count; i++)
             {
-                movementPathLine.positionCount = displayPath.Count;
-                for (var i = 0; i < displayPath.Count; i++)
-                {
-                    movementPathLine.SetPosition(i, displayPath[i]);
-                }
-                movementPathLine.SetPosition(displayPath.Count - 1, cursorLineEnd);
-            }
-            else
-            {
-                movementPathLine.positionCount = displayPath.Count + 1;
-                for (var i = 0; i < displayPath.Count; i++)
-                {
-                    movementPathLine.SetPosition(i, displayPath[i]);
-                }
-                movementPathLine.SetPosition(displayPath.Count, cursorLineEnd);
+                movementPathLine.SetPosition(i, displayPath[i]);
             }
 
             movementPathLine.startColor = pathColor;
             movementPathLine.endColor = pathFadeColor;
 
-            // Marker always follows the cursor exactly — never snaps to a navmesh position.
+            // Marker mirrors the final point the unit will actually move to.
             destinationMarkerObject.SetActive(true);
-            var dest = hoverPos;
-            dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y);
-
+            var dest = displayPath[displayPath.Count - 1];
+            dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y - PathVisualizationHeight);
             destinationMarkerObject.transform.position = dest;
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
             if (markerRenderer != null)
