@@ -270,15 +270,7 @@ namespace IronKingdoms.Combat
                 lastPreviewRequestTarget = Vector3.positiveInfinity;
             }
 
-            // Kick off a new A* path request when the hover target shifts enough.
-            if (AstarPath.active != null)
-            {
-                RequestPathPreviewIfNeeded(unitPos, hoverPos);
-            }
-
-            var hasPreviewPath = !previewPathPending && previewPathWaypoints != null && previewPathWaypoints.Count >= 2;
-            var displayPath = hasPreviewPath ? previewPathWaypoints : null;
-            var withinRange = hasPreviewPath ? previewDestinationReachable : true;
+            var withinRange = Vector3.Distance(unitPos, hoverPos) <= effectiveBudget + PositionArrivalTolerance;
 
             var pathColor = withinRange
                 ? new Color(0.15f, 0.85f, 0.85f, 0.85f)
@@ -290,15 +282,14 @@ namespace IronKingdoms.Combat
                 ? new Color(0.15f, 0.85f, 0.85f, 0.8f)
                 : new Color(0.95f, 0.35f, 0.15f, 0.8f);
 
-            movementPathLine.enabled = hasPreviewPath;
-            if (hasPreviewPath)
-            {
-                movementPathLine.positionCount = displayPath.Count;
-                for (var i = 0; i < displayPath.Count; i++)
-                {
-                    movementPathLine.SetPosition(i, displayPath[i]);
-                }
-            }
+            movementPathLine.enabled = true;
+            movementPathLine.positionCount = 2;
+            var pathStart = unitPos;
+            pathStart.y += PathVisualizationHeight;
+            var pathEnd = hoverPos;
+            pathEnd.y += PathVisualizationHeight;
+            movementPathLine.SetPosition(0, pathStart);
+            movementPathLine.SetPosition(1, pathEnd);
 
             movementPathLine.startColor = pathColor;
             movementPathLine.endColor = pathFadeColor;
