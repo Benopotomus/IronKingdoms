@@ -354,7 +354,6 @@ namespace IronKingdoms.Combat
                     wp.y += PathVisualizationHeight;
                     movementPathLine.SetPosition(i, wp);
                 }
-            }
                 movementPathLine.startColor = pathColor;
                 movementPathLine.endColor = pathFadeColor;
             }
