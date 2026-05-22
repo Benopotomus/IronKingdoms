@@ -7,20 +7,64 @@ using UnityEngine;
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Builds funnel-smoothed navmesh paths between two world-space positions.
+    /// MonoBehaviour that builds funnel-smoothed navmesh paths between two world-space positions.
+    /// Attach one instance to a scene GameObject (e.g. CombatFlowBootstrap) and reference it via
+    /// <see cref="TestLevelUnitController.navPathBuilder"/>.
     /// Call <see cref="RequestAsync"/> to kick off a non-blocking path request (e.g. during
     /// movement preview) or <see cref="BuildSync"/> for an immediate result (e.g. on click-confirm).
     /// Neither method modifies the positions — no snapping is applied.
     /// </summary>
-    public static class NavPathBuilder
+    public class NavPathBuilder : MonoBehaviour
     {
+        // -----------------------------------------------------------------------------------------
+        // Singleton access
+        // -----------------------------------------------------------------------------------------
+
+        private static NavPathBuilder _instance;
+
+        /// <summary>
+        /// Returns the first <see cref="NavPathBuilder"/> found in the scene.
+        /// Cached after the first lookup.
+        /// </summary>
+        public static NavPathBuilder Instance
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    _instance = FindObjectOfType<NavPathBuilder>();
+                    if (_instance == null)
+                    {
+                        Debug.LogWarning(
+                            "[NavPathBuilder] No NavPathBuilder instance found in the scene. " +
+                            "Add a NavPathBuilder component to a scene GameObject.");
+                    }
+                }
+
+                return _instance;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (_instance == this)
+            {
+                _instance = null;
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Public API
+        // -----------------------------------------------------------------------------------------
+
         /// <summary>
         /// Begins an asynchronous A* path request.  The <paramref name="onComplete"/> callback is
         /// invoked on the main thread when the path is ready.  The returned list contains the
         /// funnel-smoothed world-space waypoints with <paramref name="from"/> pinned as the first
-        /// point.  Returns an empty list on error or when A* is unavailable.
+        /// point and <paramref name="to"/> pinned as the last point.
+        /// Returns an empty list on error or when A* is unavailable.
         /// </summary>
-        public static void RequestAsync(Vector3 from, Vector3 to, Action<List<Vector3>> onComplete)
+        public void RequestAsync(Vector3 from, Vector3 to, Action<List<Vector3>> onComplete)
         {
             if (AstarPath.active == null)
             {
@@ -28,9 +72,10 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            var capturedTo = to;
             var path = ABPath.Construct(from, to, p =>
             {
-                var result = Smooth(p as ABPath, from);
+                var result = Smooth(p as ABPath, from, capturedTo);
                 onComplete?.Invoke(result.Count >= 2 ? result : null);
             });
             AstarPath.StartPath(path);
@@ -38,9 +83,10 @@ namespace IronKingdoms.Combat
 
         /// <summary>
         /// Computes a funnel-smoothed path synchronously.  Blocks until A* finishes.
+        /// The first waypoint is pinned to <paramref name="from"/> and the last to <paramref name="to"/>.
         /// Returns an empty list on error or when A* is unavailable.
         /// </summary>
-        public static List<Vector3> BuildSync(Vector3 from, Vector3 to)
+        public List<Vector3> BuildSync(Vector3 from, Vector3 to)
         {
             if (AstarPath.active == null)
             {
@@ -50,14 +96,14 @@ namespace IronKingdoms.Combat
             var path = ABPath.Construct(from, to);
             AstarPath.StartPath(path);
             AstarPath.BlockUntilCalculated(path);
-            return Smooth(path, from);
+            return Smooth(path, from, to);
         }
 
         // -----------------------------------------------------------------------------------------
         // Private helpers
         // -----------------------------------------------------------------------------------------
 
-        private static List<Vector3> Smooth(ABPath path, Vector3 pinnedStart)
+        private static List<Vector3> Smooth(ABPath path, Vector3 pinnedStart, Vector3 pinnedEnd)
         {
             if (path == null || path.error || path.vectorPath == null || path.vectorPath.Count < 2)
             {
@@ -68,6 +114,7 @@ namespace IronKingdoms.Combat
             if (smoothed.Count > 0)
             {
                 smoothed[0] = pinnedStart;
+                smoothed[smoothed.Count - 1] = pinnedEnd;
             }
 
             return smoothed;

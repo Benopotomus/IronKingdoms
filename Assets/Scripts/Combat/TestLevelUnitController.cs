@@ -81,6 +81,7 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(0.5f)] private float spawnSpacing = 2f;
         [SerializeField, Min(0.1f)] private float aiThinkInterval = 0.5f;
         [SerializeField] private CombatCameraManager cameraManager;
+        [SerializeField] private NavPathBuilder navPathBuilder;
         [SerializeField] private bool autoSpawnOnStart = true;
 
         private readonly List<RuntimeUnit> playerRuntimeUnits = new();
@@ -137,6 +138,7 @@ namespace IronKingdoms.Combat
         private void Awake()
         {
             EnsureCameraManagerAssigned();
+            EnsureNavPathBuilderAssigned();
         }
 
         private void Start()
@@ -169,6 +171,19 @@ namespace IronKingdoms.Combat
             if (cameraManager == null)
             {
                 cameraManager = GetComponent<CombatCameraManager>();
+            }
+        }
+
+        private void EnsureNavPathBuilderAssigned()
+        {
+            if (navPathBuilder == null)
+            {
+                navPathBuilder = GetComponent<NavPathBuilder>();
+            }
+
+            if (navPathBuilder == null)
+            {
+                navPathBuilder = NavPathBuilder.Instance;
             }
         }
 
@@ -284,7 +299,7 @@ namespace IronKingdoms.Combat
                 lastPathPreviewTime = Time.unscaledTime;
                 previewPathPending = true;
 
-                NavPathBuilder.RequestAsync(unitPos, hoverPos, result =>
+                navPathBuilder.RequestAsync(unitPos, hoverPos, result =>
                 {
                     previewPathPending = false;
                     // Only accept the result if we're still in Move mode for the same unit.
@@ -1109,7 +1124,7 @@ namespace IronKingdoms.Combat
             var current = GetPawnFeetPosition(unit);
 
             // Use NavPathBuilder to get a funnel-smoothed path, then clamp to budget.
-            var smoothedPath = NavPathBuilder.BuildSync(current, destination);
+            var smoothedPath = navPathBuilder.BuildSync(current, destination);
             if (smoothedPath.Count >= 2)
             {
                 IssueMoveOrderFromPath(unit, smoothedPath, remaining);
