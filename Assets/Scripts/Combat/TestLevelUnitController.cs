@@ -188,7 +188,8 @@ namespace IronKingdoms.Combat
 
             if (navPathBuilder == null)
             {
-                navPathBuilder = gameObject.AddComponent<NavPathBuilder>();
+                var go = new GameObject("NavPathBuilder");
+                navPathBuilder = go.AddComponent<NavPathBuilder>();
             }
         }
 
