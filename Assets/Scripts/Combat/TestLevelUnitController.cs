@@ -292,7 +292,7 @@ namespace IronKingdoms.Combat
             // Request a new path from NavPathBuilder when the hover target has moved enough
             // and no request is already in flight.
             var horizontalDist = new Vector2(previewPathTo.x - hoverPos.x, previewPathTo.z - hoverPos.z).magnitude;
-            if (!previewPathPending && (horizontalDist >= PathPreviewUpdateDistance
+            if (navPathBuilder != null && !previewPathPending && (horizontalDist >= PathPreviewUpdateDistance
                 || Time.unscaledTime - lastPathPreviewTime >= PathPreviewMinInterval && horizontalDist > 0.01f))
             {
                 previewPathTo = hoverPos;
@@ -1124,11 +1124,14 @@ namespace IronKingdoms.Combat
             var current = GetPawnFeetPosition(unit);
 
             // Use NavPathBuilder to get a funnel-smoothed path, then clamp to budget.
-            var smoothedPath = navPathBuilder.BuildSync(current, destination);
-            if (smoothedPath.Count >= 2)
+            if (navPathBuilder != null)
             {
-                IssueMoveOrderFromPath(unit, smoothedPath, remaining);
-                return;
+                var smoothedPath = navPathBuilder.BuildSync(current, destination);
+                if (smoothedPath.Count >= 2)
+                {
+                    IssueMoveOrderFromPath(unit, smoothedPath, remaining);
+                    return;
+                }
             }
 
             // Fallback: straight-line movement when no navmesh path is available.
