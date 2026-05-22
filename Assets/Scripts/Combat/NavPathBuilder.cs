@@ -36,7 +36,8 @@ namespace IronKingdoms.Combat
                     if (_instance == null)
                     {
                         Debug.LogWarning(
-                            "[NavPathBuilder] No NavPathBuilder instance found in the scene.");
+                            "[NavPathBuilder] No NavPathBuilder instance found in the scene. " +
+                            "Callers should provide or create one before requesting paths.");
                     }
                 }
 
