@@ -900,7 +900,7 @@ namespace IronKingdoms.Combat
                 // Only adjust Y to keep the unit grounded on the terrain surface.
                 // Do NOT snap XZ: applying GetNearest to an interpolated mid-segment position
                 // can pull the unit toward the wrong navmesh polygon near wall corners.
-                nextPosition.y = GetGroundedNavmeshPositionForUnit(unit, nextPosition).y;
+                nextPosition = GetGroundedPositionKeepingXZ(unit, nextPosition);
                 var movedDistance = Vector3.Distance(currentPosition, nextPosition);
                 unit.Pawn.transform.position = nextPosition;
                 unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movedDistance);
@@ -918,7 +918,7 @@ namespace IronKingdoms.Combat
                     {
                         unit.PathWaypointIndex = nextIndex;
                         var nextWaypoint = waypoints[nextIndex];
-                        nextWaypoint = GetGroundedNavmeshPositionForUnit(unit, nextWaypoint);
+                        nextWaypoint = GetGroundedPositionKeepingXZ(unit, nextWaypoint);
                         unit.MoveTarget = nextWaypoint;
                     }
                     else
@@ -1018,7 +1018,7 @@ namespace IronKingdoms.Combat
             var direction = toTarget.normalized;
             var stopDistance = Mathf.Max(AiMinimumStopDistance, desiredRange * AiDesiredStopFactor);
             var destination = targetPosition - direction * stopDistance;
-            destination = GetGroundedNavmeshPositionForUnit(enemy, destination);
+            destination = GetGroundedPositionKeepingXZ(enemy, destination);
             IssueMoveOrder(enemy, destination);
         }
 
@@ -1168,7 +1168,7 @@ namespace IronKingdoms.Combat
                         unit.PathWaypoints = waypoints;
                         unit.PathWaypointIndex = 0;
                         var firstTarget = waypoints[1];
-                        firstTarget = GetGroundedNavmeshPositionForUnit(unit, firstTarget);
+                        firstTarget = GetGroundedPositionKeepingXZ(unit, firstTarget);
                         unit.MoveTarget = firstTarget;
                         return;
                     }
@@ -1188,7 +1188,7 @@ namespace IronKingdoms.Combat
 
             var moveDistance = Mathf.Min(remaining, distanceToDestination);
             var clampedDestination = current + planarDelta.normalized * moveDistance;
-            clampedDestination.y = current.y + GetPawnGroundOffset(unit);
+            clampedDestination = GetGroundedPositionKeepingXZ(unit, clampedDestination);
             unit.MoveTarget = clampedDestination;
             unit.PathWaypoints = null;
         }
@@ -1350,6 +1350,13 @@ namespace IronKingdoms.Combat
             var navPosition = GetNearestNavmeshPosition(worldPosition);
             navPosition.y += GetPawnGroundOffset(unit);
             return navPosition;
+        }
+
+        private static Vector3 GetGroundedPositionKeepingXZ(RuntimeUnit unit, Vector3 worldPosition)
+        {
+            var groundedPosition = worldPosition;
+            groundedPosition.y = GetGroundedNavmeshPositionForUnit(unit, worldPosition).y;
+            return groundedPosition;
         }
 
         private static void SnapUnitToNavmesh(RuntimeUnit unit)
