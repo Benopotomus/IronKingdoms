@@ -33,15 +33,9 @@ namespace IronKingdoms.Combat
         {
             if (instance == null)
             {
-                instance = FindObjectOfType<NavPathBuilder>();
-                if (instance == null)
-                {
-                    Debug.LogWarning(
-                        "[NavPathBuilder] No NavPathBuilder instance found in the scene. " +
-                        "Callers should provide or create one before requesting paths.");
-                }
+                instance = this;
             }
-            
+           
         }
 
         private void OnDestroy()
