@@ -47,6 +47,9 @@ namespace IronKingdoms.Combat
         private const float PathPreviewReuseToleranceMultiplier = 1.5f;
         private const float PathPreviewMinInterval = 0.08f;
         private const float PathVisualizationHeight = 0.05f;
+        private const float UnitCollisionPadding = 0.03f;
+        private const float UnitDetourPadding = 0.08f;
+        private const int MaxAvoidanceInsertions = 8;
         private const int WeaponRangeRingSegments = 64;
         private const float FloatingDamageLifetime = 1.2f;
         private const float FloatingDamageRiseSpeed = 55f;
@@ -316,7 +319,8 @@ namespace IronKingdoms.Combat
                         return;
                     }
 
-                    previewPath = result; // null on error; already validated to have >= 2 points by NavPathBuilder
+                    var collisionAwarePath = BuildPathAvoidingUnits(selectedUnit, result);
+                    previewPath = collisionAwarePath.Count >= 2 ? collisionAwarePath : null;
                 });
             }
 
@@ -1155,7 +1159,8 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var waypoints = ClampPathToMovementBudget(smoothedPath, movementBudget);
+            var collisionAwarePath = BuildPathAvoidingUnits(unit, smoothedPath);
+            var waypoints = ClampPathToMovementBudget(collisionAwarePath, movementBudget);
             if (waypoints.Count >= 2)
             {
                 unit.PathWaypoints = waypoints;
@@ -1164,6 +1169,119 @@ namespace IronKingdoms.Combat
                 firstTarget = GetGroundedNavmeshPositionForUnit(unit, firstTarget);
                 unit.MoveTarget = firstTarget;
             }
+        }
+
+        private List<Vector3> BuildPathAvoidingUnits(RuntimeUnit movingUnit, List<Vector3> basePath)
+        {
+            if (basePath == null || basePath.Count == 0)
+            {
+                return new List<Vector3>();
+            }
+
+            if (movingUnit?.Pawn == null || basePath.Count < 2)
+            {
+                return new List<Vector3>(basePath);
+            }
+
+            var adjusted = new List<Vector3>(basePath);
+            for (var pass = 0; pass < MaxAvoidanceInsertions; pass++)
+            {
+                var inserted = false;
+                for (var i = 1; i < adjusted.Count; i++)
+                {
+                    var start = adjusted[i - 1];
+                    var end = adjusted[i];
+                    if (!TryBuildDetourWaypoint(movingUnit, start, end, out var detour))
+                    {
+                        continue;
+                    }
+
+                    if (Vector3.Distance(start, detour) <= PositionArrivalTolerance
+                        || Vector3.Distance(end, detour) <= PositionArrivalTolerance)
+                    {
+                        continue;
+                    }
+
+                    adjusted.Insert(i, detour);
+                    inserted = true;
+                    break;
+                }
+
+                if (!inserted)
+                {
+                    break;
+                }
+            }
+
+            return adjusted;
+        }
+
+        private bool TryBuildDetourWaypoint(RuntimeUnit movingUnit, Vector3 segmentStart, Vector3 segmentEnd, out Vector3 detourPoint)
+        {
+            detourPoint = Vector3.zero;
+            var start2 = new Vector2(segmentStart.x, segmentStart.z);
+            var end2 = new Vector2(segmentEnd.x, segmentEnd.z);
+            var segment = end2 - start2;
+            var segmentLengthSqr = segment.sqrMagnitude;
+            if (segmentLengthSqr < MinimumVectorSqrMagnitude)
+            {
+                return false;
+            }
+
+            var segmentDir = segment / Mathf.Sqrt(segmentLengthSqr);
+            var perpDir = new Vector2(-segmentDir.y, segmentDir.x);
+            var movingRadius = GetUnitCollisionRadius(movingUnit);
+            var bestT = float.MaxValue;
+            var found = false;
+
+            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            {
+                var obstacle = allRuntimeUnits[i];
+                if (obstacle == null || !obstacle.IsAlive || obstacle.Pawn == null || ReferenceEquals(obstacle, movingUnit))
+                {
+                    continue;
+                }
+
+                var center = obstacle.Pawn.transform.position;
+                var center2 = new Vector2(center.x, center.z);
+                var obstacleRadius = GetUnitCollisionRadius(obstacle);
+                var clearance = movingRadius + obstacleRadius + UnitCollisionPadding;
+                var toCenter = center2 - start2;
+                var t = Mathf.Clamp01(Vector2.Dot(toCenter, segment) / segmentLengthSqr);
+                var closestPoint = start2 + segment * t;
+                var distanceSq = (center2 - closestPoint).sqrMagnitude;
+                if (distanceSq >= clearance * clearance || t >= bestT)
+                {
+                    continue;
+                }
+
+                var cross = segmentDir.x * (center2.y - closestPoint.y) - segmentDir.y * (center2.x - closestPoint.x);
+                if (Mathf.Abs(cross) <= MovementBudgetEpsilon)
+                {
+                    cross = segmentDir.x * (center2.y - start2.y) - segmentDir.y * (center2.x - start2.x);
+                }
+
+                var sideSign = cross >= 0f ? 1f : -1f;
+                var detour2 = center2 + perpDir * sideSign * (clearance + UnitDetourPadding);
+                var detourY = Mathf.Lerp(segmentStart.y, segmentEnd.y, t);
+                var candidate = new Vector3(detour2.x, detourY, detour2.y);
+                detourPoint = GetGroundedNavmeshPositionForUnit(movingUnit, candidate);
+                bestT = t;
+                found = true;
+            }
+
+            return found;
+        }
+
+        private static float GetUnitCollisionRadius(RuntimeUnit unit)
+        {
+            if (unit?.Pawn == null)
+            {
+                return DefaultTargetRingRadius;
+            }
+
+            var pawnScale = unit.Pawn.transform.localScale;
+            return Mathf.Max(0.1f, Mathf.Max(pawnScale.x, pawnScale.z) * 0.5f);
         }
 
         private static bool RaycastForMouseHit(Ray ray, out RaycastHit hit)
