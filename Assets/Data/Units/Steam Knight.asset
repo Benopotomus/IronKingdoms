@@ -15,14 +15,13 @@ MonoBehaviour:
   displayName: Steam Knight
   role: 1
   stats:
-    speed: 5
+    speed: 10
     modelSize: 2
     meleeAttack: 7
     rangedAttack: 5
     defense: 12
     armor: 17
     health: 18
-    startingResource: 0
     weapons:
     - {fileID: 11400000, guid: b7e6f6f5a2d1437e8d12b7319bf4a1b1, type: 2}
     - {fileID: 11400000, guid: 6d3d4b1d3fa24c3aa6c2cc4b4517ce72, type: 2}

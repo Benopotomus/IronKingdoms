@@ -15,14 +15,13 @@ MonoBehaviour:
   displayName: Ironclad Vanguard
   role: 1
   stats:
-    speed: 4.5
+    speed: 10
     modelSize: 2
     meleeAttack: 8
     rangedAttack: 6
     defense: 11
     armor: 18
     health: 20
-    startingResource: 0
     weapons:
     - {fileID: 11400000, guid: c4f0d177b2ae4ec0b4e9c447f4eab73e, type: 2}
     - {fileID: 11400000, guid: 3fca850e8b9d4f33a3f369f4a1a9d8e2, type: 2}

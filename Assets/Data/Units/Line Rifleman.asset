@@ -15,14 +15,13 @@ MonoBehaviour:
   displayName: Line Rifleman
   role: 2
   stats:
-    speed: 5
+    speed: 10
     modelSize: 0
     meleeAttack: 4
     rangedAttack: 6
     defense: 13
     armor: 12
     health: 10
-    startingResource: 0
     weapons:
     - {fileID: 11400000, guid: e8a5dca7ef44425e8fcb45e3e8ef8ba4, type: 2}
     - {fileID: 11400000, guid: 2d4ea5d59f8d4cf7b8d6c8c53e5c2a13, type: 2}

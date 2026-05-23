@@ -15,14 +15,13 @@ MonoBehaviour:
   displayName: Tempest Gun Mage
   role: 0
   stats:
-    speed: 6
+    speed: 10
     modelSize: 0
     meleeAttack: 5
     rangedAttack: 8
     defense: 14
     armor: 13
     health: 12
-    startingResource: 0
     weapons:
     - {fileID: 11400000, guid: 8f1c7ef91de7464db7cf7f6a7a703f24, type: 2}
     - {fileID: 11400000, guid: 56c2d652d1b6455c9c7f8ee58bb4e6ab, type: 2}
