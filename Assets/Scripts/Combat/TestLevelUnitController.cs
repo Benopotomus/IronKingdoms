@@ -39,6 +39,9 @@ namespace IronKingdoms.Combat
         private const float CombatLogPanelHeight = 240f;
         private const float CombatLogPanelRightMargin = 12f;
         private const float CombatLogPanelTopMargin = 12f;
+        private const float CameraControlsPanelWidth = 460f;
+        private const float CameraControlsPanelHeight = 54f;
+        private const float CameraControlsPanelTopMargin = 12f;
         private const int CombatLogMaxEntries = 20;
         private const float DoubleClickIntervalSeconds = 0.3f;
         private const float DefaultTargetRingRadius = 0.6f;
@@ -614,31 +617,6 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.Return))
-            {
-                EndPlayerTurn();
-                return;
-            }
-
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                SetCurrentMode(UnitActionMode.None);
-                return;
-            }
-
-            if (Input.GetKeyDown(KeyCode.M) && selectedUnit != null && selectedUnit.IsAlive
-                && selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon
-                && !selectedUnit.HasActedThisTurn)
-            {
-                SetCurrentMode(currentPlayerMode == UnitActionMode.Move ? UnitActionMode.None : UnitActionMode.Move);
-            }
-
-            if (Input.GetKeyDown(KeyCode.A) && selectedUnit != null && selectedUnit.IsAlive
-                && !selectedUnit.HasActedThisTurn)
-            {
-                SetCurrentMode(currentPlayerMode == UnitActionMode.Attack ? UnitActionMode.None : UnitActionMode.Attack);
-            }
-
             switch (currentPlayerMode)
             {
                 case UnitActionMode.Move:
@@ -655,15 +633,6 @@ namespace IronKingdoms.Combat
 
         private void HandleSelectionInput()
         {
-            for (var i = 0; i < Mathf.Min(9, playerRuntimeUnits.Count); i++)
-            {
-                if (Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1 + i)))
-                {
-                    SelectUnit(playerRuntimeUnits[i]);
-                    return;
-                }
-            }
-
             if (!Input.GetMouseButtonDown(0))
             {
                 return;
@@ -693,15 +662,6 @@ namespace IronKingdoms.Combat
 
         private void HandleMoveModeInput()
         {
-            for (var i = 0; i < Mathf.Min(9, playerRuntimeUnits.Count); i++)
-            {
-                if (Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1 + i)))
-                {
-                    SelectUnit(playerRuntimeUnits[i]);
-                    return;
-                }
-            }
-
             if (TryCancelModeOnRightClick())
             {
                 return;
@@ -794,15 +754,6 @@ namespace IronKingdoms.Combat
 
         private void HandleAttackModeInput()
         {
-            for (var i = 0; i < Mathf.Min(9, playerRuntimeUnits.Count); i++)
-            {
-                if (Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1 + i)))
-                {
-                    SelectUnit(playerRuntimeUnits[i]);
-                    return;
-                }
-            }
-
             if (TryCancelModeOnRightClick())
             {
                 return;
@@ -1960,6 +1911,11 @@ namespace IronKingdoms.Combat
         private void UpdateHoveredEnemy()
         {
             hoveredEnemyUnit = null;
+            if (IsMouseOverGameplayUi())
+            {
+                return;
+            }
+
             var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
@@ -2300,6 +2256,11 @@ namespace IronKingdoms.Combat
         private bool IsMouseOverGameplayUi()
         {
             var mouseGuiPosition = GetMouseGuiPosition();
+            if (IsMouseOverCameraControlsPanel(mouseGuiPosition))
+            {
+                return true;
+            }
+
             if (new Rect(RosterAreaX, RosterAreaY, RosterAreaWidth, RosterAreaHeight).Contains(mouseGuiPosition))
             {
                 return true;
@@ -2321,19 +2282,14 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            if (hoveredEnemyUnit != null && hoveredEnemyUnit.IsAlive)
-            {
-                var mousePosition = Input.mousePosition;
-                var panelHeight = GetHoverPanelHeight();
-                var x = Mathf.Clamp(mousePosition.x + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.width - HoverPanelWidth - HoverPanelScreenPadding);
-                var y = Mathf.Clamp(Screen.height - mousePosition.y + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.height - panelHeight - HoverPanelScreenPadding);
-                if (new Rect(x, y, HoverPanelWidth, panelHeight).Contains(mouseGuiPosition))
-                {
-                    return true;
-                }
-            }
-
             return false;
+        }
+
+        private static bool IsMouseOverCameraControlsPanel(Vector2 mouseGuiPosition)
+        {
+            var areaX = (Screen.width - CameraControlsPanelWidth) * 0.5f;
+            var panelRect = new Rect(areaX, CameraControlsPanelTopMargin, CameraControlsPanelWidth, CameraControlsPanelHeight);
+            return panelRect.Contains(mouseGuiPosition);
         }
 
         private static Vector2 GetMouseGuiPosition()
