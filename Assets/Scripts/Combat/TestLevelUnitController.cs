@@ -443,8 +443,13 @@ namespace IronKingdoms.Combat
                 return DefaultTargetRingRadius;
             }
 
-            var pawnScale = target.Pawn.transform.localScale;
-            var scaledRadius = Mathf.Max(pawnScale.x, pawnScale.z) * TargetRingScaleFactor;
+            var col = target.Pawn.GetComponent<CapsuleCollider>();
+            if (col == null)
+            {
+                return DefaultTargetRingRadius;
+            }
+
+            var scaledRadius = col.radius * 2f * TargetRingScaleFactor;
             return Mathf.Max(DefaultTargetRingRadius, scaledRadius);
         }
 
@@ -569,16 +574,40 @@ namespace IronKingdoms.Combat
                 }
 
                 unitDefinition.Stats.EnsureWeaponDefaults();
-                var pawn = GameObject.CreatePrimitive(PrimitiveType.Capsule);
                 var pawnScale = unitDefinition.Stats.modelSize.GetPawnScale();
-                pawn.name = $"{unitDefinition.DisplayName} ({(isPlayerControlled ? "Player" : "Enemy")})";
-                pawn.transform.localScale = pawnScale;
-                pawn.transform.SetPositionAndRotation(origin + new Vector3(i * spawnSpacing, GroundYPosition + pawnScale.y, 0f), Quaternion.identity);
-                pawn.transform.SetParent(transform);
-                var renderer = pawn.GetComponent<Renderer>();
-                if (renderer != null)
+                var spawnPos = origin + new Vector3(i * spawnSpacing, GroundYPosition, 0f);
+
+                GameObject pawn;
+                if (unitDefinition.VisualPrefab != null)
                 {
-                    renderer.material.color = color;
+                    pawn = Instantiate(unitDefinition.VisualPrefab, spawnPos, Quaternion.identity, transform);
+                }
+                else
+                {
+                    pawn = BuildProceduralPawn(pawnScale, spawnPos);
+                }
+
+                pawn.name = $"{unitDefinition.DisplayName} ({(isPlayerControlled ? "Player" : "Enemy")})";
+
+                var baseColor = new Color(color.r * 0.55f, color.g * 0.55f, color.b * 0.55f);
+                var bodyTransform = pawn.transform.Find("Body");
+                var baseTransform = pawn.transform.Find("Base");
+                if (bodyTransform != null)
+                {
+                    var bodyRenderer = bodyTransform.GetComponent<Renderer>();
+                    if (bodyRenderer != null)
+                    {
+                        bodyRenderer.material.color = color;
+                    }
+                }
+
+                if (baseTransform != null)
+                {
+                    var baseRenderer = baseTransform.GetComponent<Renderer>();
+                    if (baseRenderer != null)
+                    {
+                        baseRenderer.material.color = baseColor;
+                    }
                 }
 
                 var pawnCollider = pawn.GetComponent<CapsuleCollider>();
@@ -592,6 +621,43 @@ namespace IronKingdoms.Combat
                 destination.Add(runtimeUnit);
                 allRuntimeUnits.Add(runtimeUnit);
             }
+        }
+
+        private GameObject BuildProceduralPawn(Vector3 pawnScale, Vector3 spawnPos)
+        {
+            var root = new GameObject();
+            root.transform.SetPositionAndRotation(spawnPos, Quaternion.identity);
+            root.transform.SetParent(transform);
+
+            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            body.name = "Body";
+            body.transform.SetParent(root.transform);
+            body.transform.localPosition = new Vector3(0f, pawnScale.y, 0f);
+            body.transform.localScale = pawnScale;
+            var bodyCollider = body.GetComponent<Collider>();
+            if (bodyCollider != null)
+            {
+                bodyCollider.enabled = false;
+            }
+
+            var baseDisk = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            baseDisk.name = "Base";
+            baseDisk.transform.SetParent(root.transform);
+            baseDisk.transform.localPosition = new Vector3(0f, 0.01f, 0f);
+            baseDisk.transform.localScale = new Vector3(pawnScale.x, 0.01f, pawnScale.z);
+            var baseCollider = baseDisk.GetComponent<Collider>();
+            if (baseCollider != null)
+            {
+                baseCollider.enabled = false;
+            }
+
+            var col = root.AddComponent<CapsuleCollider>();
+            col.direction = 1;
+            col.center = new Vector3(0f, pawnScale.y, 0f);
+            col.radius = pawnScale.x * 0.5f;
+            col.height = pawnScale.y * 2f;
+
+            return root;
         }
 
         private void ClearSpawnedUnits()
@@ -1337,8 +1403,13 @@ namespace IronKingdoms.Combat
                 return DefaultTargetRingRadius;
             }
 
-            var pawnScale = unit.Pawn.transform.localScale;
-            return Mathf.Max(0.1f, Mathf.Max(pawnScale.x, pawnScale.z) * 0.5f);
+            var col = unit.Pawn.GetComponent<CapsuleCollider>();
+            if (col == null)
+            {
+                return Mathf.Max(0.1f, 0.5f);
+            }
+
+            return Mathf.Max(0.1f, col.radius);
         }
 
         private static bool RaycastForMouseHit(Ray ray, out RaycastHit hit)
@@ -1425,16 +1496,6 @@ namespace IronKingdoms.Combat
             return nearest.position;
         }
 
-        private static float GetPawnGroundOffset(RuntimeUnit unit)
-        {
-            if (unit?.Pawn == null)
-            {
-                return 0f;
-            }
-
-            return Mathf.Max(0f, unit.Pawn.transform.localScale.y);
-        }
-
         private static Vector3 GetPawnFeetPosition(RuntimeUnit unit)
         {
             if (unit?.Pawn == null)
@@ -1442,16 +1503,23 @@ namespace IronKingdoms.Combat
                 return Vector3.zero;
             }
 
-            var position = unit.Pawn.transform.position;
-            position.y -= GetPawnGroundOffset(unit);
-            return position;
+            return unit.Pawn.transform.position;
         }
 
         private static Vector3 GetGroundedNavmeshPositionForUnit(RuntimeUnit unit, Vector3 worldPosition)
         {
-            var navPosition = GetNearestNavmeshPosition(worldPosition);
-            navPosition.y += GetPawnGroundOffset(unit);
-            return navPosition;
+            return GetNearestNavmeshPosition(worldPosition);
+        }
+
+        private static Vector3 GetPawnCenterPosition(RuntimeUnit unit)
+        {
+            if (unit?.Pawn == null)
+            {
+                return Vector3.zero;
+            }
+
+            var bodyHeight = unit.Definition.Stats.modelSize.GetPawnScale().y;
+            return unit.Pawn.transform.position + Vector3.up * bodyHeight;
         }
 
         private static Vector3 GetGroundedPositionKeepingXZ(RuntimeUnit unit, Vector3 worldPosition)
@@ -1584,7 +1652,7 @@ namespace IronKingdoms.Combat
             var modifierText = FormatAttackModifierText(attackModifier);
             if (!weapon.EvaluateAttackHit(atkDie1, atkDie2, attackRoll, defender.Definition.Stats.defense))
             {
-                SpawnFloatingText(defender.Pawn.transform.position, "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
+                SpawnFloatingText(GetPawnCenterPosition(defender), "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
                 AddCombatLogEntry(
                     $"{attacker.Definition.DisplayName} → {defender.Definition.DisplayName}  " +
                     $"ATK [{atkDie1}+{atkDie2}]+{attackValue}{modifierText} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Miss");
@@ -1606,7 +1674,7 @@ namespace IronKingdoms.Combat
             defender.Health = Mathf.Max(0, defender.Health - damage);
             var damageText = damage > 0 ? $"-{damage}" : "Blocked";
             var damageColor = damage > 0 ? new Color(1f, 0.15f, 0.15f, 1f) : new Color(0.7f, 0.7f, 0.7f, 1f);
-            SpawnFloatingText(defender.Pawn.transform.position, damageText, damageColor);
+            SpawnFloatingText(GetPawnCenterPosition(defender), damageText, damageColor);
             var logResult = damage > 0 ? $"-{damage} HP" : "Blocked";
             AddCombatLogEntry(
                 $"{attacker.Definition.DisplayName} → {defender.Definition.DisplayName}  " +
