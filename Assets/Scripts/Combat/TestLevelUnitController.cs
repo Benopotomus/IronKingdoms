@@ -674,7 +674,7 @@ namespace IronKingdoms.Combat
 
         private void UpdateUnitNavmeshCutActivation(RuntimeUnit pathingUnit = null)
         {
-            var pathingRadius = GetUnitCollisionRadius(pathingUnit);
+            var pathingRadius = pathingUnit != null ? GetUnitCollisionRadius(pathingUnit) : 0f;
             for (var i = 0; i < allRuntimeUnits.Count; i++)
             {
                 var unit = allRuntimeUnits[i];

@@ -135,7 +135,12 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            AstarPath.active.navmeshUpdates?.ForceUpdate();
+            var navmeshUpdates = AstarPath.active.navmeshUpdates;
+            if (navmeshUpdates != null)
+            {
+                navmeshUpdates.ForceUpdate();
+            }
+
             AstarPath.active.FlushGraphUpdates();
         }
         
