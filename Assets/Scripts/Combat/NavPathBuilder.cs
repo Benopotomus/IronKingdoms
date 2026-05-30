@@ -108,6 +108,7 @@ namespace IronKingdoms.Combat
             
             var smoothed = instance.FunnelSmooth(path);
             
+            smoothed[0] = pinnedStart;
             smoothed[smoothed.Count - 1] = pinnedEnd;
             
             return smoothed;

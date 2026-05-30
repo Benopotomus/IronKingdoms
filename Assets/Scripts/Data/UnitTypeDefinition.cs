@@ -9,11 +9,13 @@ namespace IronKingdoms.Combat
         [SerializeField] private UnitRole role = UnitRole.Infantry;
         [SerializeField] private CombatStats stats = new CombatStats();
         [SerializeField, TextArea] private string designNotes = string.Empty;
+        [SerializeField] private GameObject visualPrefab;
 
         public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? name : displayName;
         public UnitRole Role => role;
         public CombatStats Stats => stats;
         public string DesignNotes => designNotes;
+        public GameObject VisualPrefab => visualPrefab;
 
 #if UNITY_EDITOR
         private void OnValidate()
