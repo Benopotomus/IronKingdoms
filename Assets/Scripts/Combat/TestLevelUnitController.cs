@@ -59,7 +59,7 @@ namespace IronKingdoms.Combat
         private const int UnitNavmeshCutCircleResolution = 12;
         private const float UnitNavmeshCutMinimumHeight = 1f;
         private const float UnitNavmeshCutUpdateDistance = 0.1f;
-        private const float PawnHeightToCapsuleHeightMultiplier = 2f;
+        private const float NavmeshCutHeightMultiplier = 2f;
         private const int WeaponRangeRingSegments = 64;
         private const float FloatingDamageLifetime = 1.2f;
         private const float FloatingDamageRiseSpeed = 55f;
@@ -362,9 +362,10 @@ namespace IronKingdoms.Combat
             movementPathLine.enabled = hasPreviewPath;
             if (hasPreviewPath)
             {
-                movementPathLine.positionCount = previewPath.Count;
-                var flatPathY = previewPath[previewPath.Count - 1].y + PathVisualizationHeight;
-                for (var i = 0; i < previewPath.Count; i++)
+                var previewPointCount = previewPath.Count;
+                movementPathLine.positionCount = previewPointCount;
+                var flatPathY = previewPath[previewPointCount - 1].y + PathVisualizationHeight;
+                for (var i = 0; i < previewPointCount; i++)
                 {
                     var wp = previewPath[i];
                     wp.y = flatPathY;
@@ -651,7 +652,7 @@ namespace IronKingdoms.Combat
             navmeshCut.type = NavmeshCut.MeshType.Circle;
             navmeshCut.circleRadius = radius;
             navmeshCut.circleResolution = UnitNavmeshCutCircleResolution;
-            navmeshCut.height = Mathf.Max(UnitNavmeshCutMinimumHeight, pawnScale.y * PawnHeightToCapsuleHeightMultiplier);
+            navmeshCut.height = Mathf.Max(UnitNavmeshCutMinimumHeight, pawnScale.y * NavmeshCutHeightMultiplier);
             navmeshCut.center = Vector3.zero;
             navmeshCut.isDual = false;
             navmeshCut.updateDistance = UnitNavmeshCutUpdateDistance;
