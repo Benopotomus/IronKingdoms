@@ -56,6 +56,10 @@ namespace IronKingdoms.Combat
         private const float UnitDetourPadding = 0.08f;
         private const float UnitIntersectionStopPadding = 0.02f;
         private const int MaxAvoidanceInsertions = 8;
+        private const int UnitNavmeshCutCircleResolution = 12;
+        private const float UnitNavmeshCutMinimumHeight = 1f;
+        private const float UnitNavmeshCutUpdateDistance = 0.1f;
+        private const float NavmeshCutHeightMultiplier = 2f;
         private const int WeaponRangeRingSegments = 64;
         private const float FloatingDamageLifetime = 1.2f;
         private const float FloatingDamageRiseSpeed = 55f;
@@ -358,11 +362,13 @@ namespace IronKingdoms.Combat
             movementPathLine.enabled = hasPreviewPath;
             if (hasPreviewPath)
             {
-                movementPathLine.positionCount = previewPath.Count;
-                for (var i = 0; i < previewPath.Count; i++)
+                var previewPointCount = previewPath.Count;
+                movementPathLine.positionCount = previewPointCount;
+                var flatPathY = previewPath[previewPointCount - 1].y + PathVisualizationHeight;
+                for (var i = 0; i < previewPointCount; i++)
                 {
                     var wp = previewPath[i];
-                    wp.y += PathVisualizationHeight;
+                    wp.y = flatPathY;
                     movementPathLine.SetPosition(i, wp);
                 }
                 movementPathLine.startColor = pathColor;
@@ -618,11 +624,40 @@ namespace IronKingdoms.Combat
                     pawnCollider.isTrigger = true;
                 }
 
+                ConfigureUnitNavmeshCut(pawn, pawnCollider, pawnScale);
+
                 var runtimeUnit = new RuntimeUnit(unitDefinition, isPlayerControlled, pawn);
                 SnapUnitToNavmesh(runtimeUnit);
                 destination.Add(runtimeUnit);
                 allRuntimeUnits.Add(runtimeUnit);
             }
+        }
+
+        private void ConfigureUnitNavmeshCut(GameObject pawn, CapsuleCollider pawnCollider, Vector3 pawnScale)
+        {
+            if (pawn == null)
+            {
+                return;
+            }
+
+            var navmeshCut = pawn.GetComponent<NavmeshCut>();
+            if (navmeshCut == null)
+            {
+                navmeshCut = pawn.AddComponent<NavmeshCut>();
+            }
+
+            var radius = pawnCollider != null
+                ? pawnCollider.radius + UnitCollisionPadding
+                : Mathf.Max(0.1f, pawnScale.x * 0.5f + UnitCollisionPadding);
+            navmeshCut.type = NavmeshCut.MeshType.Circle;
+            navmeshCut.circleRadius = radius;
+            navmeshCut.circleResolution = UnitNavmeshCutCircleResolution;
+            navmeshCut.height = Mathf.Max(UnitNavmeshCutMinimumHeight, pawnScale.y * NavmeshCutHeightMultiplier);
+            navmeshCut.center = Vector3.zero;
+            navmeshCut.isDual = false;
+            navmeshCut.updateDistance = UnitNavmeshCutUpdateDistance;
+            navmeshCut.radiusExpansionMode = NavmeshCut.RadiusExpansionMode.DontExpand;
+            navmeshCut.useRotationAndScale = false;
         }
 
         private GameObject BuildProceduralPawn(Vector3 pawnScale, Vector3 spawnPos)
