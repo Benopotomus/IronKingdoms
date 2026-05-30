@@ -22,6 +22,7 @@ namespace IronKingdoms.Combat
         // -----------------------------------------------------------------------------------------
 
         public static NavPathBuilder instance;
+        private static bool pendingNavmeshUpdate;
 
         [SerializeField] private FunnelModifier _funnel;
 
@@ -46,6 +47,11 @@ namespace IronKingdoms.Combat
             }
         }
 
+        public static void MarkNavmeshDirty()
+        {
+            pendingNavmeshUpdate = true;
+        }
+
         // -----------------------------------------------------------------------------------------
         // Public API
         // -----------------------------------------------------------------------------------------
@@ -65,6 +71,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            FlushPendingNavmeshUpdates();
             to = AstarPath.active.GetNearest(to).position;
             
             var path = ABPath.Construct(from, to, p =>
@@ -87,6 +94,7 @@ namespace IronKingdoms.Combat
                 return new List<Vector3>();
             }
 
+            FlushPendingNavmeshUpdates();
             var path = ABPath.Construct(from, to);
             AstarPath.StartPath(path);
             AstarPath.BlockUntilCalculated(path);
@@ -124,6 +132,23 @@ namespace IronKingdoms.Combat
             _funnel.Apply(path);
             return path.vectorPath;
 
+        }
+
+        private static void FlushPendingNavmeshUpdates()
+        {
+            if (AstarPath.active == null || !pendingNavmeshUpdate)
+            {
+                return;
+            }
+
+            var navmeshUpdates = AstarPath.active.navmeshUpdates;
+            if (navmeshUpdates != null)
+            {
+                navmeshUpdates.ForceUpdate();
+            }
+
+            AstarPath.active.FlushGraphUpdates();
+            pendingNavmeshUpdate = false;
         }
         
     }

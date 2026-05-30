@@ -166,7 +166,7 @@ namespace IronKingdoms.Combat
 
         private void Update()
         {
-            UpdateUnitNavmeshCutActivation();
+            UpdateUnitNavmeshCutActivation(GetPathingUnitForNavmeshClearance());
             cameraManager?.Tick(IsMouseOverGameplayUi());
             if (activeTurnSide == TurnSide.Player)
             {
@@ -323,6 +323,7 @@ namespace IronKingdoms.Combat
                 lastPathPreviewTime = Time.unscaledTime;
                 previewPathPending = true;
 
+                UpdateUnitNavmeshCutActivation(selectedUnit);
                 navPathBuilder.RequestAsync(unitPos, hoverPos, result =>
                 {
                     previewPathPending = false;
@@ -494,6 +495,8 @@ namespace IronKingdoms.Combat
                 selectedAttackWeaponIndex = Mathf.Clamp(selectedAttackWeaponIndex, 0, selectedUnit.Weapons.Length - 1);
             }
 
+            UpdateUnitNavmeshCutActivation(GetPathingUnitForNavmeshClearance());
+
             if (mode != UnitActionMode.Move)
             {
                 previewPath = null;
@@ -663,8 +666,20 @@ namespace IronKingdoms.Combat
             navmeshCut.useRotationAndScale = false;
         }
 
-        private void UpdateUnitNavmeshCutActivation()
+        private RuntimeUnit GetPathingUnitForNavmeshClearance()
         {
+            return activeTurnSide == TurnSide.Player
+                && currentPlayerMode == UnitActionMode.Move
+                && selectedUnit != null
+                && selectedUnit.IsAlive
+                ? selectedUnit
+                : null;
+        }
+
+        private void UpdateUnitNavmeshCutActivation(RuntimeUnit pathingUnit = null)
+        {
+            var pathingRadius = pathingUnit != null ? GetUnitCollisionRadius(pathingUnit) : 0f;
+            var navmeshCutChanged = false;
             for (var i = 0; i < allRuntimeUnits.Count; i++)
             {
                 var unit = allRuntimeUnits[i];
@@ -678,11 +693,25 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var isPredictingMove = activeTurnSide == TurnSide.Player
-                    && currentPlayerMode == UnitActionMode.Move
-                    && ReferenceEquals(unit, selectedUnit)
-                    && unit.IsAlive;
-                unit.NavmeshCut.enabled = !unit.MoveTarget.HasValue && !isPredictingMove;
+                var isPathingUnit = pathingUnit != null && ReferenceEquals(unit, pathingUnit);
+                var targetRadius = GetUnitCollisionRadius(unit) + (isPathingUnit ? 0f : pathingRadius);
+                if (!Mathf.Approximately(unit.NavmeshCut.circleRadius, targetRadius))
+                {
+                    unit.NavmeshCut.circleRadius = targetRadius;
+                    navmeshCutChanged = true;
+                }
+
+                var targetEnabled = !unit.MoveTarget.HasValue && !isPathingUnit;
+                if (unit.NavmeshCut.enabled != targetEnabled)
+                {
+                    unit.NavmeshCut.enabled = targetEnabled;
+                    navmeshCutChanged = true;
+                }
+            }
+
+            if (navmeshCutChanged)
+            {
+                NavPathBuilder.MarkNavmeshDirty();
             }
         }
 
@@ -1215,6 +1244,7 @@ namespace IronKingdoms.Combat
             // Use NavPathBuilder to get a funnel-smoothed path, then clamp to budget.
             if (navPathBuilder != null)
             {
+                UpdateUnitNavmeshCutActivation(unit);
                 var smoothedPath = navPathBuilder.BuildSync(current, destination);
                 if (smoothedPath.Count >= 2)
                 {
