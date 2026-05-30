@@ -39,6 +39,9 @@ namespace IronKingdoms.Combat
         private const float CombatLogPanelHeight = 240f;
         private const float CombatLogPanelRightMargin = 12f;
         private const float CombatLogPanelTopMargin = 12f;
+        private const float CameraControlsPanelWidth = 460f;
+        private const float CameraControlsPanelHeight = 54f;
+        private const float CameraControlsPanelTopMargin = 12f;
         private const int CombatLogMaxEntries = 20;
         private const float DoubleClickIntervalSeconds = 0.3f;
         private const float DefaultTargetRingRadius = 0.6f;
@@ -47,6 +50,10 @@ namespace IronKingdoms.Combat
         private const float PathPreviewReuseToleranceMultiplier = 1.5f;
         private const float PathPreviewMinInterval = 0.08f;
         private const float PathVisualizationHeight = 0.05f;
+        private const float UnitCollisionPadding = 0.03f;
+        private const float UnitDetourPadding = 0.08f;
+        private const float UnitIntersectionStopPadding = 0.02f;
+        private const int MaxAvoidanceInsertions = 8;
         private const int WeaponRangeRingSegments = 64;
         private const float FloatingDamageLifetime = 1.2f;
         private const float FloatingDamageRiseSpeed = 55f;
@@ -316,7 +323,8 @@ namespace IronKingdoms.Combat
                         return;
                     }
 
-                    previewPath = result; // null on error; already validated to have >= 2 points by NavPathBuilder
+                    var collisionAwarePath = BuildPathAvoidingUnits(selectedUnit, result);
+                    previewPath = collisionAwarePath.Count >= 2 ? collisionAwarePath : null;
                 });
             }
 
@@ -359,9 +367,9 @@ namespace IronKingdoms.Combat
                 movementPathLine.endColor = pathFadeColor;
             }
 
-            // Destination marker always sits at the exact hovered terrain point.
+            // Destination marker reflects the effective movement endpoint after path collision handling.
             destinationMarkerObject.SetActive(true);
-            var dest = hoverPos;
+            var dest = hasPreviewPath ? previewPath[previewPath.Count - 1] : hoverPos;
             dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y + 0.01f);
             destinationMarkerObject.transform.position = dest;
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
@@ -609,31 +617,6 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            if (Input.GetKeyDown(KeyCode.Return))
-            {
-                EndPlayerTurn();
-                return;
-            }
-
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                SetCurrentMode(UnitActionMode.None);
-                return;
-            }
-
-            if (Input.GetKeyDown(KeyCode.M) && selectedUnit != null && selectedUnit.IsAlive
-                && selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon
-                && !selectedUnit.HasActedThisTurn)
-            {
-                SetCurrentMode(currentPlayerMode == UnitActionMode.Move ? UnitActionMode.None : UnitActionMode.Move);
-            }
-
-            if (Input.GetKeyDown(KeyCode.A) && selectedUnit != null && selectedUnit.IsAlive
-                && !selectedUnit.HasActedThisTurn)
-            {
-                SetCurrentMode(currentPlayerMode == UnitActionMode.Attack ? UnitActionMode.None : UnitActionMode.Attack);
-            }
-
             switch (currentPlayerMode)
             {
                 case UnitActionMode.Move:
@@ -650,15 +633,6 @@ namespace IronKingdoms.Combat
 
         private void HandleSelectionInput()
         {
-            for (var i = 0; i < Mathf.Min(9, playerRuntimeUnits.Count); i++)
-            {
-                if (Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1 + i)))
-                {
-                    SelectUnit(playerRuntimeUnits[i]);
-                    return;
-                }
-            }
-
             if (!Input.GetMouseButtonDown(0))
             {
                 return;
@@ -688,15 +662,6 @@ namespace IronKingdoms.Combat
 
         private void HandleMoveModeInput()
         {
-            for (var i = 0; i < Mathf.Min(9, playerRuntimeUnits.Count); i++)
-            {
-                if (Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1 + i)))
-                {
-                    SelectUnit(playerRuntimeUnits[i]);
-                    return;
-                }
-            }
-
             if (TryCancelModeOnRightClick())
             {
                 return;
@@ -789,15 +754,6 @@ namespace IronKingdoms.Combat
 
         private void HandleAttackModeInput()
         {
-            for (var i = 0; i < Mathf.Min(9, playerRuntimeUnits.Count); i++)
-            {
-                if (Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1 + i)))
-                {
-                    SelectUnit(playerRuntimeUnits[i]);
-                    return;
-                }
-            }
-
             if (TryCancelModeOnRightClick())
             {
                 return;
@@ -1155,7 +1111,8 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var waypoints = ClampPathToMovementBudget(smoothedPath, movementBudget);
+            var collisionAwarePath = BuildPathAvoidingUnits(unit, smoothedPath);
+            var waypoints = ClampPathToMovementBudget(collisionAwarePath, movementBudget);
             if (waypoints.Count >= 2)
             {
                 unit.PathWaypoints = waypoints;
@@ -1164,6 +1121,224 @@ namespace IronKingdoms.Combat
                 firstTarget = GetGroundedNavmeshPositionForUnit(unit, firstTarget);
                 unit.MoveTarget = firstTarget;
             }
+        }
+
+        private List<Vector3> BuildPathAvoidingUnits(RuntimeUnit movingUnit, List<Vector3> basePath)
+        {
+            if (basePath == null || basePath.Count == 0)
+            {
+                return new List<Vector3>();
+            }
+
+            if (movingUnit?.Pawn == null || basePath.Count < 2)
+            {
+                return new List<Vector3>(basePath);
+            }
+
+            var adjusted = new List<Vector3>(basePath);
+            for (var pass = 0; pass < MaxAvoidanceInsertions; pass++)
+            {
+                var inserted = false;
+                for (var i = 1; i < adjusted.Count; i++)
+                {
+                    var start = adjusted[i - 1];
+                    var end = adjusted[i];
+                    if (!TryBuildDetourWaypoint(movingUnit, start, end, out var detour))
+                    {
+                        continue;
+                    }
+
+                    if (Vector3.Distance(start, detour) <= PositionArrivalTolerance
+                        || Vector3.Distance(end, detour) <= PositionArrivalTolerance)
+                    {
+                        continue;
+                    }
+
+                    adjusted.Insert(i, detour);
+                    inserted = true;
+                    break;
+                }
+
+                if (!inserted)
+                {
+                    break;
+                }
+            }
+
+            return TruncatePathBeforeUnitIntersection(movingUnit, adjusted);
+        }
+
+        private bool TryBuildDetourWaypoint(RuntimeUnit movingUnit, Vector3 segmentStart, Vector3 segmentEnd, out Vector3 detourPoint)
+        {
+            detourPoint = Vector3.zero;
+            var start2 = new Vector2(segmentStart.x, segmentStart.z);
+            var end2 = new Vector2(segmentEnd.x, segmentEnd.z);
+            var segment = end2 - start2;
+            var segmentLengthSqr = segment.sqrMagnitude;
+            if (segmentLengthSqr < MinimumVectorSqrMagnitude)
+            {
+                return false;
+            }
+
+            var segmentDir = segment / Mathf.Sqrt(segmentLengthSqr);
+            var perpDir = new Vector2(-segmentDir.y, segmentDir.x);
+            var movingRadius = GetUnitCollisionRadius(movingUnit);
+            var bestT = float.MaxValue;
+            var found = false;
+
+            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            {
+                var obstacle = allRuntimeUnits[i];
+                if (obstacle == null || !obstacle.IsAlive || obstacle.Pawn == null || ReferenceEquals(obstacle, movingUnit))
+                {
+                    continue;
+                }
+
+                var center = obstacle.Pawn.transform.position;
+                var center2 = new Vector2(center.x, center.z);
+                var obstacleRadius = GetUnitCollisionRadius(obstacle);
+                var clearance = movingRadius + obstacleRadius + UnitCollisionPadding;
+                var toCenter = center2 - start2;
+                var t = Mathf.Clamp01(Vector2.Dot(toCenter, segment) / segmentLengthSqr);
+                var closestPoint = start2 + segment * t;
+                var distanceSq = (center2 - closestPoint).sqrMagnitude;
+                if (distanceSq >= clearance * clearance || t >= bestT)
+                {
+                    continue;
+                }
+
+                var cross = segmentDir.x * (center2.y - closestPoint.y) - segmentDir.y * (center2.x - closestPoint.x);
+                if (Mathf.Abs(cross) <= MovementBudgetEpsilon)
+                {
+                    cross = segmentDir.x * (center2.y - start2.y) - segmentDir.y * (center2.x - start2.x);
+                }
+
+                var sideSign = cross >= 0f ? 1f : -1f;
+                var detour2 = center2 + perpDir * sideSign * (clearance + UnitDetourPadding);
+                var detourY = Mathf.Lerp(segmentStart.y, segmentEnd.y, t);
+                var candidate = new Vector3(detour2.x, detourY, detour2.y);
+                detourPoint = GetGroundedNavmeshPositionForUnit(movingUnit, candidate);
+                bestT = t;
+                found = true;
+            }
+
+            return found;
+        }
+
+        private List<Vector3> TruncatePathBeforeUnitIntersection(RuntimeUnit movingUnit, List<Vector3> path)
+        {
+            if (movingUnit?.Pawn == null || path == null || path.Count < 2)
+            {
+                return path == null ? new List<Vector3>() : new List<Vector3>(path);
+            }
+
+            var truncated = new List<Vector3> { path[0] };
+            for (var i = 1; i < path.Count; i++)
+            {
+                var start = truncated[truncated.Count - 1];
+                var end = path[i];
+                if (!TryGetSegmentStopBeforeIntersection(movingUnit, start, end, out var stopPoint))
+                {
+                    truncated.Add(end);
+                    continue;
+                }
+
+                if (Vector3.Distance(start, stopPoint) > PositionArrivalTolerance)
+                {
+                    truncated.Add(stopPoint);
+                }
+
+                break;
+            }
+
+            return truncated;
+        }
+
+        private bool TryGetSegmentStopBeforeIntersection(RuntimeUnit movingUnit, Vector3 segmentStart, Vector3 segmentEnd, out Vector3 stopPoint)
+        {
+            stopPoint = Vector3.zero;
+            var start2 = new Vector2(segmentStart.x, segmentStart.z);
+            var end2 = new Vector2(segmentEnd.x, segmentEnd.z);
+            var segment = end2 - start2;
+            var segmentLength = segment.magnitude;
+            if (segmentLength <= MovementBudgetEpsilon)
+            {
+                return false;
+            }
+
+            var segmentLengthSqr = segmentLength * segmentLength;
+            var bestT = float.MaxValue;
+            var found = false;
+
+            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            {
+                var obstacle = allRuntimeUnits[i];
+                if (obstacle == null || !obstacle.IsAlive || obstacle.Pawn == null || ReferenceEquals(obstacle, movingUnit))
+                {
+                    continue;
+                }
+
+                var obstacleCenter = obstacle.Pawn.transform.position;
+                var center2 = new Vector2(obstacleCenter.x, obstacleCenter.z);
+                var clearance = GetUnitCollisionRadius(movingUnit) + GetUnitCollisionRadius(obstacle) + UnitCollisionPadding;
+                var startOffset = start2 - center2;
+                var startDistanceSqr = startOffset.sqrMagnitude;
+                var clearanceSqr = clearance * clearance;
+                if (startDistanceSqr <= clearanceSqr)
+                {
+                    var endDistanceSqr = (end2 - center2).sqrMagnitude;
+                    if (endDistanceSqr >= startDistanceSqr)
+                    {
+                        continue;
+                    }
+
+                    bestT = 0f;
+                    found = true;
+                    continue;
+                }
+
+                var a = segmentLengthSqr;
+                var b = 2f * Vector2.Dot(startOffset, segment);
+                var c = startDistanceSqr - clearanceSqr;
+                var discriminant = b * b - 4f * a * c;
+                if (discriminant < 0f)
+                {
+                    continue;
+                }
+
+                var sqrtDiscriminant = Mathf.Sqrt(discriminant);
+                var inverseDenominator = 1f / (2f * a);
+                var entryT = (-b - sqrtDiscriminant) * inverseDenominator;
+                if (entryT < 0f || entryT > 1f || entryT >= bestT)
+                {
+                    continue;
+                }
+
+                bestT = entryT;
+                found = true;
+            }
+
+            if (!found)
+            {
+                return false;
+            }
+
+            var backoffT = UnitIntersectionStopPadding / segmentLength;
+            var clampedT = Mathf.Clamp01(bestT - backoffT);
+            var rawStop = Vector3.Lerp(segmentStart, segmentEnd, clampedT);
+            stopPoint = GetGroundedNavmeshPositionForUnit(movingUnit, rawStop);
+            return true;
+        }
+
+        private static float GetUnitCollisionRadius(RuntimeUnit unit)
+        {
+            if (unit?.Pawn == null)
+            {
+                return DefaultTargetRingRadius;
+            }
+
+            var pawnScale = unit.Pawn.transform.localScale;
+            return Mathf.Max(0.1f, Mathf.Max(pawnScale.x, pawnScale.z) * 0.5f);
         }
 
         private static bool RaycastForMouseHit(Ray ray, out RaycastHit hit)
@@ -1736,6 +1911,11 @@ namespace IronKingdoms.Combat
         private void UpdateHoveredEnemy()
         {
             hoveredEnemyUnit = null;
+            if (IsMouseOverGameplayUi())
+            {
+                return;
+            }
+
             var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
@@ -2076,6 +2256,11 @@ namespace IronKingdoms.Combat
         private bool IsMouseOverGameplayUi()
         {
             var mouseGuiPosition = GetMouseGuiPosition();
+            if (IsMouseOverCameraControlsPanel(mouseGuiPosition))
+            {
+                return true;
+            }
+
             if (new Rect(RosterAreaX, RosterAreaY, RosterAreaWidth, RosterAreaHeight).Contains(mouseGuiPosition))
             {
                 return true;
@@ -2097,19 +2282,14 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            if (hoveredEnemyUnit != null && hoveredEnemyUnit.IsAlive)
-            {
-                var mousePosition = Input.mousePosition;
-                var panelHeight = GetHoverPanelHeight();
-                var x = Mathf.Clamp(mousePosition.x + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.width - HoverPanelWidth - HoverPanelScreenPadding);
-                var y = Mathf.Clamp(Screen.height - mousePosition.y + HoverPanelMouseOffset, HoverPanelScreenPadding, Screen.height - panelHeight - HoverPanelScreenPadding);
-                if (new Rect(x, y, HoverPanelWidth, panelHeight).Contains(mouseGuiPosition))
-                {
-                    return true;
-                }
-            }
-
             return false;
+        }
+
+        private static bool IsMouseOverCameraControlsPanel(Vector2 mouseGuiPosition)
+        {
+            var areaX = (Screen.width - CameraControlsPanelWidth) * 0.5f;
+            var panelRect = new Rect(areaX, CameraControlsPanelTopMargin, CameraControlsPanelWidth, CameraControlsPanelHeight);
+            return panelRect.Contains(mouseGuiPosition);
         }
 
         private static Vector2 GetMouseGuiPosition()
