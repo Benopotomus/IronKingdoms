@@ -10,6 +10,7 @@ namespace IronKingdoms.Combat
         private const float AiInRangeTolerance = 0.95f;
         private const float AiDesiredStopFactor = 0.85f;
         private const float AiMinimumStopDistance = 0.2f;
+        private const float RadiusToDiameterMultiplier = 2f;
         private const float PositionArrivalTolerance = 0.05f;
         private const float NavmeshContainmentTolerance = 0.02f;
         private const float MovementBudgetEpsilon = 0.001f;
@@ -1995,7 +1996,7 @@ namespace IronKingdoms.Combat
             }
 
             movementPathLine.alignment = LineAlignment.TransformZ;
-            movementPathLine.transform.rotation = Quaternion.LookRotation(Vector3.up, Vector3.forward);
+            movementPathLine.transform.forward = Vector3.up;
         }
 
         private static float GetMovePreviewDiameter(RuntimeUnit unit)
@@ -2005,7 +2006,7 @@ namespace IronKingdoms.Combat
                 var col = unit.Pawn.GetComponent<CapsuleCollider>();
                 if (col != null)
                 {
-                    return Mathf.Max(VisualizerLineWidth, col.radius * 2f);
+                    return Mathf.Max(VisualizerLineWidth, col.radius * RadiusToDiameterMultiplier);
                 }
             }
 
