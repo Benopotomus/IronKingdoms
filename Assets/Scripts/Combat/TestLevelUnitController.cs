@@ -14,6 +14,8 @@ namespace IronKingdoms.Combat
         private const float NavmeshContainmentTolerance = 0.02f;
         private const float MovementBudgetEpsilon = 0.001f;
         private const float VisualizerLineWidth = 0.06f;
+        // 5 mm physical base height: cylinder native height = 2 units, base scale = 30 mm per unit → scaleY = 5/(30×2)
+        private const float PawnBaseHeightScale = 5f / 60f;
         private const int AttackRingSegments = 48;
         private const float GroundYPosition = 0f;
         private const float MinimumVectorSqrMagnitude = 0.0001f;
@@ -247,7 +249,7 @@ namespace IronKingdoms.Combat
             destinationMarkerObject = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             destinationMarkerObject.name = "DestinationMarker";
             destinationMarkerObject.transform.SetParent(transform);
-            destinationMarkerObject.transform.localScale = new Vector3(0.6f, 0.01f, 0.6f);
+            destinationMarkerObject.transform.localScale = new Vector3(1f, PawnBaseHeightScale, 1f);
             var markerCollider = destinationMarkerObject.GetComponent<Collider>();
             if (markerCollider != null)
             {
@@ -643,8 +645,8 @@ namespace IronKingdoms.Combat
             var baseDisk = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             baseDisk.name = "Base";
             baseDisk.transform.SetParent(root.transform);
-            baseDisk.transform.localPosition = new Vector3(0f, 0.01f, 0f);
-            baseDisk.transform.localScale = new Vector3(pawnScale.x, 0.01f, pawnScale.z);
+            baseDisk.transform.localPosition = new Vector3(0f, PawnBaseHeightScale, 0f);
+            baseDisk.transform.localScale = new Vector3(pawnScale.x, PawnBaseHeightScale, pawnScale.z);
             var baseCollider = baseDisk.GetComponent<Collider>();
             if (baseCollider != null)
             {
@@ -1876,6 +1878,23 @@ namespace IronKingdoms.Combat
             selectedAttackWeaponIndex = 0;
             selectedMovementOption = MovementStepOption.Advance;
             SetCurrentMode(UnitActionMode.None);
+            UpdateMovePreviewSizeForUnit(selectedUnit);
+        }
+
+        private void UpdateMovePreviewSizeForUnit(RuntimeUnit unit)
+        {
+            var diameterScale = unit != null
+                ? unit.Definition.Stats.modelSize.GetPawnScale().x
+                : 1f;
+            if (destinationMarkerObject != null)
+            {
+                destinationMarkerObject.transform.localScale = new Vector3(diameterScale, PawnBaseHeightScale, diameterScale);
+            }
+
+            if (movementPathLine != null)
+            {
+                movementPathLine.widthMultiplier = diameterScale;
+            }
         }
 
         private void HandlePlayerUnitClick(RuntimeUnit unit)
