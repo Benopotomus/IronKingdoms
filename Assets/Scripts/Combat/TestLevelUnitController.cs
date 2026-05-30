@@ -359,10 +359,11 @@ namespace IronKingdoms.Combat
             if (hasPreviewPath)
             {
                 movementPathLine.positionCount = previewPath.Count;
+                var flatPathY = previewPath[previewPath.Count - 1].y + PathVisualizationHeight;
                 for (var i = 0; i < previewPath.Count; i++)
                 {
                     var wp = previewPath[i];
-                    wp.y += PathVisualizationHeight;
+                    wp.y = flatPathY;
                     movementPathLine.SetPosition(i, wp);
                 }
                 movementPathLine.startColor = pathColor;
@@ -618,11 +619,40 @@ namespace IronKingdoms.Combat
                     pawnCollider.isTrigger = true;
                 }
 
+                ConfigureUnitNavmeshCut(pawn, pawnCollider, pawnScale);
+
                 var runtimeUnit = new RuntimeUnit(unitDefinition, isPlayerControlled, pawn);
                 SnapUnitToNavmesh(runtimeUnit);
                 destination.Add(runtimeUnit);
                 allRuntimeUnits.Add(runtimeUnit);
             }
+        }
+
+        private void ConfigureUnitNavmeshCut(GameObject pawn, CapsuleCollider pawnCollider, Vector3 pawnScale)
+        {
+            if (pawn == null)
+            {
+                return;
+            }
+
+            var navmeshCut = pawn.GetComponent<NavmeshCut>();
+            if (navmeshCut == null)
+            {
+                navmeshCut = pawn.AddComponent<NavmeshCut>();
+            }
+
+            var radius = pawnCollider != null
+                ? pawnCollider.radius + UnitCollisionPadding
+                : Mathf.Max(0.1f, pawnScale.x * 0.5f + UnitCollisionPadding);
+            navmeshCut.type = NavmeshCut.MeshType.Circle;
+            navmeshCut.circleRadius = radius;
+            navmeshCut.circleResolution = 12;
+            navmeshCut.height = Mathf.Max(1f, pawnScale.y * 2f);
+            navmeshCut.center = Vector3.zero;
+            navmeshCut.isDual = false;
+            navmeshCut.updateDistance = 0.1f;
+            navmeshCut.radiusExpansionMode = NavmeshCut.RadiusExpansionMode.DontExpand;
+            navmeshCut.useRotationAndScale = false;
         }
 
         private GameObject BuildProceduralPawn(Vector3 pawnScale, Vector3 spawnPos)
