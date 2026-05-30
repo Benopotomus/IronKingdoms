@@ -22,6 +22,7 @@ namespace IronKingdoms.Combat
         // -----------------------------------------------------------------------------------------
 
         public static NavPathBuilder instance;
+        private static bool pendingNavmeshUpdate;
 
         [SerializeField] private FunnelModifier _funnel;
 
@@ -44,6 +45,11 @@ namespace IronKingdoms.Combat
             {
                 instance = null;
             }
+        }
+
+        public static void MarkNavmeshDirty()
+        {
+            pendingNavmeshUpdate = true;
         }
 
         // -----------------------------------------------------------------------------------------
@@ -130,7 +136,7 @@ namespace IronKingdoms.Combat
 
         private static void FlushPendingNavmeshUpdates()
         {
-            if (AstarPath.active == null)
+            if (AstarPath.active == null || !pendingNavmeshUpdate)
             {
                 return;
             }
@@ -142,6 +148,7 @@ namespace IronKingdoms.Combat
             }
 
             AstarPath.active.FlushGraphUpdates();
+            pendingNavmeshUpdate = false;
         }
         
     }

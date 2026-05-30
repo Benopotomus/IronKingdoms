@@ -493,6 +493,8 @@ namespace IronKingdoms.Combat
                 selectedAttackWeaponIndex = Mathf.Clamp(selectedAttackWeaponIndex, 0, selectedUnit.Weapons.Length - 1);
             }
 
+            UpdateUnitNavmeshCutActivation(GetPathingUnitForNavmeshClearance());
+
             if (mode != UnitActionMode.Move)
             {
                 previewPath = null;
@@ -675,6 +677,7 @@ namespace IronKingdoms.Combat
         private void UpdateUnitNavmeshCutActivation(RuntimeUnit pathingUnit = null)
         {
             var pathingRadius = pathingUnit != null ? GetUnitCollisionRadius(pathingUnit) : 0f;
+            var navmeshCutChanged = false;
             for (var i = 0; i < allRuntimeUnits.Count; i++)
             {
                 var unit = allRuntimeUnits[i];
@@ -689,8 +692,24 @@ namespace IronKingdoms.Combat
                 }
 
                 var isPathingUnit = pathingUnit != null && ReferenceEquals(unit, pathingUnit);
-                unit.NavmeshCut.circleRadius = GetUnitCollisionRadius(unit) + (isPathingUnit ? 0f : pathingRadius);
-                unit.NavmeshCut.enabled = !unit.MoveTarget.HasValue && !isPathingUnit;
+                var targetRadius = GetUnitCollisionRadius(unit) + (isPathingUnit ? 0f : pathingRadius);
+                if (!Mathf.Approximately(unit.NavmeshCut.circleRadius, targetRadius))
+                {
+                    unit.NavmeshCut.circleRadius = targetRadius;
+                    navmeshCutChanged = true;
+                }
+
+                var targetEnabled = !unit.MoveTarget.HasValue && !isPathingUnit;
+                if (unit.NavmeshCut.enabled != targetEnabled)
+                {
+                    unit.NavmeshCut.enabled = targetEnabled;
+                    navmeshCutChanged = true;
+                }
+            }
+
+            if (navmeshCutChanged)
+            {
+                NavPathBuilder.MarkNavmeshDirty();
             }
         }
 
