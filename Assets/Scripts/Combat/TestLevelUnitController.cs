@@ -97,6 +97,7 @@ namespace IronKingdoms.Combat
         [SerializeField] private CombatCameraManager cameraManager;
         [SerializeField] private NavPathBuilder navPathBuilder;
         [SerializeField] private bool autoSpawnOnStart = true;
+        [SerializeField] private bool stopBeforeUnitRadiusCollision = true;
 
         private readonly List<RuntimeUnit> playerRuntimeUnits = new();
         private readonly List<RuntimeUnit> enemyRuntimeUnits = new();
@@ -1322,6 +1323,11 @@ namespace IronKingdoms.Combat
                 {
                     break;
                 }
+            }
+
+            if (!stopBeforeUnitRadiusCollision)
+            {
+                return adjusted;
             }
 
             return TruncatePathBeforeUnitIntersection(movingUnit, adjusted);
