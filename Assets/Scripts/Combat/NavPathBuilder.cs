@@ -65,6 +65,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            FlushPendingNavmeshUpdates();
             to = AstarPath.active.GetNearest(to).position;
             
             var path = ABPath.Construct(from, to, p =>
@@ -87,6 +88,7 @@ namespace IronKingdoms.Combat
                 return new List<Vector3>();
             }
 
+            FlushPendingNavmeshUpdates();
             var path = ABPath.Construct(from, to);
             AstarPath.StartPath(path);
             AstarPath.BlockUntilCalculated(path);
@@ -124,6 +126,17 @@ namespace IronKingdoms.Combat
             _funnel.Apply(path);
             return path.vectorPath;
 
+        }
+
+        private static void FlushPendingNavmeshUpdates()
+        {
+            if (AstarPath.active == null)
+            {
+                return;
+            }
+
+            AstarPath.active.navmeshUpdates?.ForceUpdate();
+            AstarPath.active.FlushGraphUpdates();
         }
         
     }
