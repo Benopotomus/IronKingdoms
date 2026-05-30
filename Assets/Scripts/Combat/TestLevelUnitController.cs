@@ -56,6 +56,10 @@ namespace IronKingdoms.Combat
         private const float UnitDetourPadding = 0.08f;
         private const float UnitIntersectionStopPadding = 0.02f;
         private const int MaxAvoidanceInsertions = 8;
+        private const int UnitNavmeshCutCircleResolution = 12;
+        private const float UnitNavmeshCutMinimumHeight = 1f;
+        private const float UnitNavmeshCutUpdateDistance = 0.1f;
+        private const float PawnHeightToCapsuleHeightMultiplier = 2f;
         private const int WeaponRangeRingSegments = 64;
         private const float FloatingDamageLifetime = 1.2f;
         private const float FloatingDamageRiseSpeed = 55f;
@@ -646,11 +650,11 @@ namespace IronKingdoms.Combat
                 : Mathf.Max(0.1f, pawnScale.x * 0.5f + UnitCollisionPadding);
             navmeshCut.type = NavmeshCut.MeshType.Circle;
             navmeshCut.circleRadius = radius;
-            navmeshCut.circleResolution = 12;
-            navmeshCut.height = Mathf.Max(1f, pawnScale.y * 2f);
+            navmeshCut.circleResolution = UnitNavmeshCutCircleResolution;
+            navmeshCut.height = Mathf.Max(UnitNavmeshCutMinimumHeight, pawnScale.y * PawnHeightToCapsuleHeightMultiplier);
             navmeshCut.center = Vector3.zero;
             navmeshCut.isDual = false;
-            navmeshCut.updateDistance = 0.1f;
+            navmeshCut.updateDistance = UnitNavmeshCutUpdateDistance;
             navmeshCut.radiusExpansionMode = NavmeshCut.RadiusExpansionMode.DontExpand;
             navmeshCut.useRotationAndScale = false;
         }
