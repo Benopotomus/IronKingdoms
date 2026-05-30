@@ -671,8 +671,7 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var navmeshCut = unit.Pawn.GetComponent<NavmeshCut>();
-                if (navmeshCut == null)
+                if (unit.NavmeshCut == null)
                 {
                     continue;
                 }
@@ -681,7 +680,7 @@ namespace IronKingdoms.Combat
                     && currentPlayerMode == UnitActionMode.Move
                     && ReferenceEquals(unit, selectedUnit)
                     && unit.IsAlive;
-                navmeshCut.enabled = !unit.MoveTarget.HasValue && !isPredictingMove;
+                unit.NavmeshCut.enabled = !unit.MoveTarget.HasValue && !isPredictingMove;
             }
         }
 
@@ -2523,6 +2522,7 @@ namespace IronKingdoms.Combat
                 Definition = definition;
                 IsPlayerControlled = isPlayerControlled;
                 Pawn = pawn;
+                NavmeshCut = pawn != null ? pawn.GetComponent<NavmeshCut>() : null;
                 Health = definition.Stats.health;
                 definition.Stats.EnsureWeaponDefaults();
                 if (definition.Stats.weapons == null || definition.Stats.weapons.Length == 0)
@@ -2538,6 +2538,7 @@ namespace IronKingdoms.Combat
             public UnitTypeDefinition Definition { get; }
             public bool IsPlayerControlled { get; }
             public GameObject Pawn { get; }
+            public NavmeshCut NavmeshCut { get; }
             public WeaponProfile[] Weapons { get; }
             public int Health { get; set; }
             public float RemainingMovementThisTurn { get; set; }
