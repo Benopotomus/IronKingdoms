@@ -231,7 +231,7 @@ namespace IronKingdoms.Combat
             movementPathLine.positionCount = 2;
             movementPathLine.useWorldSpace = true;
             movementPathLine.alignment = LineAlignment.TransformZ;
-            lineObj.transform.rotation = Quaternion.LookRotation(Vector3.up, Vector3.forward);
+            lineObj.transform.forward = Vector3.up;
             if (visualizerMaterial != null)
             {
                 movementPathLine.material = visualizerMaterial;
