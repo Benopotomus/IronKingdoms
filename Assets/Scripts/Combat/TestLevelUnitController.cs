@@ -1406,7 +1406,7 @@ namespace IronKingdoms.Combat
             var col = unit.Pawn.GetComponent<CapsuleCollider>();
             if (col == null)
             {
-                return Mathf.Max(0.1f, 0.5f);
+                return DefaultTargetRingRadius;
             }
 
             return Mathf.Max(0.1f, col.radius);
@@ -1506,6 +1506,8 @@ namespace IronKingdoms.Combat
             return unit.Pawn.transform.position;
         }
 
+        // The unit parameter is retained for API consistency and potential future per-unit
+        // terrain-height adjustments; all callers pass the moving unit for context.
         private static Vector3 GetGroundedNavmeshPositionForUnit(RuntimeUnit unit, Vector3 worldPosition)
         {
             return GetNearestNavmeshPosition(worldPosition);
