@@ -230,8 +230,7 @@ namespace IronKingdoms.Combat
             movementPathLine.widthMultiplier = VisualizerLineWidth;
             movementPathLine.positionCount = 2;
             movementPathLine.useWorldSpace = true;
-            movementPathLine.alignment = LineAlignment.TransformZ;
-            lineObj.transform.forward = Vector3.up;
+            ApplyMovementPathLineWorldUp();
             if (visualizerMaterial != null)
             {
                 movementPathLine.material = visualizerMaterial;
@@ -366,6 +365,7 @@ namespace IronKingdoms.Combat
             movementPathLine.enabled = hasPreviewPath;
             if (hasPreviewPath)
             {
+                ApplyMovementPathLineWorldUp();
                 var previewPointCount = previewPath.Count;
                 movementPathLine.positionCount = previewPointCount;
                 var flatPathY = previewPath[previewPointCount - 1].y + PathVisualizationHeight;
@@ -1974,9 +1974,7 @@ namespace IronKingdoms.Combat
 
         private void UpdateMovePreviewSizeForUnit(RuntimeUnit unit)
         {
-            var diameterScale = unit != null
-                ? unit.Definition.Stats.modelSize.GetPawnScale().x
-                : 1f;
+            var diameterScale = GetMovePreviewDiameter(unit);
             if (destinationMarkerObject != null)
             {
                 destinationMarkerObject.transform.localScale = new Vector3(diameterScale, PawnBaseHeightScale, diameterScale);
@@ -1984,8 +1982,36 @@ namespace IronKingdoms.Combat
 
             if (movementPathLine != null)
             {
+                ApplyMovementPathLineWorldUp();
                 movementPathLine.widthMultiplier = diameterScale;
             }
+        }
+
+        private void ApplyMovementPathLineWorldUp()
+        {
+            if (movementPathLine == null)
+            {
+                return;
+            }
+
+            movementPathLine.alignment = LineAlignment.TransformZ;
+            movementPathLine.transform.rotation = Quaternion.LookRotation(Vector3.up, Vector3.forward);
+        }
+
+        private static float GetMovePreviewDiameter(RuntimeUnit unit)
+        {
+            if (unit?.Pawn != null)
+            {
+                var col = unit.Pawn.GetComponent<CapsuleCollider>();
+                if (col != null)
+                {
+                    return Mathf.Max(VisualizerLineWidth, col.radius * 2f);
+                }
+            }
+
+            return unit != null
+                ? Mathf.Max(VisualizerLineWidth, unit.Definition.Stats.modelSize.GetPawnScale().x)
+                : 1f;
         }
 
         private void HandlePlayerUnitClick(RuntimeUnit unit)
