@@ -166,6 +166,7 @@ namespace IronKingdoms.Combat
 
         private void Update()
         {
+            UpdateUnitNavmeshCutActivation();
             cameraManager?.Tick(IsMouseOverGameplayUi());
             if (activeTurnSide == TurnSide.Player)
             {
@@ -647,8 +648,8 @@ namespace IronKingdoms.Combat
             }
 
             var radius = pawnCollider != null
-                ? pawnCollider.radius + UnitCollisionPadding
-                : Mathf.Max(0.1f, pawnScale.x * 0.5f + UnitCollisionPadding);
+                ? pawnCollider.radius
+                : Mathf.Max(0.1f, pawnScale.x * 0.5f);
             navmeshCut.type = NavmeshCut.MeshType.Circle;
             navmeshCut.circleRadius = radius;
             navmeshCut.circleResolution = UnitNavmeshCutCircleResolution;
@@ -658,6 +659,29 @@ namespace IronKingdoms.Combat
             navmeshCut.updateDistance = UnitNavmeshCutUpdateDistance;
             navmeshCut.radiusExpansionMode = NavmeshCut.RadiusExpansionMode.DontExpand;
             navmeshCut.useRotationAndScale = false;
+        }
+
+        private void UpdateUnitNavmeshCutActivation()
+        {
+            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            {
+                var unit = allRuntimeUnits[i];
+                if (unit?.Pawn == null)
+                {
+                    continue;
+                }
+
+                if (unit.NavmeshCut == null)
+                {
+                    continue;
+                }
+
+                var isPredictingMove = activeTurnSide == TurnSide.Player
+                    && currentPlayerMode == UnitActionMode.Move
+                    && ReferenceEquals(unit, selectedUnit)
+                    && unit.IsAlive;
+                unit.NavmeshCut.enabled = !unit.MoveTarget.HasValue && !isPredictingMove;
+            }
         }
 
         private GameObject BuildProceduralPawn(Vector3 pawnScale, Vector3 spawnPos)
@@ -2498,6 +2522,7 @@ namespace IronKingdoms.Combat
                 Definition = definition;
                 IsPlayerControlled = isPlayerControlled;
                 Pawn = pawn;
+                NavmeshCut = pawn != null ? pawn.GetComponent<NavmeshCut>() : null;
                 Health = definition.Stats.health;
                 definition.Stats.EnsureWeaponDefaults();
                 if (definition.Stats.weapons == null || definition.Stats.weapons.Length == 0)
@@ -2513,6 +2538,7 @@ namespace IronKingdoms.Combat
             public UnitTypeDefinition Definition { get; }
             public bool IsPlayerControlled { get; }
             public GameObject Pawn { get; }
+            public NavmeshCut NavmeshCut { get; }
             public WeaponProfile[] Weapons { get; }
             public int Health { get; set; }
             public float RemainingMovementThisTurn { get; set; }
