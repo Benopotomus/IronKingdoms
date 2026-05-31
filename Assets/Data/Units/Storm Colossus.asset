@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c8ec8f491bc14c339b6932efc14ec56e, type: 3}
+  m_Name: Storm Colossus
+  m_EditorClassIdentifier: 
+  displayName: Storm Colossus
+  role: 1
+  stats:
+    speed: 8
+    modelSize: 3
+    meleeAttack: 8
+    rangedAttack: 6
+    defense: 9
+    armor: 21
+    health: 35
+    weapons:
+    - {fileID: 11400000, guid: c4f0d177b2ae4ec0b4e9c447f4eab73e, type: 2}
+    - {fileID: 11400000, guid: 3fca850e8b9d4f33a3f369f4a1a9d8e2, type: 2}
+  designNotes: Large 80mm heavy automaton. A towering steam-powered colossus that crushes enemies with a Siege Hammer and bombards at range with a Steam Mortar. Slow and heavily armoured; difficult to hit with ranged fire but vulnerable to high-MAT melee.
+  visualPrefab: {fileID: 100000, guid: 071829304b5c6d7e8f9a0b1c2d3e4f50, type: 3}

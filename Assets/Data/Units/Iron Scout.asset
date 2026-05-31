@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c8ec8f491bc14c339b6932efc14ec56e, type: 3}
+  m_Name: Iron Scout
+  m_EditorClassIdentifier: 
+  displayName: Iron Scout
+  role: 2
+  stats:
+    speed: 12
+    modelSize: 0
+    meleeAttack: 4
+    rangedAttack: 7
+    defense: 14
+    armor: 11
+    health: 8
+    weapons:
+    - {fileID: 11400000, guid: e8a5dca7ef44425e8fcb45e3e8ef8ba4, type: 2}
+    - {fileID: 11400000, guid: 2d4ea5d59f8d4cf7b8d6c8c53e5c2a13, type: 2}
+  designNotes: Small 30mm infantry skirmisher. Fast and accurate at range with a Long Rifle; carries a Bayonet for emergency melee. Lightweight armour keeps DEF high but ARM low.
+  visualPrefab: {fileID: 100000, guid: e5f607182d3e4f5060718293a4b5c6d7, type: 3}
