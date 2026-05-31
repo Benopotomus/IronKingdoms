@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c8ec8f491bc14c339b6932efc14ec56e, type: 3}
+  m_Name: Iron Sentinel
+  m_EditorClassIdentifier: 
+  displayName: Iron Sentinel
+  role: 1
+  stats:
+    speed: 9
+    modelSize: 2
+    meleeAttack: 7
+    rangedAttack: 5
+    defense: 11
+    armor: 18
+    health: 25
+    weapons:
+    - {fileID: 11400000, guid: b7e6f6f5a2d1437e8d12b7319bf4a1b1, type: 2}
+    - {fileID: 11400000, guid: 6d3d4b1d3fa24c3aa6c2cc4b4517ce72, type: 2}
+  designNotes: Large 50mm heavy warjack. A durable front-line automaton armed with a Steam Halberd for powerful melee sweeps and a Hand Cannon for mid-range fire support. Mk4 heavy warjack benchmark.
+  visualPrefab: {fileID: 100000, guid: 182f3040516273849a5b6c7d8e9f0a1b, type: 3}

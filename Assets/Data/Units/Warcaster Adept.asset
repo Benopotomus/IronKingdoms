@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c8ec8f491bc14c339b6932efc14ec56e, type: 3}
+  m_Name: Warcaster Adept
+  m_EditorClassIdentifier: 
+  displayName: Warcaster Adept
+  role: 0
+  stats:
+    speed: 10
+    modelSize: 1
+    meleeAttack: 6
+    rangedAttack: 6
+    defense: 14
+    armor: 13
+    health: 14
+    weapons:
+    - {fileID: 11400000, guid: 56c2d652d1b6455c9c7f8ee58bb4e6ab, type: 2}
+    - {fileID: 11400000, guid: 8f1c7ef91de7464db7cf7f6a7a703f24, type: 2}
+  designNotes: Medium 40mm commander/solo. A battle-trained warcaster who leads from the front, wielding a Shock Baton in melee and an Arcane Hand Cannon at range. Balanced stats across offence and defence.
+  visualPrefab: {fileID: 100000, guid: f607182e3f4a5061829304b5c6d7e8f9, type: 3}
