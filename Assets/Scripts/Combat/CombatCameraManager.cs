@@ -17,6 +17,9 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(1f)] private float cameraKeyboardPanSpeed = 10f;
         [SerializeField, Min(0.001f)] private float cameraDragPanSensitivity = 0.02f;
         [SerializeField, Min(0.01f)] private float cameraRotationSensitivity = 0.2f;
+        [SerializeField, Min(0.01f)] private float cameraZoomSensitivity = 20f;
+        [SerializeField, Min(0.1f)] private float cameraMinZoomDistance = 5f;
+        [SerializeField, Min(0.1f)] private float cameraMaxZoomDistance = 60f;
         [SerializeField, Range(5f, 89f)] private float cameraMinPitch = 25f;
         [SerializeField, Range(5f, 89f)] private float cameraMaxPitch = 75f;
         [SerializeField, Min(0.1f)] private float cameraFocusTransitionSpeed = 12f;
@@ -33,6 +36,13 @@ namespace IronKingdoms.Combat
         private Vector3 cameraFocusTransitionTarget;
 
         public Camera ActiveCamera => targetCamera != null ? targetCamera : Camera.main;
+
+        private void OnValidate()
+        {
+            var zoomRange = GetValidatedZoomRange();
+            cameraMinZoomDistance = zoomRange.minDistance;
+            cameraMaxZoomDistance = zoomRange.maxDistance;
+        }
 
         public void Tick(bool isMouseOverUi)
         {
@@ -65,6 +75,7 @@ namespace IronKingdoms.Combat
             }
 
             TickCameraFocusTransition(activeCamera);
+            HandleMouseScrollZoom(activeCamera, isMouseOverUi);
 
             if (!isCameraDragging || !Input.GetMouseButton(MiddleMouseButton))
             {
@@ -95,7 +106,7 @@ namespace IronKingdoms.Combat
             var areaX = (Screen.width - CameraControlsPanelWidth) * 0.5f;
             var areaY = CameraControlsPanelTopMargin;
             GUILayout.BeginArea(new Rect(areaX, areaY, CameraControlsPanelWidth, CameraControlsPanelHeight), "Camera Controls", GUI.skin.window);
-            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan");
+            GUILayout.Label("WASD/Arrows: Pan | Scroll: Zoom | MMB Drag: Rotate | Shift+MMB Drag: Pan");
             GUILayout.EndArea();
         }
 
@@ -193,6 +204,35 @@ namespace IronKingdoms.Combat
             }
         }
 
+        private void HandleMouseScrollZoom(Camera activeCamera, bool isMouseOverUi)
+        {
+            if (isMouseOverUi)
+            {
+                return;
+            }
+
+            var scrollDelta = Input.GetAxis("Mouse ScrollWheel");
+            if (Mathf.Abs(scrollDelta) <= InputAxisDeadzone)
+            {
+                return;
+            }
+
+            if (!cameraOrbitPivotInitialized)
+            {
+                InitializeCameraOrbitPivot(activeCamera);
+                if (!cameraOrbitPivotInitialized)
+                {
+                    return;
+                }
+            }
+
+            isCameraFocusTransitioning = false;
+            var zoomRange = GetValidatedZoomRange();
+            cameraOrbitDistance = Mathf.Clamp(cameraOrbitDistance - (scrollDelta * cameraZoomSensitivity), zoomRange.minDistance, zoomRange.maxDistance);
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
+        }
+
         private void InitializeCameraPitch(Camera activeCamera)
         {
             if (cameraPitchInitialized || activeCamera == null)
@@ -286,6 +326,13 @@ namespace IronKingdoms.Combat
         private static Vector3 GetPlanarRight(Vector3 planarForward)
         {
             return Vector3.Cross(Vector3.up, planarForward).normalized;
+        }
+
+        private (float minDistance, float maxDistance) GetValidatedZoomRange()
+        {
+            var minDistance = Mathf.Max(CameraOrbitMinimumDistance, cameraMinZoomDistance);
+            var maxDistance = Mathf.Max(minDistance, cameraMaxZoomDistance);
+            return (minDistance, maxDistance);
         }
     }
 }
