@@ -870,7 +870,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            if (selectedUnit.HasActedThisTurn)
+            if (selectedUnit.HasActedThisTurn && !selectedUnit.HasRunActionThisTurn)
             {
                 SetCurrentMode(UnitActionMode.None);
                 return;
@@ -903,13 +903,21 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            if (selectedUnit.HasRunActionThisTurn)
+            {
+                selectedMovementOption = MovementStepOption.Run;
+            }
+
             var movementBudget = selectedUnit.RemainingMovementThisTurn;
-            var forfeitCombatAction = false;
             switch (selectedMovementOption)
             {
                 case MovementStepOption.Run:
-                    movementBudget *= RunMovementMultiplier;
-                    forfeitCombatAction = true;
+                    if (!selectedUnit.HasRunActionThisTurn)
+                    {
+                        movementBudget *= RunMovementMultiplier;
+                        selectedUnit.HasRunActionThisTurn = true;
+                        selectedUnit.HasActedThisTurn = true;
+                    }
                     break;
                 case MovementStepOption.Charge:
                     if (GetSelectedAttackWeapon(selectedUnit).attackType == WeaponAttackType.Melee)
@@ -938,10 +946,6 @@ namespace IronKingdoms.Combat
                 IssueMoveOrder(selectedUnit, destination, movementBudget);
             }
 
-            if (forfeitCombatAction)
-            {
-                selectedUnit.HasActedThisTurn = true;
-            }
             SetCurrentMode(UnitActionMode.None);
         }
 
@@ -957,7 +961,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            if (selectedUnit == null || !selectedUnit.IsAlive || selectedUnit.HasActedThisTurn)
+            if (selectedUnit == null || !selectedUnit.IsAlive || selectedUnit.HasActedThisTurn || selectedUnit.HasRunActionThisTurn)
             {
                 return;
             }
@@ -1243,7 +1247,10 @@ namespace IronKingdoms.Combat
             switch (selectedMovementOption)
             {
                 case MovementStepOption.Run:
-                    budget *= RunMovementMultiplier;
+                    if (!selectedUnit.HasRunActionThisTurn)
+                    {
+                        budget *= RunMovementMultiplier;
+                    }
                     break;
                 case MovementStepOption.Charge:
                     if (GetSelectedAttackWeapon(selectedUnit).attackType == WeaponAttackType.Melee)
@@ -1259,7 +1266,7 @@ namespace IronKingdoms.Combat
 
         private void IssueMoveOrder(RuntimeUnit unit, Vector3 destination, float? movementBudgetOverride = null)
         {
-            if (unit == null || !unit.IsAlive || unit.Pawn == null || unit.HasActedThisTurn)
+            if (unit == null || !unit.IsAlive || unit.Pawn == null || (unit.HasActedThisTurn && !unit.HasRunActionThisTurn))
             {
                 return;
             }
@@ -1631,6 +1638,7 @@ namespace IronKingdoms.Combat
                 var unit = units[i];
                 unit.RemainingMovementThisTurn = unit.Definition.Stats.speed;
                 unit.HasActedThisTurn = false;
+                unit.HasRunActionThisTurn = false;
                 unit.IsAimingThisTurn = false;
                 unit.MoveTarget = null;
                 unit.PathWaypoints = null;
@@ -2260,7 +2268,7 @@ namespace IronKingdoms.Combat
 
             var canMove = selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon
                 && !selectedUnit.MoveTarget.HasValue
-                && !selectedUnit.HasActedThisTurn;
+                && (!selectedUnit.HasActedThisTurn || selectedUnit.HasRunActionThisTurn);
             GUI.enabled = canMove;
             var moveLabel = currentPlayerMode == UnitActionMode.Move ? "[ Move ]" : "Move";
             if (GUILayout.Button(moveLabel, GUILayout.Height(30f)))
@@ -2271,7 +2279,7 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            var canAttack = !selectedUnit.HasActedThisTurn;
+            var canAttack = !selectedUnit.HasActedThisTurn && !selectedUnit.HasRunActionThisTurn;
             GUI.enabled = canAttack;
             var attackLabel = currentPlayerMode == UnitActionMode.Attack ? "[ Attack ]" : "Attack";
             if (GUILayout.Button(attackLabel, GUILayout.Height(30f)))
@@ -2317,17 +2325,27 @@ namespace IronKingdoms.Combat
             {
                 GUILayout.Space(6f);
                 GUILayout.BeginHorizontal();
+                var runLocked = selectedUnit.HasRunActionThisTurn;
+                if (runLocked)
+                {
+                    selectedMovementOption = MovementStepOption.Run;
+                }
+
                 var advanceBudget = selectedUnit.RemainingMovementThisTurn;
                 var advanceCore = $"Advance ({advanceBudget:0.0}\")";
                 var advanceLabel = selectedMovementOption == MovementStepOption.Advance ? $"[ {advanceCore} ]" : advanceCore;
+                GUI.enabled = !runLocked;
                 if (GUILayout.Button(advanceLabel))
                 {
                     selectedMovementOption = MovementStepOption.Advance;
                 }
 
-                var runBudget = selectedUnit.RemainingMovementThisTurn * RunMovementMultiplier;
+                var runBudget = selectedUnit.HasRunActionThisTurn
+                    ? selectedUnit.RemainingMovementThisTurn
+                    : selectedUnit.RemainingMovementThisTurn * RunMovementMultiplier;
                 var runCore = $"Run ({runBudget:0.0}\")";
                 var runLabel = selectedMovementOption == MovementStepOption.Run ? $"[ {runCore} ]" : runCore;
+                GUI.enabled = canMove;
                 if (GUILayout.Button(runLabel))
                 {
                     selectedMovementOption = MovementStepOption.Run;
@@ -2337,12 +2355,13 @@ namespace IronKingdoms.Combat
                     + (GetSelectedAttackWeapon(selectedUnit).attackType == WeaponAttackType.Melee ? ChargeMovementBonus : 0f);
                 var chargeCore = $"Charge ({chargeBudget:0.0}\")";
                 var chargeLabel = selectedMovementOption == MovementStepOption.Charge ? $"[ {chargeCore} ]" : chargeCore;
+                GUI.enabled = !runLocked;
                 if (GUILayout.Button(chargeLabel))
                 {
                     selectedMovementOption = MovementStepOption.Charge;
                 }
 
-                GUI.enabled = canMove;
+                GUI.enabled = canMove && !selectedUnit.HasRunActionThisTurn;
                 if (GUILayout.Button($"Aim (+{AimToHitBonus} to hit)"))
                 {
                     if (!WasUiCancelTriggeredThisFrame())
@@ -2360,7 +2379,7 @@ namespace IronKingdoms.Combat
 
         private void ApplyAim(RuntimeUnit unit)
         {
-            if (unit == null || !unit.IsAlive || unit.HasActedThisTurn)
+            if (unit == null || !unit.IsAlive || unit.HasActedThisTurn || unit.HasRunActionThisTurn)
             {
                 return;
             }
@@ -2559,6 +2578,7 @@ namespace IronKingdoms.Combat
             public int Health { get; set; }
             public float RemainingMovementThisTurn { get; set; }
             public bool HasActedThisTurn { get; set; }
+            public bool HasRunActionThisTurn { get; set; }
             public bool IsAimingThisTurn { get; set; }
             public Vector3? MoveTarget { get; set; }
             public bool IsAlive => Health > 0;
