@@ -1377,6 +1377,17 @@ namespace IronKingdoms.Combat
             return false;
         }
 
+        private static bool IsRoughTerrainCollider(Collider collider)
+        {
+            if (collider == null)
+            {
+                return false;
+            }
+
+            var zone = collider.GetComponentInParent<CombatZone>();
+            return zone != null && zone.ZoneType == CombatZoneType.RoughTerrain;
+        }
+
         /// <summary>
         /// Casts a ray against the 3D scene geometry and returns the first terrain hit point
         /// (ignoring unit pawns).  Falls back to <paramref name="boardPlane"/> when no geometry
@@ -1396,7 +1407,12 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < hitCount; i++)
             {
                 var h = terrainRaycastBuffer[i];
-                if (!IsUnitPawn(h.collider.gameObject) && h.distance < closestDist)
+                if (IsUnitPawn(h.collider.gameObject) || IsRoughTerrainCollider(h.collider))
+                {
+                    continue;
+                }
+
+                if (h.distance < closestDist)
                 {
                     closestDist = h.distance;
                     point = h.point;
