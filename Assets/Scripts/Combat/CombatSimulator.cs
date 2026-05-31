@@ -5,6 +5,7 @@ namespace IronKingdoms.Combat
     public static class CombatSimulator
     {
         private const float MeleeRangeThreshold = 1.5f;
+        private const float DiameterToRadiusMultiplier = 0.5f;
         private const float MillimetersPerInch = 25.4f;
 
         public static CombatSimulationResult Simulate(TestCombatScenarioAsset scenario)
@@ -173,7 +174,7 @@ namespace IronKingdoms.Combat
             }
 
             var modelDiameterInches = combatant.Definition.Stats.modelSize.BaseDiameterMillimeters() / MillimetersPerInch;
-            return modelDiameterInches * 0.5f;
+            return modelDiameterInches * DiameterToRadiusMultiplier;
         }
 
         private static int[] RollDice(Random random, int count)
