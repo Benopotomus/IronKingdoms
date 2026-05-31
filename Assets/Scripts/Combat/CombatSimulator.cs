@@ -5,6 +5,7 @@ namespace IronKingdoms.Combat
     public static class CombatSimulator
     {
         private const float MeleeRangeThreshold = 1.5f;
+        private const float MillimetersPerInch = 25.4f;
 
         public static CombatSimulationResult Simulate(TestCombatScenarioAsset scenario)
         {
@@ -69,11 +70,12 @@ namespace IronKingdoms.Combat
             var charged = TryCharge(actor, target, ref distance, result);
             if (!charged)
             {
-                AdvanceIntoRange(actor, ref distance, result);
+                AdvanceIntoRange(actor, target, ref distance, result);
             }
 
             var weapon = actor.PrimaryWeapon;
-            if (distance > weapon.Range)
+            var effectiveRange = GetEffectiveWeaponRangeInches(actor, target, weapon);
+            if (distance > effectiveRange)
             {
                 result.AddLine($"  {actor.Name} ends activation at {distance:0.0}\" and cannot attack.");
                 return;
@@ -126,21 +128,22 @@ namespace IronKingdoms.Combat
             }
 
             var reachableDistance = actor.Definition.Stats.speed + 3f;
-            var remainingGap = distance - actor.PrimaryWeapon.Range;
+            var effectiveRange = GetEffectiveWeaponRangeInches(actor, target, actor.PrimaryWeapon);
+            var remainingGap = distance - effectiveRange;
             if (remainingGap <= 0f || remainingGap > reachableDistance || actor.Resource <= 0)
             {
                 return false;
             }
 
             actor.Resource -= 1;
-            distance = actor.PrimaryWeapon.Range;
+            distance = effectiveRange;
             result.AddLine($"  {actor.Name} charges into melee with {target.Name}.");
             return true;
         }
 
-        private static void AdvanceIntoRange(CombatantState actor, ref float distance, CombatSimulationResult result)
+        private static void AdvanceIntoRange(CombatantState actor, CombatantState target, ref float distance, CombatSimulationResult result)
         {
-            var targetDistance = actor.PrimaryWeapon.Range;
+            var targetDistance = GetEffectiveWeaponRangeInches(actor, target, actor.PrimaryWeapon);
             if (distance <= targetDistance)
             {
                 result.AddLine($"  {actor.Name} is already in range.");
@@ -150,6 +153,27 @@ namespace IronKingdoms.Combat
             var moveDistance = Math.Min(actor.Definition.Stats.speed, distance - targetDistance);
             distance = Math.Max(targetDistance, distance - moveDistance);
             result.AddLine($"  {actor.Name} advances {moveDistance:0.0}\" and closes to {distance:0.0}\".");
+        }
+
+        private static float GetEffectiveWeaponRangeInches(CombatantState actor, CombatantState target, WeaponProfile weapon)
+        {
+            return weapon.Range + GetCombinedCombatantRadiiInches(actor, target);
+        }
+
+        private static float GetCombinedCombatantRadiiInches(CombatantState actor, CombatantState target)
+        {
+            return GetCombatantRadiusInches(actor) + GetCombatantRadiusInches(target);
+        }
+
+        private static float GetCombatantRadiusInches(CombatantState combatant)
+        {
+            if (combatant?.Definition == null)
+            {
+                return 0f;
+            }
+
+            var modelDiameterInches = combatant.Definition.Stats.modelSize.BaseDiameterMillimeters() / MillimetersPerInch;
+            return modelDiameterInches * 0.5f;
         }
 
         private static int[] RollDice(Random random, int count)
