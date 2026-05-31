@@ -2302,19 +2302,26 @@ namespace IronKingdoms.Combat
             {
                 GUILayout.Space(6f);
                 GUILayout.BeginHorizontal();
-                var advanceLabel = selectedMovementOption == MovementStepOption.Advance ? "[ Advance ]" : "Advance";
+                var advanceBudget = selectedUnit.RemainingMovementThisTurn;
+                var advanceCore = $"Advance ({advanceBudget:0.0}\")";
+                var advanceLabel = selectedMovementOption == MovementStepOption.Advance ? $"[ {advanceCore} ]" : advanceCore;
                 if (GUILayout.Button(advanceLabel))
                 {
                     selectedMovementOption = MovementStepOption.Advance;
                 }
 
-                var runLabel = selectedMovementOption == MovementStepOption.Run ? "[ Run ]" : "Run";
+                var runBudget = selectedUnit.RemainingMovementThisTurn * RunMovementMultiplier;
+                var runCore = $"Run ({runBudget:0.0}\")";
+                var runLabel = selectedMovementOption == MovementStepOption.Run ? $"[ {runCore} ]" : runCore;
                 if (GUILayout.Button(runLabel))
                 {
                     selectedMovementOption = MovementStepOption.Run;
                 }
 
-                var chargeLabel = selectedMovementOption == MovementStepOption.Charge ? "[ Charge ]" : "Charge";
+                var chargeBudget = selectedUnit.RemainingMovementThisTurn
+                    + (GetSelectedAttackWeapon(selectedUnit).attackType == WeaponAttackType.Melee ? ChargeMovementBonus : 0f);
+                var chargeCore = $"Charge ({chargeBudget:0.0}\")";
+                var chargeLabel = selectedMovementOption == MovementStepOption.Charge ? $"[ {chargeCore} ]" : chargeCore;
                 if (GUILayout.Button(chargeLabel))
                 {
                     selectedMovementOption = MovementStepOption.Charge;
