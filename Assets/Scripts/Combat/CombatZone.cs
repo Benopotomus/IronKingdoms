@@ -57,5 +57,28 @@ namespace IronKingdoms.Combat
             var closestPoint = zoneCollider.ClosestPoint(worldPoint);
             return (closestPoint - worldPoint).sqrMagnitude <= PointContainmentThresholdSqr;
         }
+
+        /// <summary>
+        /// Returns true if a horizontal disc (XZ plane) centred at <paramref name="center"/>
+        /// with the given <paramref name="radius"/> overlaps this zone.
+        /// When <paramref name="radius"/> is zero this is equivalent to <see cref="ContainsPoint"/>.
+        /// </summary>
+        public bool IntersectsDisc(Vector3 center, float radius)
+        {
+            if (!isActiveAndEnabled)
+            {
+                return false;
+            }
+
+            if (zoneCollider == null || !zoneCollider.enabled)
+            {
+                return false;
+            }
+
+            var closestPoint = zoneCollider.ClosestPoint(center);
+            var dx = closestPoint.x - center.x;
+            var dz = closestPoint.z - center.z;
+            return dx * dx + dz * dz <= radius * radius + PointContainmentThresholdSqr;
+        }
     }
 }
