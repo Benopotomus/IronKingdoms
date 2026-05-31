@@ -152,6 +152,11 @@ namespace IronKingdoms.Combat
             pendingNavmeshUpdate = false;
         }
 
+        /// <summary>
+        /// Snaps a world-space point to the nearest walkable navmesh point.
+        /// Falls back to any nearest node when no walkable node is found, then
+        /// returns the original position if no node is available at all.
+        /// </summary>
         private static Vector3 SnapToWalkablePosition(Vector3 worldPosition)
         {
             if (AstarPath.active == null)
