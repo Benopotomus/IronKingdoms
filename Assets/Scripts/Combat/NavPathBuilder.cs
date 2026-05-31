@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using Pathfinding;
 using Pathfinding.Pooling;
 using UnityEngine;
-using UnityEngine.Analytics;
 
 namespace IronKingdoms.Combat
 {
@@ -23,8 +22,15 @@ namespace IronKingdoms.Combat
 
         public static NavPathBuilder instance;
         private static bool pendingNavmeshUpdate;
+        private readonly HashSet<ModelSize> missingGraphWarnings = new();
 
         [SerializeField] private FunnelModifier _funnel;
+        [Header("Per-base navmesh graph names")]
+        [SerializeField] private string base30GraphName = "Base30mm";
+        [SerializeField] private string base40GraphName = "Base40mm";
+        [SerializeField] private string base50GraphName = "Base50mm";
+        [SerializeField] private string base80GraphName = "Base80mm";
+        [SerializeField] private string base120GraphName = "Base120mm";
 
         /// <summary>
         /// Returns the first <see cref="NavPathBuilder"/> found in the scene.
@@ -63,7 +69,7 @@ namespace IronKingdoms.Combat
         /// point.
         /// Returns an empty list on error or when A* is unavailable.
         /// </summary>
-        public void RequestAsync(Vector3 from, Vector3 to, Action<List<Vector3>> onComplete)
+        public void RequestAsync(Vector3 from, Vector3 to, Action<List<Vector3>> onComplete, GraphMask? graphMask = null)
         {
             if (AstarPath.active == null)
             {
@@ -71,14 +77,18 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            var activeGraphMask = graphMask ?? GraphMask.everything;
             FlushPendingNavmeshUpdates();
-            to = SnapToWalkablePosition(to);
+            to = SnapToWalkablePosition(to, activeGraphMask);
             
             var path = ABPath.Construct(from, to, p =>
             {
                 var result = Smooth(p as ABPath, from, to);
                 onComplete?.Invoke(result.Count >= 2 ? result : null);
             });
+            var traversalConstraint = path.traversalConstraint;
+            traversalConstraint.graphMask = activeGraphMask;
+            path.traversalConstraint = traversalConstraint;
             AstarPath.StartPath(path);
         }
 
@@ -87,19 +97,58 @@ namespace IronKingdoms.Combat
         /// The first waypoint is pinned to <paramref name="from"/>.
         /// Returns an empty list on error or when A* is unavailable.
         /// </summary>
-        public List<Vector3> BuildSync(Vector3 from, Vector3 to)
+        public List<Vector3> BuildSync(Vector3 from, Vector3 to, GraphMask? graphMask = null)
         {
             if (AstarPath.active == null)
             {
                 return new List<Vector3>();
             }
 
+            var activeGraphMask = graphMask ?? GraphMask.everything;
             FlushPendingNavmeshUpdates();
-            to = SnapToWalkablePosition(to);
+            to = SnapToWalkablePosition(to, activeGraphMask);
             var path = ABPath.Construct(from, to);
+            var traversalConstraint = path.traversalConstraint;
+            traversalConstraint.graphMask = activeGraphMask;
+            path.traversalConstraint = traversalConstraint;
             AstarPath.StartPath(path);
             AstarPath.BlockUntilCalculated(path);
             return Smooth(path, from, to);
+        }
+
+        public GraphMask GetGraphMaskForModelSizeOrDefault(ModelSize modelSize)
+        {
+            return TryGetGraphMaskForModelSize(modelSize, out var graphMask)
+                ? graphMask
+                : GraphMask.everything;
+        }
+
+        public bool TryGetGraphMaskForModelSize(ModelSize modelSize, out GraphMask graphMask)
+        {
+            graphMask = GraphMask.everything;
+            if (AstarPath.active?.data == null)
+            {
+                return false;
+            }
+
+            var graphName = GetGraphNameForModelSize(modelSize);
+            if (string.IsNullOrWhiteSpace(graphName))
+            {
+                return false;
+            }
+
+            var graph = AstarPath.active.data.FindGraph(g => g != null && string.Equals(g.name, graphName, StringComparison.Ordinal));
+            if (graph == null)
+            {
+                if (missingGraphWarnings.Add(modelSize))
+                {
+                    Debug.LogWarning($"No nav graph named '{graphName}' for {modelSize}. Falling back to all graphs.");
+                }
+                return false;
+            }
+
+            graphMask = GraphMask.FromGraph(graph);
+            return true;
         }
 
         // -----------------------------------------------------------------------------------------
@@ -157,21 +206,38 @@ namespace IronKingdoms.Combat
         /// Falls back to any nearest node when no walkable node is found, then
         /// returns the original position if no node is available at all.
         /// </summary>
-        private static Vector3 SnapToWalkablePosition(Vector3 worldPosition)
+        private static Vector3 SnapToWalkablePosition(Vector3 worldPosition, GraphMask graphMask)
         {
             if (AstarPath.active == null)
             {
                 return worldPosition;
             }
 
-            var walkableNearest = AstarPath.active.GetNearest(worldPosition, NearestNodeConstraint.Walkable);
+            var walkableConstraint = NearestNodeConstraint.Walkable;
+            walkableConstraint.graphMask = graphMask;
+            var walkableNearest = AstarPath.active.GetNearest(worldPosition, walkableConstraint);
             if (walkableNearest.node != null)
             {
                 return walkableNearest.position;
             }
 
-            var nearest = AstarPath.active.GetNearest(worldPosition);
+            var nearestConstraint = NearestNodeConstraint.None;
+            nearestConstraint.graphMask = graphMask;
+            var nearest = AstarPath.active.GetNearest(worldPosition, nearestConstraint);
             return nearest.node != null ? nearest.position : worldPosition;
+        }
+
+        private string GetGraphNameForModelSize(ModelSize modelSize)
+        {
+            return modelSize switch
+            {
+                ModelSize.Base30mm => base30GraphName,
+                ModelSize.Base40mm => base40GraphName,
+                ModelSize.Base50mm => base50GraphName,
+                ModelSize.Base80mm => base80GraphName,
+                ModelSize.Base120mm => base120GraphName,
+                _ => string.Empty
+            };
         }
         
     }

@@ -326,6 +326,7 @@ namespace IronKingdoms.Combat
                 previewPathPending = true;
 
                 UpdateUnitNavmeshCutActivation(selectedUnit);
+                var graphMask = GetPathGraphMask(selectedUnit);
                 navPathBuilder.RequestAsync(unitPos, hoverPos, result =>
                 {
                     previewPathPending = false;
@@ -342,6 +343,7 @@ namespace IronKingdoms.Combat
             // Determine reachability for colour: compare full path length to budget.
             var hasPreviewPath = IsValidPreviewPath(previewPath);
             var withinRange = hasPreviewPath;
+            Vector3? movementStopPoint = null;
             if (hasPreviewPath)
             {
                 var fullLength = 0f;
@@ -351,6 +353,10 @@ namespace IronKingdoms.Combat
                 }
 
                 withinRange = fullLength <= effectiveBudget + PositionArrivalTolerance;
+                if (TryGetPathStopPointAtMovementBudget(previewPath, effectiveBudget, out var stopPoint))
+                {
+                    movementStopPoint = stopPoint;
+                }
             }
 
             var pathColor = withinRange
@@ -382,7 +388,7 @@ namespace IronKingdoms.Combat
             }
 
             // Destination marker reflects the effective movement endpoint from the nav path.
-            var dest = hasPreviewPath ? previewPath[previewPath.Count - 1] : hoverPos;
+            var dest = movementStopPoint ?? (hasPreviewPath ? previewPath[previewPath.Count - 1] : hoverPos);
             dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y + 0.01f);
             if (!IsFiniteWorldPoint(dest))
             {
@@ -687,6 +693,7 @@ namespace IronKingdoms.Combat
         private void UpdateUnitNavmeshCutActivation(RuntimeUnit pathingUnit = null)
         {
             var pathingRadius = pathingUnit != null ? GetUnitCollisionRadius(pathingUnit) : 0f;
+            var pathingGraphMask = GetPathGraphMask(pathingUnit);
             var navmeshCutChanged = false;
             for (var i = 0; i < allRuntimeUnits.Count; i++)
             {
@@ -699,6 +706,23 @@ namespace IronKingdoms.Combat
                 if (unit.NavmeshCut == null)
                 {
                     continue;
+                }
+
+                if (unit.NavmeshCut.graphMask != pathingGraphMask)
+                {
+                    var cutWasEnabled = unit.NavmeshCut.enabled;
+                    if (cutWasEnabled)
+                    {
+                        unit.NavmeshCut.enabled = false;
+                    }
+
+                    unit.NavmeshCut.graphMask = pathingGraphMask;
+                    if (cutWasEnabled)
+                    {
+                        unit.NavmeshCut.enabled = true;
+                    }
+
+                    navmeshCutChanged = true;
                 }
 
                 var isPathingUnit = pathingUnit != null && ReferenceEquals(unit, pathingUnit);
@@ -1248,12 +1272,13 @@ namespace IronKingdoms.Combat
             }
 
             var current = GetPawnFeetPosition(unit);
+            var graphMask = GetPathGraphMask(unit);
 
             // Use NavPathBuilder to get a funnel-smoothed path, then clamp to budget.
             if (navPathBuilder != null)
             {
                 UpdateUnitNavmeshCutActivation(unit);
-                var smoothedPath = navPathBuilder.BuildSync(current, destination);
+                var smoothedPath = navPathBuilder.BuildSync(current, destination, graphMask);
                 if (smoothedPath.Count >= 2)
                 {
                     IssueMoveOrderFromPath(unit, smoothedPath, remaining);
@@ -1380,14 +1405,16 @@ namespace IronKingdoms.Combat
             return false;
         }
 
-        private static Vector3 GetNearestNavmeshPosition(Vector3 worldPosition)
+        private Vector3 GetNearestNavmeshPosition(Vector3 worldPosition, RuntimeUnit unit = null)
         {
             if (AstarPath.active == null)
             {
                 return worldPosition;
             }
 
-            var nearest = AstarPath.active.GetNearest(worldPosition, NearestNodeConstraint.Walkable);
+            var nearestNodeConstraint = NearestNodeConstraint.Walkable;
+            nearestNodeConstraint.graphMask = GetPathGraphMask(unit);
+            var nearest = AstarPath.active.GetNearest(worldPosition, nearestNodeConstraint);
             if (nearest.node == null)
             {
                 return worldPosition;
@@ -1435,9 +1462,9 @@ namespace IronKingdoms.Combat
 
         // The unit parameter is retained for API consistency and potential future per-unit
         // terrain-height adjustments; all callers pass the moving unit for context.
-        private static Vector3 GetGroundedNavmeshPositionForUnit(RuntimeUnit unit, Vector3 worldPosition)
+        private Vector3 GetGroundedNavmeshPositionForUnit(RuntimeUnit unit, Vector3 worldPosition)
         {
-            return GetNearestNavmeshPosition(worldPosition);
+            return GetNearestNavmeshPosition(worldPosition, unit);
         }
 
         private static Vector3 GetPawnCenterPosition(RuntimeUnit unit)
@@ -1451,21 +1478,21 @@ namespace IronKingdoms.Combat
             return unit.Pawn.transform.position + Vector3.up * bodyHeight;
         }
 
-        private static Vector3 GetGroundedPositionKeepingXZ(RuntimeUnit unit, Vector3 worldPosition)
+        private Vector3 GetGroundedPositionKeepingXZ(RuntimeUnit unit, Vector3 worldPosition)
         {
             var groundedPosition = worldPosition;
             groundedPosition.y = GetGroundedNavmeshPositionForUnit(unit, worldPosition).y;
             return groundedPosition;
         }
 
-        private static Vector3 ConstrainPositionToNavmesh(RuntimeUnit unit, Vector3 worldPosition)
+        private Vector3 ConstrainPositionToNavmesh(RuntimeUnit unit, Vector3 worldPosition)
         {
             var navPosition = GetGroundedNavmeshPositionForUnit(unit, worldPosition);
             var horizontalDelta = new Vector2(worldPosition.x - navPosition.x, worldPosition.z - navPosition.z).magnitude;
             return horizontalDelta > NavmeshContainmentTolerance ? navPosition : worldPosition;
         }
 
-        private static void SnapUnitToNavmesh(RuntimeUnit unit)
+        private void SnapUnitToNavmesh(RuntimeUnit unit)
         {
             if (unit?.Pawn == null)
             {
@@ -1473,6 +1500,16 @@ namespace IronKingdoms.Combat
             }
 
             unit.Pawn.transform.position = GetGroundedNavmeshPositionForUnit(unit, unit.Pawn.transform.position);
+        }
+
+        private GraphMask GetPathGraphMask(RuntimeUnit unit)
+        {
+            if (unit?.Definition == null || navPathBuilder == null)
+            {
+                return GraphMask.everything;
+            }
+
+            return navPathBuilder.GetGraphMaskForModelSizeOrDefault(unit.Definition.Stats.modelSize);
         }
 
         private static List<Vector3> ClampPathToMovementBudget(List<Vector3> waypoints, float budget)
@@ -1508,11 +1545,49 @@ namespace IronKingdoms.Combat
             return result;
         }
 
+        private static bool TryGetPathStopPointAtMovementBudget(IReadOnlyList<Vector3> waypoints, float budget, out Vector3 stopPoint)
+        {
+            stopPoint = default;
+            if (waypoints == null || waypoints.Count == 0)
+            {
+                return false;
+            }
+
+            budget = Mathf.Max(0f, budget);
+            stopPoint = waypoints[0];
+            var distanceCovered = 0f;
+            for (var i = 1; i < waypoints.Count; i++)
+            {
+                var segmentLength = Vector3.Distance(waypoints[i - 1], waypoints[i]);
+                if (distanceCovered + segmentLength >= budget - MovementBudgetEpsilon)
+                {
+                    var segmentRemaining = budget - distanceCovered;
+                    if (segmentRemaining > MovementBudgetEpsilon && segmentLength > MovementBudgetEpsilon)
+                    {
+                        var t = segmentRemaining / segmentLength;
+                        stopPoint = Vector3.Lerp(waypoints[i - 1], waypoints[i], t);
+                    }
+                    else
+                    {
+                        stopPoint = waypoints[i - 1];
+                    }
+
+                    return true;
+                }
+
+                distanceCovered += segmentLength;
+                stopPoint = waypoints[i];
+            }
+
+            return true;
+        }
+
         private void StartPlayerTurn()
         {
             activeTurnSide = TurnSide.Player;
             ResetMovementForTurn(playerRuntimeUnits);
             selectedUnit = FindFirstAlive(playerRuntimeUnits);
+            UpdateMovePreviewSizeForUnit(selectedUnit);
             selectedMovementOption = MovementStepOption.Advance;
             SetCurrentMode(UnitActionMode.None);
         }
