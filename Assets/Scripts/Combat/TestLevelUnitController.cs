@@ -10,6 +10,7 @@ namespace IronKingdoms.Combat
         private const float AiInRangeTolerance = 0.95f;
         private const float AiDesiredStopFactor = 0.85f;
         private const float AiMinimumStopDistance = 0.2f;
+        private const float RadiusToDiameterMultiplier = 2f;
         private const float PositionArrivalTolerance = 0.05f;
         private const float NavmeshContainmentTolerance = 0.02f;
         private const float MovementBudgetEpsilon = 0.001f;
@@ -230,8 +231,7 @@ namespace IronKingdoms.Combat
             movementPathLine.widthMultiplier = VisualizerLineWidth;
             movementPathLine.positionCount = 2;
             movementPathLine.useWorldSpace = true;
-            movementPathLine.alignment = LineAlignment.TransformZ;
-            lineObj.transform.forward = Vector3.up;
+            ApplyMovementPathLineWorldUp();
             if (visualizerMaterial != null)
             {
                 movementPathLine.material = visualizerMaterial;
@@ -366,6 +366,7 @@ namespace IronKingdoms.Combat
             movementPathLine.enabled = hasPreviewPath;
             if (hasPreviewPath)
             {
+                ApplyMovementPathLineWorldUp();
                 var previewPointCount = previewPath.Count;
                 movementPathLine.positionCount = previewPointCount;
                 var flatPathY = previewPath[previewPointCount - 1].y + PathVisualizationHeight;
@@ -1974,9 +1975,7 @@ namespace IronKingdoms.Combat
 
         private void UpdateMovePreviewSizeForUnit(RuntimeUnit unit)
         {
-            var diameterScale = unit != null
-                ? unit.Definition.Stats.modelSize.GetPawnScale().x
-                : 1f;
+            var diameterScale = GetMovePreviewDiameter(unit);
             if (destinationMarkerObject != null)
             {
                 destinationMarkerObject.transform.localScale = new Vector3(diameterScale, PawnBaseHeightScale, diameterScale);
@@ -1984,8 +1983,36 @@ namespace IronKingdoms.Combat
 
             if (movementPathLine != null)
             {
+                ApplyMovementPathLineWorldUp();
                 movementPathLine.widthMultiplier = diameterScale;
             }
+        }
+
+        private void ApplyMovementPathLineWorldUp()
+        {
+            if (movementPathLine == null)
+            {
+                return;
+            }
+
+            movementPathLine.alignment = LineAlignment.TransformZ;
+            movementPathLine.transform.forward = Vector3.up;
+        }
+
+        private static float GetMovePreviewDiameter(RuntimeUnit unit)
+        {
+            if (unit?.Pawn != null)
+            {
+                var col = unit.Pawn.GetComponent<CapsuleCollider>();
+                if (col != null)
+                {
+                    return Mathf.Max(VisualizerLineWidth, col.radius * RadiusToDiameterMultiplier);
+                }
+            }
+
+            return unit != null
+                ? Mathf.Max(VisualizerLineWidth, unit.Definition.Stats.modelSize.GetPawnScale().x)
+                : 1f;
         }
 
         private void HandlePlayerUnitClick(RuntimeUnit unit)
