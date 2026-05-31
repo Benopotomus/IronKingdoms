@@ -1021,7 +1021,7 @@ namespace IronKingdoms.Combat
 
                 var targetPosition = unit.MoveTarget.Value;
                 var unitRadius = GetUnitCollisionRadius(unit);
-                var terrainSpeedMultiplier = GetMovementSpeedMultiplierAtPoint(unit.Pawn.transform.position);
+                var terrainSpeedMultiplier = GetMovementSpeedMultiplierAtPoint(unit.Pawn.transform.position, unitRadius);
                 var maxStepThisFrame = InchesToWorldUnits(unit.Definition.Stats.speed * terrainSpeedMultiplier) * deltaTime;
                 var allowedStep = Mathf.Min(maxStepThisFrame, InchesToWorldUnits(unit.RemainingMovementThisTurn));
                 if (allowedStep <= 0f)
@@ -1617,7 +1617,7 @@ namespace IronKingdoms.Combat
                 var segmentEnd = Vector3.Lerp(from, to, segmentEndT);
                 var samplePoint = Vector3.Lerp(segmentStart, segmentEnd, 0.5f);
                 var segmentDistanceInches = WorldUnitsToInches(Vector3.Distance(segmentStart, segmentEnd));
-                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(samplePoint);
+                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(samplePoint, unitRadius);
                 movementCost += segmentDistanceInches / speedMultiplier;
             }
 
@@ -1648,7 +1648,7 @@ namespace IronKingdoms.Combat
                 var subSegmentEnd = Vector3.Lerp(segmentStart, segmentEnd, subSegmentEndT);
                 var samplePoint = Vector3.Lerp(subSegmentStart, subSegmentEnd, 0.5f);
                 var subSegmentDistanceInches = WorldUnitsToInches(Vector3.Distance(subSegmentStart, subSegmentEnd));
-                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(samplePoint);
+                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(samplePoint, unitRadius);
                 var subSegmentCost = subSegmentDistanceInches / speedMultiplier;
 
                 if (movementCostCovered + subSegmentCost >= budgetRemaining - MovementBudgetEpsilon)
@@ -1679,7 +1679,7 @@ namespace IronKingdoms.Combat
             return Mathf.Max(1, Mathf.CeilToInt(segmentDistanceWorldUnits / sampleStep));
         }
 
-        private float GetMovementSpeedMultiplierAtPoint(Vector3 worldPoint)
+        private float GetMovementSpeedMultiplierAtPoint(Vector3 worldPoint, float unitRadius = 0f)
         {
             var speedMultiplier = 1f;
             var activeZones = CombatZone.ActiveZones;
@@ -1691,7 +1691,7 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                if (!zone.ContainsPoint(worldPoint))
+                if (!zone.IntersectsDisc(worldPoint, unitRadius))
                 {
                     continue;
                 }
@@ -1704,16 +1704,6 @@ namespace IronKingdoms.Combat
             }
 
             return Mathf.Max(MovementBudgetEpsilon, speedMultiplier);
-        }
-
-        private bool IsUnitInRoughTerrain(RuntimeUnit unit)
-        {
-            if (unit?.Pawn == null)
-            {
-                return false;
-            }
-
-            return GetMovementSpeedMultiplierAtPoint(unit.Pawn.transform.position) < 1f;
         }
 
         private void StartPlayerTurn()
@@ -2372,7 +2362,6 @@ namespace IronKingdoms.Combat
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
             GUILayout.Label(BuildHealthBoxes(selectedUnit.Health, selectedUnit.Definition.Stats.health));
             GUILayout.Label($"Speed: {selectedUnit.Definition.Stats.speed:0.0}  |  Move left: {selectedUnit.RemainingMovementThisTurn:0.0}\"");
-            GUILayout.Label($"In Rough Terrain: {(IsUnitInRoughTerrain(selectedUnit) ? "Yes" : "No")}");
             GUILayout.Label($"Model Size: {selectedUnit.Definition.Stats.modelSize.DisplayName()}");
             var selectedWeapon = GetSelectedAttackWeapon(selectedUnit);
             GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
