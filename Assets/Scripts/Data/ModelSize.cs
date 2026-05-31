@@ -33,7 +33,7 @@ namespace IronKingdoms.Combat
                 ModelSize.Base30mm => 1.75f,
                 ModelSize.Base40mm => 2.25f,
                 ModelSize.Base50mm => 2.75f,
-                ModelSize.Base80mm => 5f,
+                ModelSize.Base80mm => 3.25f,
                 ModelSize.Base120mm => 5f,
                 _ => 1.75f
             };

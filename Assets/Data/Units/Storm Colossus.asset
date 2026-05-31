@@ -25,5 +25,5 @@ MonoBehaviour:
     weapons:
     - {fileID: 11400000, guid: c4f0d177b2ae4ec0b4e9c447f4eab73e, type: 2}
     - {fileID: 11400000, guid: 3fca850e8b9d4f33a3f369f4a1a9d8e2, type: 2}
-  designNotes: Large 80mm heavy automaton. A towering steam-powered colossus that crushes enemies with a Siege Hammer and bombards at range with a Steam Mortar. Slow and heavily armoured; difficult to hit with ranged fire but vulnerable to high-MAT melee.
+  designNotes: Extra Large 80mm heavy automaton. A towering steam-powered colossus that crushes enemies with a Siege Hammer and bombards at range with a Steam Mortar. Slow and heavily armoured; extra-large base means it never gains DEF bonuses from cover, concealment, or elevation.
   visualPrefab: {fileID: 100000, guid: 071829304b5c6d7e8f9a0b1c2d3e4f50, type: 3}
