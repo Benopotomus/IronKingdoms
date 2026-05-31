@@ -565,7 +565,6 @@ namespace IronKingdoms.Combat
             ClearSpawnedUnits();
             SpawnArmy(playerUnits, playerSpawnAnchor, playerRuntimeUnits, true, new Color(0.2f, 0.5f, 1f));
             SpawnArmy(enemyUnits, enemySpawnAnchor, enemyRuntimeUnits, false, new Color(1f, 0.3f, 0.3f));
-            selectedUnit = FindFirstAlive(playerRuntimeUnits);
             StartPlayerTurn();
         }
 
@@ -1586,10 +1585,7 @@ namespace IronKingdoms.Combat
         {
             activeTurnSide = TurnSide.Player;
             ResetMovementForTurn(playerRuntimeUnits);
-            selectedUnit = FindFirstAlive(playerRuntimeUnits);
-            UpdateMovePreviewSizeForUnit(selectedUnit);
-            selectedMovementOption = MovementStepOption.Advance;
-            SetCurrentMode(UnitActionMode.None);
+            SelectUnit(FindFirstAlive(playerRuntimeUnits));
         }
 
         private void EndPlayerTurn()
@@ -1691,7 +1687,7 @@ namespace IronKingdoms.Combat
                 AddCombatLogEntry($"{defender.Definition.DisplayName} defeated!");
                 if (ReferenceEquals(defender, selectedUnit))
                 {
-                    selectedUnit = FindFirstAlive(playerRuntimeUnits);
+                    SelectUnit(FindFirstAlive(playerRuntimeUnits));
                 }
             }
         }
@@ -1879,6 +1875,37 @@ namespace IronKingdoms.Combat
             selectedMovementOption = MovementStepOption.Advance;
             SetCurrentMode(UnitActionMode.None);
             UpdateMovePreviewSizeForUnit(selectedUnit);
+            UpdateNavGraphGizmoVisibility(selectedUnit);
+        }
+
+        private void UpdateNavGraphGizmoVisibility(RuntimeUnit unit)
+        {
+            if (AstarPath.active?.data?.graphs == null)
+            {
+                return;
+            }
+
+            var graphs = AstarPath.active.data.graphs;
+            if (unit == null)
+            {
+                foreach (var graph in graphs)
+                {
+                    if (graph != null)
+                    {
+                        graph.drawGizmos = true;
+                    }
+                }
+                return;
+            }
+
+            var unitGraphMask = GetPathGraphMask(unit);
+            foreach (var graph in graphs)
+            {
+                if (graph != null)
+                {
+                    graph.drawGizmos = unitGraphMask.Contains(graph);
+                }
+            }
         }
 
         private void UpdateMovePreviewSizeForUnit(RuntimeUnit unit)
