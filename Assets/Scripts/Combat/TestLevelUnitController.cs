@@ -1666,8 +1666,8 @@ namespace IronKingdoms.Combat
                     break;
                 }
 
-                roughInches += CalculateSegmentRoughTerrainPhysicalInches(waypoints[i - 1], waypoints[i], remaining, out var segCost, unitRadius);
-                costCovered += segCost;
+                roughInches += CalculateSegmentRoughTerrainPhysicalInches(waypoints[i - 1], waypoints[i], remaining, out var segmentCostConsumed, unitRadius);
+                costCovered += segmentCostConsumed;
             }
 
             return roughInches;
@@ -1696,14 +1696,14 @@ namespace IronKingdoms.Combat
                 var subDistInches = WorldUnitsToInches(Vector3.Distance(subStart, subEnd));
                 var speedMultiplier = GetMovementSpeedMultiplierAtPoint(samplePoint, unitRadius);
                 var subCost = subDistInches / speedMultiplier;
-                var isRough = speedMultiplier < 1f - MovementBudgetEpsilon;
+                var isRoughTerrain = speedMultiplier < 1f - MovementBudgetEpsilon;
 
                 if (costConsumed + subCost > budgetRemaining + MovementBudgetEpsilon)
                 {
                     // Partially consume this sub-segment up to the remaining budget.
                     var remaining = Mathf.Max(0f, budgetRemaining - costConsumed);
                     var fraction = subCost <= MovementBudgetEpsilon ? 0f : Mathf.Clamp01(remaining / subCost);
-                    if (isRough)
+                    if (isRoughTerrain)
                     {
                         roughInches += subDistInches * fraction;
                     }
@@ -1712,7 +1712,7 @@ namespace IronKingdoms.Combat
                     break;
                 }
 
-                if (isRough)
+                if (isRoughTerrain)
                 {
                     roughInches += subDistInches;
                 }
