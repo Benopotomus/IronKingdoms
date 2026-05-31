@@ -78,7 +78,7 @@ namespace IronKingdoms.Combat
             var closestPoint = zoneCollider.ClosestPoint(center);
             var dx = closestPoint.x - center.x;
             var dz = closestPoint.z - center.z;
-            return dx * dx + dz * dz <= radius * radius + PointContainmentThresholdSqr;
+            return dx * dx + dz * dz <= radius * radius;
         }
     }
 }
