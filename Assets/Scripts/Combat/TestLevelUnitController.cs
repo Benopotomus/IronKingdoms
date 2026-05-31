@@ -1523,9 +1523,20 @@ namespace IronKingdoms.Combat
         /// </summary>
         private bool IsUnitPawn(GameObject go)
         {
+            if (go == null)
+            {
+                return false;
+            }
+
             for (var i = 0; i < allRuntimeUnits.Count; i++)
             {
-                if (allRuntimeUnits[i].Pawn == go)
+                var pawn = allRuntimeUnits[i]?.Pawn;
+                if (pawn == null)
+                {
+                    continue;
+                }
+
+                if (pawn == go || go.transform.IsChildOf(pawn.transform))
                 {
                     return true;
                 }
