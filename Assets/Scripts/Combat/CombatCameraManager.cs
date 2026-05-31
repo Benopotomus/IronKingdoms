@@ -17,6 +17,9 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(1f)] private float cameraKeyboardPanSpeed = 10f;
         [SerializeField, Min(0.001f)] private float cameraDragPanSensitivity = 0.02f;
         [SerializeField, Min(0.01f)] private float cameraRotationSensitivity = 0.2f;
+        [SerializeField, Min(0.01f)] private float cameraZoomSensitivity = 20f;
+        [SerializeField, Min(CameraOrbitMinimumDistance)] private float cameraMinZoomDistance = 5f;
+        [SerializeField, Min(CameraOrbitMinimumDistance)] private float cameraMaxZoomDistance = 60f;
         [SerializeField, Range(5f, 89f)] private float cameraMinPitch = 25f;
         [SerializeField, Range(5f, 89f)] private float cameraMaxPitch = 75f;
         [SerializeField, Min(0.1f)] private float cameraFocusTransitionSpeed = 12f;
@@ -65,6 +68,7 @@ namespace IronKingdoms.Combat
             }
 
             TickCameraFocusTransition(activeCamera);
+            HandleMouseScrollZoom(activeCamera, isMouseOverUi);
 
             if (!isCameraDragging || !Input.GetMouseButton(MiddleMouseButton))
             {
@@ -95,7 +99,7 @@ namespace IronKingdoms.Combat
             var areaX = (Screen.width - CameraControlsPanelWidth) * 0.5f;
             var areaY = CameraControlsPanelTopMargin;
             GUILayout.BeginArea(new Rect(areaX, areaY, CameraControlsPanelWidth, CameraControlsPanelHeight), "Camera Controls", GUI.skin.window);
-            GUILayout.Label("WASD/Arrows: Pan | MMB Drag: Rotate | Shift+MMB Drag: Pan");
+            GUILayout.Label("WASD/Arrows: Pan | Scroll: Zoom | MMB Drag: Rotate | Shift+MMB Drag: Pan");
             GUILayout.EndArea();
         }
 
@@ -191,6 +195,36 @@ namespace IronKingdoms.Combat
             {
                 isCameraFocusTransitioning = false;
             }
+        }
+
+        private void HandleMouseScrollZoom(Camera activeCamera, bool isMouseOverUi)
+        {
+            if (isMouseOverUi)
+            {
+                return;
+            }
+
+            var scrollDelta = Input.GetAxis("Mouse ScrollWheel");
+            if (Mathf.Abs(scrollDelta) <= InputAxisDeadzone)
+            {
+                return;
+            }
+
+            if (!cameraOrbitPivotInitialized)
+            {
+                InitializeCameraOrbitPivot(activeCamera);
+                if (!cameraOrbitPivotInitialized)
+                {
+                    return;
+                }
+            }
+
+            isCameraFocusTransitioning = false;
+            var minDistance = Mathf.Max(CameraOrbitMinimumDistance, Mathf.Min(cameraMinZoomDistance, cameraMaxZoomDistance));
+            var maxDistance = Mathf.Max(minDistance, Mathf.Max(cameraMinZoomDistance, cameraMaxZoomDistance));
+            cameraOrbitDistance = Mathf.Clamp(cameraOrbitDistance - (scrollDelta * cameraZoomSensitivity), minDistance, maxDistance);
+            var cameraForward = activeCamera.transform.forward;
+            activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
         }
 
         private void InitializeCameraPitch(Camera activeCamera)
