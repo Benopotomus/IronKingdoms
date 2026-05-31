@@ -342,6 +342,7 @@ namespace IronKingdoms.Combat
             // Determine reachability for colour: compare full path length to budget.
             var hasPreviewPath = IsValidPreviewPath(previewPath);
             var withinRange = hasPreviewPath;
+            Vector3? movementStopPoint = null;
             if (hasPreviewPath)
             {
                 var fullLength = 0f;
@@ -351,6 +352,11 @@ namespace IronKingdoms.Combat
                 }
 
                 withinRange = fullLength <= effectiveBudget + PositionArrivalTolerance;
+                var clampedPath = ClampPathToMovementBudget(previewPath, effectiveBudget);
+                if (clampedPath.Count > 0)
+                {
+                    movementStopPoint = clampedPath[clampedPath.Count - 1];
+                }
             }
 
             var pathColor = withinRange
@@ -382,7 +388,7 @@ namespace IronKingdoms.Combat
             }
 
             // Destination marker reflects the effective movement endpoint from the nav path.
-            var dest = hasPreviewPath ? previewPath[previewPath.Count - 1] : hoverPos;
+            var dest = movementStopPoint ?? (hasPreviewPath ? previewPath[previewPath.Count - 1] : hoverPos);
             dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y + 0.01f);
             if (!IsFiniteWorldPoint(dest))
             {
@@ -1513,6 +1519,7 @@ namespace IronKingdoms.Combat
             activeTurnSide = TurnSide.Player;
             ResetMovementForTurn(playerRuntimeUnits);
             selectedUnit = FindFirstAlive(playerRuntimeUnits);
+            UpdateMovePreviewSizeForUnit(selectedUnit);
             selectedMovementOption = MovementStepOption.Advance;
             SetCurrentMode(UnitActionMode.None);
         }
