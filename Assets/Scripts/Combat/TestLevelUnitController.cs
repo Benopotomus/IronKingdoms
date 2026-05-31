@@ -1690,6 +1690,22 @@ namespace IronKingdoms.Combat
             return Mathf.Max(1, Mathf.CeilToInt(segmentDistanceWorldUnits / sampleStep));
         }
 
+        private bool IsUnitInRoughTerrain(RuntimeUnit unit)
+        {
+            var position = unit.Pawn.transform.position;
+            var activeZones = CombatZone.ActiveZones;
+            for (var i = 0; i < activeZones.Count; i++)
+            {
+                var zone = activeZones[i];
+                if (zone != null && zone.ZoneType == CombatZoneType.RoughTerrain && zone.ContainsPoint(position))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private float GetMovementSpeedMultiplierAtPoint(Vector3 worldPoint, float unitRadius = 0f)
         {
             var speedMultiplier = 1f;
@@ -2373,6 +2389,8 @@ namespace IronKingdoms.Combat
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
             GUILayout.Label(BuildHealthBoxes(selectedUnit.Health, selectedUnit.Definition.Stats.health));
             GUILayout.Label($"Speed: {selectedUnit.Definition.Stats.speed:0.0}  |  Move left: {selectedUnit.RemainingMovementThisTurn:0.0}\"");
+            var inRoughTerrain = IsUnitInRoughTerrain(selectedUnit);
+            GUILayout.Label($"In Rough Terrain: {(inRoughTerrain ? "Yes" : "No")}");
             GUILayout.Label($"Model Size: {selectedUnit.Definition.Stats.modelSize.DisplayName()}");
             var selectedWeapon = GetSelectedAttackWeapon(selectedUnit);
             GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
