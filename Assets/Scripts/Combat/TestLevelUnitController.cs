@@ -98,6 +98,7 @@ namespace IronKingdoms.Combat
         [SerializeField] private CombatCameraManager cameraManager;
         [SerializeField] private NavPathBuilder navPathBuilder;
         [SerializeField] private bool autoSpawnOnStart = true;
+        private MatchArmySpawner matchArmySpawner;
 
         private readonly List<RuntimeUnit> playerRuntimeUnits = new();
         private readonly List<RuntimeUnit> enemyRuntimeUnits = new();
@@ -154,6 +155,7 @@ namespace IronKingdoms.Combat
         {
             EnsureCameraManagerAssigned();
             EnsureNavPathBuilderAssigned();
+            EnsureMatchArmySpawnerAssigned();
         }
 
         private void Start()
@@ -208,6 +210,11 @@ namespace IronKingdoms.Combat
                 go.transform.SetParent(transform);
                 navPathBuilder = go.AddComponent<NavPathBuilder>();
             }
+        }
+
+        private void EnsureMatchArmySpawnerAssigned()
+        {
+            matchArmySpawner ??= new MatchArmySpawner(navPathBuilder);
         }
 
         private void BuildVisualizers()
@@ -595,18 +602,14 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var origin = anchor == null ? Vector3.zero : anchor.position;
-            for (var i = 0; i < units.Count; i++)
+            EnsureMatchArmySpawnerAssigned();
+            var placements = matchArmySpawner.BuildPlacements(units, anchor, spawnSpacing);
+            for (var i = 0; i < placements.Count; i++)
             {
-                var unitDefinition = units[i];
-                if (unitDefinition == null)
-                {
-                    continue;
-                }
-
+                var unitDefinition = placements[i].UnitDefinition;
                 unitDefinition.Stats.EnsureWeaponDefaults();
                 var pawnScale = unitDefinition.Stats.modelSize.GetPawnScale();
-                var spawnPos = origin + new Vector3(i * spawnSpacing, GroundYPosition, 0f);
+                var spawnPos = placements[i].Position;
 
                 GameObject pawn;
                 if (unitDefinition.VisualPrefab != null)
