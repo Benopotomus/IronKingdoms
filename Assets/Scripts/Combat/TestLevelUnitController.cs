@@ -343,6 +343,7 @@ namespace IronKingdoms.Combat
             // Determine reachability for colour: compare full path length to budget.
             var hasPreviewPath = IsValidPreviewPath(previewPath);
             var withinRange = hasPreviewPath;
+            Vector3? movementStopPoint = null;
             if (hasPreviewPath)
             {
                 var fullLength = 0f;
@@ -352,6 +353,10 @@ namespace IronKingdoms.Combat
                 }
 
                 withinRange = fullLength <= effectiveBudget + PositionArrivalTolerance;
+                if (TryGetPathStopPointAtMovementBudget(previewPath, effectiveBudget, out var stopPoint))
+                {
+                    movementStopPoint = stopPoint;
+                }
             }
 
             var pathColor = withinRange
@@ -383,7 +388,7 @@ namespace IronKingdoms.Combat
             }
 
             // Destination marker reflects the effective movement endpoint from the nav path.
-            var dest = hasPreviewPath ? previewPath[previewPath.Count - 1] : hoverPos;
+            var dest = movementStopPoint ?? (hasPreviewPath ? previewPath[previewPath.Count - 1] : hoverPos);
             dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y + 0.01f);
             if (!IsFiniteWorldPoint(dest))
             {
@@ -1540,11 +1545,49 @@ namespace IronKingdoms.Combat
             return result;
         }
 
+        private static bool TryGetPathStopPointAtMovementBudget(IReadOnlyList<Vector3> waypoints, float budget, out Vector3 stopPoint)
+        {
+            stopPoint = default;
+            if (waypoints == null || waypoints.Count == 0)
+            {
+                return false;
+            }
+
+            budget = Mathf.Max(0f, budget);
+            stopPoint = waypoints[0];
+            var distanceCovered = 0f;
+            for (var i = 1; i < waypoints.Count; i++)
+            {
+                var segmentLength = Vector3.Distance(waypoints[i - 1], waypoints[i]);
+                if (distanceCovered + segmentLength >= budget - MovementBudgetEpsilon)
+                {
+                    var segmentRemaining = budget - distanceCovered;
+                    if (segmentRemaining > MovementBudgetEpsilon && segmentLength > MovementBudgetEpsilon)
+                    {
+                        var t = segmentRemaining / segmentLength;
+                        stopPoint = Vector3.Lerp(waypoints[i - 1], waypoints[i], t);
+                    }
+                    else
+                    {
+                        stopPoint = waypoints[i - 1];
+                    }
+
+                    return true;
+                }
+
+                distanceCovered += segmentLength;
+                stopPoint = waypoints[i];
+            }
+
+            return true;
+        }
+
         private void StartPlayerTurn()
         {
             activeTurnSide = TurnSide.Player;
             ResetMovementForTurn(playerRuntimeUnits);
             selectedUnit = FindFirstAlive(playerRuntimeUnits);
+            UpdateMovePreviewSizeForUnit(selectedUnit);
             selectedMovementOption = MovementStepOption.Advance;
             SetCurrentMode(UnitActionMode.None);
         }
