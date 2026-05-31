@@ -70,13 +70,15 @@ namespace IronKingdoms.Combat
                         break;
                     }
 
-                    candidateDistance += Mathf.Max(SpawnLineSearchStep, unitRadius * 0.5f);
+                    candidateDistance += unitRadius + AdditionalBaseClearance;
                 }
 
                 if (!placed)
                 {
                     var fallback = origin + lineDirection * candidateDistance;
                     var snappedFallback = SnapToSpawnGraph(fallback, unitDefinition.Stats.modelSize);
+                    Debug.LogWarning(
+                        $"Failed to find fully clear spawn slot for '{unitDefinition.DisplayName}' after {MaxPlacementAttempts} attempts; using best-effort placement.");
                     placements.Add(new SpawnPlacement(unitDefinition, snappedFallback, unitRadius, candidateDistance));
                 }
             }
