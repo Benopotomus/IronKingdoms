@@ -1138,7 +1138,7 @@ namespace IronKingdoms.Combat
             var enemyPosition = enemy.Pawn.transform.position;
             var targetPosition = target.Pawn.transform.position;
             var distance = GetPlanarDistance(enemyPosition, targetPosition);
-            var desiredRange = GetLongestWeaponRange(enemy);
+            var desiredRange = GetLongestWeaponRange(enemy) + GetCombinedUnitRadiiInches(enemy, target);
             if (distance <= desiredRange * AiInRangeTolerance)
             {
                 enemy.MoveTarget = null;
@@ -1174,7 +1174,7 @@ namespace IronKingdoms.Combat
             }
 
             var distance = GetPlanarDistance(unit.Pawn.transform.position, target.Pawn.transform.position);
-            var weapon = GetBestWeaponForDistance(unit, distance);
+            var weapon = GetBestWeaponForDistance(unit, target, distance);
             if (weapon == null)
             {
                 return false;
@@ -1856,7 +1856,7 @@ namespace IronKingdoms.Combat
 
             var weapon = GetSelectedAttackWeapon(selectedUnit);
             var center = selectedUnit.Pawn.transform.position;
-            var radius = weapon.Range;
+            var radius = weapon.Range + GetUnitRadiusInches(selectedUnit);
             radius = InchesToWorldUnits(radius);
             var color = new Color(0.95f, 0.85f, 0.1f, 0.7f);
             weaponRangeRingLine.enabled = true;
@@ -2144,18 +2144,19 @@ namespace IronKingdoms.Combat
             return range;
         }
 
-        private static WeaponProfile GetBestWeaponForDistance(RuntimeUnit unit, float distance)
+        private static WeaponProfile GetBestWeaponForDistance(RuntimeUnit attacker, RuntimeUnit target, float distance)
         {
-            if (unit.Weapons == null || unit.Weapons.Length == 0)
+            if (attacker?.Weapons == null || attacker.Weapons.Length == 0)
             {
                 return null;
             }
 
+            var combinedRadii = GetCombinedUnitRadiiInches(attacker, target);
             WeaponProfile best = null;
-            for (var i = 0; i < unit.Weapons.Length; i++)
+            for (var i = 0; i < attacker.Weapons.Length; i++)
             {
-                var weapon = unit.Weapons[i];
-                if (distance > weapon.Range)
+                var weapon = attacker.Weapons[i];
+                if (distance > weapon.Range + combinedRadii)
                 {
                     continue;
                 }
@@ -2177,7 +2178,17 @@ namespace IronKingdoms.Combat
             }
 
             var distance = GetPlanarDistance(attacker.Pawn.transform.position, target.Pawn.transform.position);
-            return distance <= weapon.Range + WorldUnitsToInches(PositionArrivalTolerance);
+            return distance <= weapon.Range + GetCombinedUnitRadiiInches(attacker, target) + WorldUnitsToInches(PositionArrivalTolerance);
+        }
+
+        private static float GetCombinedUnitRadiiInches(RuntimeUnit first, RuntimeUnit second)
+        {
+            return GetUnitRadiusInches(first) + GetUnitRadiusInches(second);
+        }
+
+        private static float GetUnitRadiusInches(RuntimeUnit unit)
+        {
+            return WorldUnitsToInches(GetUnitCollisionRadius(unit));
         }
 
         private static float GetPlanarDistance(Vector3 from, Vector3 to)
