@@ -302,6 +302,12 @@ namespace IronKingdoms.Combat
                 destinationMarkerObject.SetActive(false);
                 return;
             }
+            if (!IsFiniteWorldPoint(hoverPos))
+            {
+                movementPathLine.enabled = false;
+                destinationMarkerObject.SetActive(false);
+                return;
+            }
 
             var unitPos = GetPawnFeetPosition(selectedUnit);
 
@@ -335,12 +341,12 @@ namespace IronKingdoms.Combat
                     }
 
                     var collisionAwarePath = BuildPathAvoidingUnits(selectedUnit, result);
-                    previewPath = collisionAwarePath.Count >= 2 ? collisionAwarePath : null;
+                    previewPath = IsValidPreviewPath(collisionAwarePath) ? collisionAwarePath : null;
                 });
             }
 
             // Determine reachability for colour: compare full path length to budget.
-            var hasPreviewPath = previewPath != null && previewPath.Count >= 2;
+            var hasPreviewPath = IsValidPreviewPath(previewPath);
             var withinRange = hasPreviewPath;
             if (hasPreviewPath)
             {
@@ -382,9 +388,15 @@ namespace IronKingdoms.Combat
             }
 
             // Destination marker reflects the effective movement endpoint after path collision handling.
-            destinationMarkerObject.SetActive(true);
             var dest = hasPreviewPath ? previewPath[previewPath.Count - 1] : hoverPos;
             dest.y = Mathf.Max(GroundYPosition + 0.01f, dest.y + 0.01f);
+            if (!IsFiniteWorldPoint(dest))
+            {
+                destinationMarkerObject.SetActive(false);
+                return;
+            }
+
+            destinationMarkerObject.SetActive(true);
             destinationMarkerObject.transform.position = dest;
             var markerRenderer = destinationMarkerObject.GetComponent<Renderer>();
             if (markerRenderer != null)
@@ -1604,6 +1616,29 @@ namespace IronKingdoms.Combat
             }
 
             return unit.Pawn.transform.position;
+        }
+
+        private static bool IsValidPreviewPath(IReadOnlyList<Vector3> path)
+        {
+            if (path == null || path.Count < 2)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < path.Count; i++)
+            {
+                if (!IsFiniteWorldPoint(path[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsFiniteWorldPoint(Vector3 point)
+        {
+            return float.IsFinite(point.x) && float.IsFinite(point.y) && float.IsFinite(point.z);
         }
 
         // The unit parameter is retained for API consistency and potential future per-unit
