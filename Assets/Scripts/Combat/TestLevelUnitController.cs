@@ -337,7 +337,7 @@ namespace IronKingdoms.Combat
                     }
 
                     previewPath = IsValidPreviewPath(result) ? result : null;
-                });
+                }, graphMask);
             }
 
             // Determine reachability for colour: compare full path length to budget.
