@@ -13,6 +13,9 @@ namespace IronKingdoms.Combat
 
     public static class ModelSizeExtensions
     {
+        private const float MillimetersPerWorldUnit = 30f;
+        private const float MillimetersPerInch = 25.4f;
+
         public static float BaseDiameterMillimeters(this ModelSize modelSize)
         {
             return modelSize switch
@@ -24,6 +27,11 @@ namespace IronKingdoms.Combat
                 ModelSize.Base120mm => 120f,
                 _ => 30f
             };
+        }
+
+        public static float BaseDiameterWorldUnits(this ModelSize modelSize)
+        {
+            return modelSize.BaseDiameterMillimeters() / MillimetersPerWorldUnit;
         }
 
         public static float VolumeHeightInches(this ModelSize modelSize)
@@ -39,6 +47,11 @@ namespace IronKingdoms.Combat
             };
         }
 
+        public static float VolumeHeightWorldUnits(this ModelSize modelSize)
+        {
+            return modelSize.VolumeHeightInches() * MillimetersPerInch / MillimetersPerWorldUnit;
+        }
+
         public static string DisplayName(this ModelSize modelSize)
         {
             return $"{modelSize.BaseDiameterMillimeters():0}mm / {modelSize.VolumeHeightInches():0.##}\"";
@@ -46,9 +59,9 @@ namespace IronKingdoms.Combat
 
         public static Vector3 GetPawnScale(this ModelSize modelSize)
         {
-            var diameterScale = modelSize.BaseDiameterMillimeters() / 30f;
-            var heightScale = modelSize.VolumeHeightInches() / 1.75f;
-            return new Vector3(diameterScale, heightScale, diameterScale);
+            var diameter = modelSize.BaseDiameterWorldUnits();
+            var halfHeight = modelSize.VolumeHeightWorldUnits() * 0.5f;
+            return new Vector3(diameter, halfHeight, diameter);
         }
     }
 }
