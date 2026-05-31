@@ -17,6 +17,7 @@ namespace IronKingdoms.Editor
         private int defense = 12;
         private int armor = 14;
         private int health = 10;
+        private UnitAdvantage advantages = UnitAdvantage.None;
         private int startingResource;
         private readonly List<WeaponProfile> weapons = new() { null };
         private string designNotes = string.Empty;
@@ -43,6 +44,7 @@ namespace IronKingdoms.Editor
             defense = EditorGUILayout.IntField("Defense", defense);
             armor = EditorGUILayout.IntField("Armor", armor);
             health = EditorGUILayout.IntField("Health", health);
+            advantages = (UnitAdvantage)EditorGUILayout.EnumFlagsField("Advantages", advantages);
             startingResource = EditorGUILayout.IntField("Starting Resource", startingResource);
             DrawWeaponReferenceList(weapons);
             designNotes = EditorGUILayout.TextArea(designNotes, GUILayout.MinHeight(60f));
@@ -94,6 +96,7 @@ namespace IronKingdoms.Editor
             statsProperty.FindPropertyRelative("defense").intValue = defense;
             statsProperty.FindPropertyRelative("armor").intValue = armor;
             statsProperty.FindPropertyRelative("health").intValue = health;
+            statsProperty.FindPropertyRelative("advantages").intValue = (int)advantages;
             statsProperty.FindPropertyRelative("startingResource").intValue = startingResource;
             var validWeapons = new List<WeaponProfile>();
             for (var i = 0; i < weapons.Count; i++)

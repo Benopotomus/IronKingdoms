@@ -366,13 +366,13 @@ namespace IronKingdoms.Combat
             if (hasPreviewPath)
             {
                 var previewUnitRadius = GetUnitCollisionRadius(selectedUnit);
-                var fullLength = CalculatePathMovementCostInInches(previewPath, previewUnitRadius);
+                var fullLength = CalculatePathMovementCostInInches(selectedUnit, previewPath, previewUnitRadius);
                 stagedMoveAmountInches = Mathf.Min(fullLength, effectiveBudget);
-                stagedRoughTerrainInches = CalculatePathRoughTerrainPhysicalInches(previewPath, stagedMoveAmountInches, previewUnitRadius);
+                stagedRoughTerrainInches = CalculatePathRoughTerrainPhysicalInches(selectedUnit, previewPath, stagedMoveAmountInches, previewUnitRadius);
                 hasStagedMoveAmount = true;
 
                 withinRange = fullLength <= effectiveBudget + WorldUnitsToInches(PositionArrivalTolerance);
-                if (TryGetPathStopPointAtMovementBudget(previewPath, effectiveBudget, out var stopPoint, previewUnitRadius))
+                if (TryGetPathStopPointAtMovementBudget(selectedUnit, previewPath, effectiveBudget, out var stopPoint, previewUnitRadius))
                 {
                     movementStopPoint = stopPoint;
                 }
@@ -1033,7 +1033,7 @@ namespace IronKingdoms.Combat
 
                 var targetPosition = unit.MoveTarget.Value;
                 var unitRadius = GetUnitCollisionRadius(unit);
-                var terrainSpeedMultiplier = GetMovementSpeedMultiplierAtPoint(unit.Pawn.transform.position, unitRadius);
+                var terrainSpeedMultiplier = GetMovementSpeedMultiplierAtPoint(unit, unit.Pawn.transform.position, unitRadius);
                 var maxStepThisFrame = InchesToWorldUnits(unit.Definition.Stats.speed * terrainSpeedMultiplier) * deltaTime;
                 var allowedStep = Mathf.Min(maxStepThisFrame, InchesToWorldUnits(unit.RemainingMovementThisTurn));
                 if (allowedStep <= 0f)
@@ -1052,7 +1052,7 @@ namespace IronKingdoms.Combat
                 nextPosition = ConstrainPositionToNavmesh(unit, nextPosition);
                 var movedDistance = Vector3.Distance(currentPosition, nextPosition);
                 unit.Pawn.transform.position = nextPosition;
-                var movementCost = CalculateMovementCostForSegmentInInches(currentPosition, nextPosition, unitRadius);
+                var movementCost = CalculateMovementCostForSegmentInInches(unit, currentPosition, nextPosition, unitRadius);
                 unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movementCost);
 
                 var reachedCurrentTarget = Vector3.Distance(nextPosition, targetPosition) <= PositionArrivalTolerance
@@ -1329,7 +1329,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var waypoints = ClampPathToMovementBudget(smoothedPath, movementBudget, GetUnitCollisionRadius(unit));
+            var waypoints = ClampPathToMovementBudget(unit, smoothedPath, movementBudget, GetUnitCollisionRadius(unit));
             if (waypoints.Count >= 2)
             {
                 unit.PathWaypoints = waypoints;
@@ -1549,7 +1549,7 @@ namespace IronKingdoms.Combat
             return navPathBuilder.GetGraphMaskForModelSizeOrDefault(unit.Definition.Stats.modelSize);
         }
 
-        private List<Vector3> ClampPathToMovementBudget(IReadOnlyList<Vector3> waypoints, float budget, float unitRadius = 0f)
+        private List<Vector3> ClampPathToMovementBudget(RuntimeUnit unit, IReadOnlyList<Vector3> waypoints, float budget, float unitRadius = 0f)
         {
             var result = new List<Vector3>();
             if (waypoints == null || waypoints.Count == 0)
@@ -1567,7 +1567,7 @@ namespace IronKingdoms.Combat
 
             for (var i = 1; i < waypoints.Count; i++)
             {
-                if (TryGetSegmentStopPointAtMovementBudget(waypoints[i - 1], waypoints[i], budget - distanceCovered, out var segmentStopPoint, unitRadius))
+                if (TryGetSegmentStopPointAtMovementBudget(unit, waypoints[i - 1], waypoints[i], budget - distanceCovered, out var segmentStopPoint, unitRadius))
                 {
                     result.Add(segmentStopPoint);
 
@@ -1575,13 +1575,13 @@ namespace IronKingdoms.Combat
                 }
 
                 result.Add(waypoints[i]);
-                distanceCovered += CalculateMovementCostForSegmentInInches(waypoints[i - 1], waypoints[i], unitRadius);
+                distanceCovered += CalculateMovementCostForSegmentInInches(unit, waypoints[i - 1], waypoints[i], unitRadius);
             }
 
             return result;
         }
 
-        private bool TryGetPathStopPointAtMovementBudget(IReadOnlyList<Vector3> waypoints, float budget, out Vector3 stopPoint, float unitRadius = 0f)
+        private bool TryGetPathStopPointAtMovementBudget(RuntimeUnit unit, IReadOnlyList<Vector3> waypoints, float budget, out Vector3 stopPoint, float unitRadius = 0f)
         {
             stopPoint = default;
             if (waypoints == null || waypoints.Count == 0)
@@ -1594,19 +1594,19 @@ namespace IronKingdoms.Combat
             var distanceCovered = 0f;
             for (var i = 1; i < waypoints.Count; i++)
             {
-                if (TryGetSegmentStopPointAtMovementBudget(waypoints[i - 1], waypoints[i], budget - distanceCovered, out stopPoint, unitRadius))
+                if (TryGetSegmentStopPointAtMovementBudget(unit, waypoints[i - 1], waypoints[i], budget - distanceCovered, out stopPoint, unitRadius))
                 {
                     return true;
                 }
 
-                distanceCovered += CalculateMovementCostForSegmentInInches(waypoints[i - 1], waypoints[i], unitRadius);
+                distanceCovered += CalculateMovementCostForSegmentInInches(unit, waypoints[i - 1], waypoints[i], unitRadius);
                 stopPoint = waypoints[i];
             }
 
             return true;
         }
 
-        private float CalculatePathMovementCostInInches(IReadOnlyList<Vector3> waypoints, float unitRadius = 0f)
+        private float CalculatePathMovementCostInInches(RuntimeUnit unit, IReadOnlyList<Vector3> waypoints, float unitRadius = 0f)
         {
             if (waypoints == null || waypoints.Count < 2)
             {
@@ -1616,13 +1616,13 @@ namespace IronKingdoms.Combat
             var movementCost = 0f;
             for (var i = 1; i < waypoints.Count; i++)
             {
-                movementCost += CalculateMovementCostForSegmentInInches(waypoints[i - 1], waypoints[i], unitRadius);
+                movementCost += CalculateMovementCostForSegmentInInches(unit, waypoints[i - 1], waypoints[i], unitRadius);
             }
 
             return movementCost;
         }
 
-        private float CalculateMovementCostForSegmentInInches(Vector3 from, Vector3 to, float unitRadius = 0f)
+        private float CalculateMovementCostForSegmentInInches(RuntimeUnit unit, Vector3 from, Vector3 to, float unitRadius = 0f)
         {
             var totalDistance = Vector3.Distance(from, to);
             if (totalDistance <= MovementBudgetEpsilon)
@@ -1640,7 +1640,7 @@ namespace IronKingdoms.Combat
                 var segmentEnd = Vector3.Lerp(from, to, segmentEndT);
                 var samplePoint = Vector3.Lerp(segmentStart, segmentEnd, 0.5f);
                 var segmentDistanceInches = WorldUnitsToInches(Vector3.Distance(segmentStart, segmentEnd));
-                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(samplePoint, unitRadius);
+                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(unit, samplePoint, unitRadius);
                 movementCost += segmentDistanceInches / speedMultiplier;
             }
 
@@ -1649,7 +1649,7 @@ namespace IronKingdoms.Combat
 
         // Returns the total physical distance (in inches) traveled through rough-terrain zones
         // along the given path, walking only as far as the movement-cost budget allows.
-        private float CalculatePathRoughTerrainPhysicalInches(IReadOnlyList<Vector3> waypoints, float budget, float unitRadius = 0f)
+        private float CalculatePathRoughTerrainPhysicalInches(RuntimeUnit unit, IReadOnlyList<Vector3> waypoints, float budget, float unitRadius = 0f)
         {
             if (waypoints == null || waypoints.Count < 2)
             {
@@ -1666,7 +1666,7 @@ namespace IronKingdoms.Combat
                     break;
                 }
 
-                roughInches += CalculateSegmentRoughTerrainPhysicalInches(waypoints[i - 1], waypoints[i], remaining, out var segmentCostConsumed, unitRadius);
+                roughInches += CalculateSegmentRoughTerrainPhysicalInches(unit, waypoints[i - 1], waypoints[i], remaining, out var segmentCostConsumed, unitRadius);
                 costCovered += segmentCostConsumed;
             }
 
@@ -1675,7 +1675,7 @@ namespace IronKingdoms.Combat
 
         // Returns the physical rough-terrain inches for one segment, consuming up to budgetRemaining
         // movement cost. costConsumed receives the actual movement cost used from this segment.
-        private float CalculateSegmentRoughTerrainPhysicalInches(Vector3 from, Vector3 to, float budgetRemaining, out float costConsumed, float unitRadius = 0f)
+        private float CalculateSegmentRoughTerrainPhysicalInches(RuntimeUnit unit, Vector3 from, Vector3 to, float budgetRemaining, out float costConsumed, float unitRadius = 0f)
         {
             costConsumed = 0f;
             var roughInches = 0f;
@@ -1694,9 +1694,9 @@ namespace IronKingdoms.Combat
                 var subEnd = Vector3.Lerp(from, to, subEndT);
                 var samplePoint = Vector3.Lerp(subStart, subEnd, 0.5f);
                 var subDistInches = WorldUnitsToInches(Vector3.Distance(subStart, subEnd));
-                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(samplePoint, unitRadius);
+                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(unit, samplePoint, unitRadius);
                 var subCost = subDistInches / speedMultiplier;
-                var isRoughTerrain = speedMultiplier < 1f - MovementBudgetEpsilon;
+                var isRoughTerrain = IsPointInRoughTerrain(samplePoint, unitRadius);
 
                 if (costConsumed + subCost > budgetRemaining + MovementBudgetEpsilon)
                 {
@@ -1723,7 +1723,7 @@ namespace IronKingdoms.Combat
             return roughInches;
         }
 
-        private bool TryGetSegmentStopPointAtMovementBudget(Vector3 segmentStart, Vector3 segmentEnd, float budgetRemaining, out Vector3 stopPoint, float unitRadius = 0f)
+        private bool TryGetSegmentStopPointAtMovementBudget(RuntimeUnit unit, Vector3 segmentStart, Vector3 segmentEnd, float budgetRemaining, out Vector3 stopPoint, float unitRadius = 0f)
         {
             stopPoint = segmentStart;
             if (budgetRemaining <= MovementBudgetEpsilon)
@@ -1747,7 +1747,7 @@ namespace IronKingdoms.Combat
                 var subSegmentEnd = Vector3.Lerp(segmentStart, segmentEnd, subSegmentEndT);
                 var samplePoint = Vector3.Lerp(subSegmentStart, subSegmentEnd, 0.5f);
                 var subSegmentDistanceInches = WorldUnitsToInches(Vector3.Distance(subSegmentStart, subSegmentEnd));
-                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(samplePoint, unitRadius);
+                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(unit, samplePoint, unitRadius);
                 var subSegmentCost = subSegmentDistanceInches / speedMultiplier;
 
                 if (movementCostCovered + subSegmentCost >= budgetRemaining - MovementBudgetEpsilon)
@@ -1794,8 +1794,33 @@ namespace IronKingdoms.Combat
             return false;
         }
 
-        private float GetMovementSpeedMultiplierAtPoint(Vector3 worldPoint, float unitRadius = 0f)
+        private bool IsPointInRoughTerrain(Vector3 worldPoint, float unitRadius = 0f)
         {
+            var activeZones = CombatZone.ActiveZones;
+            for (var i = 0; i < activeZones.Count; i++)
+            {
+                var zone = activeZones[i];
+                if (zone == null || !zone.IsMovementZone)
+                {
+                    continue;
+                }
+
+                if (zone.IntersectsDisc(worldPoint, unitRadius))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private float GetMovementSpeedMultiplierAtPoint(RuntimeUnit unit, Vector3 worldPoint, float unitRadius = 0f)
+        {
+            if (unit?.Definition?.Stats != null && unit.Definition.Stats.HasAdvantage(UnitAdvantage.Pathfinder))
+            {
+                return 1f;
+            }
+
             var speedMultiplier = 1f;
             var activeZones = CombatZone.ActiveZones;
             for (var i = 0; i < activeZones.Count; i++)
