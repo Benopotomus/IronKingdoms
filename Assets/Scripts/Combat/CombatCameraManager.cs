@@ -37,6 +37,12 @@ namespace IronKingdoms.Combat
 
         public Camera ActiveCamera => targetCamera != null ? targetCamera : Camera.main;
 
+        private void OnValidate()
+        {
+            cameraMinZoomDistance = Mathf.Max(CameraOrbitMinimumDistance, cameraMinZoomDistance);
+            cameraMaxZoomDistance = Mathf.Max(cameraMinZoomDistance, cameraMaxZoomDistance);
+        }
+
         public void Tick(bool isMouseOverUi)
         {
             var activeCamera = ActiveCamera;
@@ -220,8 +226,8 @@ namespace IronKingdoms.Combat
             }
 
             isCameraFocusTransitioning = false;
-            var minDistance = Mathf.Max(CameraOrbitMinimumDistance, Mathf.Min(cameraMinZoomDistance, cameraMaxZoomDistance));
-            var maxDistance = Mathf.Max(minDistance, Mathf.Max(cameraMinZoomDistance, cameraMaxZoomDistance));
+            var minDistance = Mathf.Max(CameraOrbitMinimumDistance, cameraMinZoomDistance);
+            var maxDistance = Mathf.Max(minDistance, cameraMaxZoomDistance);
             cameraOrbitDistance = Mathf.Clamp(cameraOrbitDistance - (scrollDelta * cameraZoomSensitivity), minDistance, maxDistance);
             var cameraForward = activeCamera.transform.forward;
             activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
