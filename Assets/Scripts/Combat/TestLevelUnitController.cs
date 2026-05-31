@@ -340,7 +340,7 @@ namespace IronKingdoms.Combat
                         return;
                     }
 
-                    var collisionAwarePath = BuildPathAvoidingUnits(selectedUnit, result);
+                    var collisionAwarePath = result; // BuildPathAvoidingUnits(selectedUnit, result);
                     previewPath = IsValidPreviewPath(collisionAwarePath) ? collisionAwarePath : null;
                 });
             }
@@ -1284,7 +1284,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var collisionAwarePath = BuildPathAvoidingUnits(unit, smoothedPath);
+            var collisionAwarePath = smoothedPath; //BuildPathAvoidingUnits(unit, smoothedPath);
             var waypoints = ClampPathToMovementBudget(collisionAwarePath, movementBudget);
             if (waypoints.Count >= 2)
             {

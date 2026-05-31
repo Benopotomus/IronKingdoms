@@ -114,7 +114,7 @@ namespace IronKingdoms.Combat
             }
 
             path.vectorPath[0] = pinnedStart;
-            
+            path.vectorPath.Add(pinnedEnd);
             var smoothed = instance.FunnelSmooth(path);
             
             smoothed[0] = pinnedStart;
