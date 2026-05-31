@@ -14,6 +14,10 @@ namespace IronKingdoms.Combat
         private const float PositionArrivalTolerance = 0.05f;
         private const float NavmeshContainmentTolerance = 0.02f;
         private const float MovementBudgetEpsilon = 0.001f;
+        private const float MillimetersPerInch = 25.4f;
+        private const float MillimetersPerWorldUnit = 30f;
+        private const float WorldUnitsPerInch = MillimetersPerInch / MillimetersPerWorldUnit;
+        private const float InchesPerWorldUnit = MillimetersPerWorldUnit / MillimetersPerInch;
         private const float VisualizerLineWidth = 0.06f;
         // 5 mm physical base height: cylinder native height = 2 units, base scale = 30 mm per unit → scaleY = 5/(30×2)
         private const float PawnBaseHeightScale = 5f / 60f;
@@ -349,10 +353,10 @@ namespace IronKingdoms.Combat
                 var fullLength = 0f;
                 for (var i = 1; i < previewPath.Count; i++)
                 {
-                    fullLength += Vector3.Distance(previewPath[i - 1], previewPath[i]);
+                    fullLength += WorldUnitsToInches(Vector3.Distance(previewPath[i - 1], previewPath[i]));
                 }
 
-                withinRange = fullLength <= effectiveBudget + PositionArrivalTolerance;
+                withinRange = fullLength <= effectiveBudget + WorldUnitsToInches(PositionArrivalTolerance);
                 if (TryGetPathStopPointAtMovementBudget(previewPath, effectiveBudget, out var stopPoint))
                 {
                     movementStopPoint = stopPoint;
@@ -1011,8 +1015,8 @@ namespace IronKingdoms.Combat
                 }
 
                 var targetPosition = unit.MoveTarget.Value;
-                var maxStepThisFrame = unit.Definition.Stats.speed * deltaTime;
-                var allowedStep = Mathf.Min(maxStepThisFrame, unit.RemainingMovementThisTurn);
+                var maxStepThisFrame = InchesToWorldUnits(unit.Definition.Stats.speed) * deltaTime;
+                var allowedStep = Mathf.Min(maxStepThisFrame, InchesToWorldUnits(unit.RemainingMovementThisTurn));
                 if (allowedStep <= 0f)
                 {
                     unit.MoveTarget = null;
@@ -1029,7 +1033,7 @@ namespace IronKingdoms.Combat
                 nextPosition = ConstrainPositionToNavmesh(unit, nextPosition);
                 var movedDistance = Vector3.Distance(currentPosition, nextPosition);
                 unit.Pawn.transform.position = nextPosition;
-                unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movedDistance);
+                unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - WorldUnitsToInches(movedDistance));
 
                 var reachedCurrentTarget = Vector3.Distance(nextPosition, targetPosition) <= PositionArrivalTolerance
                     || unit.RemainingMovementThisTurn <= MovementBudgetEpsilon;
@@ -1524,7 +1528,7 @@ namespace IronKingdoms.Combat
 
             for (var i = 1; i < waypoints.Count; i++)
             {
-                var segmentLength = Vector3.Distance(waypoints[i - 1], waypoints[i]);
+                var segmentLength = WorldUnitsToInches(Vector3.Distance(waypoints[i - 1], waypoints[i]));
                 if (distanceCovered + segmentLength >= budget - MovementBudgetEpsilon)
                 {
                     var segmentRemaining = budget - distanceCovered;
@@ -1557,7 +1561,7 @@ namespace IronKingdoms.Combat
             var distanceCovered = 0f;
             for (var i = 1; i < waypoints.Count; i++)
             {
-                var segmentLength = Vector3.Distance(waypoints[i - 1], waypoints[i]);
+                var segmentLength = WorldUnitsToInches(Vector3.Distance(waypoints[i - 1], waypoints[i]));
                 if (distanceCovered + segmentLength >= budget - MovementBudgetEpsilon)
                 {
                     var segmentRemaining = budget - distanceCovered;
@@ -1721,6 +1725,7 @@ namespace IronKingdoms.Combat
             var weapon = GetSelectedAttackWeapon(selectedUnit);
             var center = selectedUnit.Pawn.transform.position;
             var radius = weapon.Range;
+            radius = InchesToWorldUnits(radius);
             var color = new Color(0.95f, 0.85f, 0.1f, 0.7f);
             weaponRangeRingLine.enabled = true;
             weaponRangeRingLine.startColor = color;
@@ -2040,14 +2045,24 @@ namespace IronKingdoms.Combat
             }
 
             var distance = GetPlanarDistance(attacker.Pawn.transform.position, target.Pawn.transform.position);
-            return distance <= weapon.Range + PositionArrivalTolerance;
+            return distance <= weapon.Range + WorldUnitsToInches(PositionArrivalTolerance);
         }
 
         private static float GetPlanarDistance(Vector3 from, Vector3 to)
         {
             var delta = to - from;
             delta.y = 0f;
-            return delta.magnitude;
+            return WorldUnitsToInches(delta.magnitude);
+        }
+
+        private static float InchesToWorldUnits(float inches)
+        {
+            return inches * WorldUnitsPerInch;
+        }
+
+        private static float WorldUnitsToInches(float worldUnits)
+        {
+            return worldUnits * InchesPerWorldUnit;
         }
 
         private void UpdateHoveredEnemy()
