@@ -72,7 +72,7 @@ namespace IronKingdoms.Combat
             }
 
             FlushPendingNavmeshUpdates();
-            to = AstarPath.active.GetNearest(to).position;
+            to = SnapToWalkablePosition(to);
             
             var path = ABPath.Construct(from, to, p =>
             {
@@ -95,6 +95,7 @@ namespace IronKingdoms.Combat
             }
 
             FlushPendingNavmeshUpdates();
+            to = SnapToWalkablePosition(to);
             var path = ABPath.Construct(from, to);
             AstarPath.StartPath(path);
             AstarPath.BlockUntilCalculated(path);
@@ -149,6 +150,28 @@ namespace IronKingdoms.Combat
 
             AstarPath.active.FlushGraphUpdates();
             pendingNavmeshUpdate = false;
+        }
+
+        /// <summary>
+        /// Snaps a world-space point to the nearest walkable navmesh point.
+        /// Falls back to any nearest node when no walkable node is found, then
+        /// returns the original position if no node is available at all.
+        /// </summary>
+        private static Vector3 SnapToWalkablePosition(Vector3 worldPosition)
+        {
+            if (AstarPath.active == null)
+            {
+                return worldPosition;
+            }
+
+            var walkableNearest = AstarPath.active.GetNearest(worldPosition, NearestNodeConstraint.Walkable);
+            if (walkableNearest.node != null)
+            {
+                return walkableNearest.position;
+            }
+
+            var nearest = AstarPath.active.GetNearest(worldPosition);
+            return nearest.node != null ? nearest.position : worldPosition;
         }
         
     }
