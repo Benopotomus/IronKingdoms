@@ -326,6 +326,7 @@ namespace IronKingdoms.Combat
                 previewPathPending = true;
 
                 UpdateUnitNavmeshCutActivation(selectedUnit);
+                var graphMask = GetPathGraphMask(selectedUnit);
                 navPathBuilder.RequestAsync(unitPos, hoverPos, result =>
                 {
                     previewPathPending = false;
@@ -687,6 +688,7 @@ namespace IronKingdoms.Combat
         private void UpdateUnitNavmeshCutActivation(RuntimeUnit pathingUnit = null)
         {
             var pathingRadius = pathingUnit != null ? GetUnitCollisionRadius(pathingUnit) : 0f;
+            var pathingGraphMask = GetPathGraphMask(pathingUnit);
             var navmeshCutChanged = false;
             for (var i = 0; i < allRuntimeUnits.Count; i++)
             {
@@ -699,6 +701,23 @@ namespace IronKingdoms.Combat
                 if (unit.NavmeshCut == null)
                 {
                     continue;
+                }
+
+                if (unit.NavmeshCut.graphMask != pathingGraphMask)
+                {
+                    var cutWasEnabled = unit.NavmeshCut.enabled;
+                    if (cutWasEnabled)
+                    {
+                        unit.NavmeshCut.enabled = false;
+                    }
+
+                    unit.NavmeshCut.graphMask = pathingGraphMask;
+                    if (cutWasEnabled)
+                    {
+                        unit.NavmeshCut.enabled = true;
+                    }
+
+                    navmeshCutChanged = true;
                 }
 
                 var isPathingUnit = pathingUnit != null && ReferenceEquals(unit, pathingUnit);
@@ -1248,12 +1267,13 @@ namespace IronKingdoms.Combat
             }
 
             var current = GetPawnFeetPosition(unit);
+            var graphMask = GetPathGraphMask(unit);
 
             // Use NavPathBuilder to get a funnel-smoothed path, then clamp to budget.
             if (navPathBuilder != null)
             {
                 UpdateUnitNavmeshCutActivation(unit);
-                var smoothedPath = navPathBuilder.BuildSync(current, destination);
+                var smoothedPath = navPathBuilder.BuildSync(current, destination, graphMask);
                 if (smoothedPath.Count >= 2)
                 {
                     IssueMoveOrderFromPath(unit, smoothedPath, remaining);
@@ -1380,14 +1400,16 @@ namespace IronKingdoms.Combat
             return false;
         }
 
-        private static Vector3 GetNearestNavmeshPosition(Vector3 worldPosition)
+        private Vector3 GetNearestNavmeshPosition(Vector3 worldPosition, RuntimeUnit unit = null)
         {
             if (AstarPath.active == null)
             {
                 return worldPosition;
             }
 
-            var nearest = AstarPath.active.GetNearest(worldPosition, NearestNodeConstraint.Walkable);
+            var nearestNodeConstraint = NearestNodeConstraint.Walkable;
+            nearestNodeConstraint.graphMask = GetPathGraphMask(unit);
+            var nearest = AstarPath.active.GetNearest(worldPosition, nearestNodeConstraint);
             if (nearest.node == null)
             {
                 return worldPosition;
@@ -1435,9 +1457,9 @@ namespace IronKingdoms.Combat
 
         // The unit parameter is retained for API consistency and potential future per-unit
         // terrain-height adjustments; all callers pass the moving unit for context.
-        private static Vector3 GetGroundedNavmeshPositionForUnit(RuntimeUnit unit, Vector3 worldPosition)
+        private Vector3 GetGroundedNavmeshPositionForUnit(RuntimeUnit unit, Vector3 worldPosition)
         {
-            return GetNearestNavmeshPosition(worldPosition);
+            return GetNearestNavmeshPosition(worldPosition, unit);
         }
 
         private static Vector3 GetPawnCenterPosition(RuntimeUnit unit)
@@ -1451,21 +1473,21 @@ namespace IronKingdoms.Combat
             return unit.Pawn.transform.position + Vector3.up * bodyHeight;
         }
 
-        private static Vector3 GetGroundedPositionKeepingXZ(RuntimeUnit unit, Vector3 worldPosition)
+        private Vector3 GetGroundedPositionKeepingXZ(RuntimeUnit unit, Vector3 worldPosition)
         {
             var groundedPosition = worldPosition;
             groundedPosition.y = GetGroundedNavmeshPositionForUnit(unit, worldPosition).y;
             return groundedPosition;
         }
 
-        private static Vector3 ConstrainPositionToNavmesh(RuntimeUnit unit, Vector3 worldPosition)
+        private Vector3 ConstrainPositionToNavmesh(RuntimeUnit unit, Vector3 worldPosition)
         {
             var navPosition = GetGroundedNavmeshPositionForUnit(unit, worldPosition);
             var horizontalDelta = new Vector2(worldPosition.x - navPosition.x, worldPosition.z - navPosition.z).magnitude;
             return horizontalDelta > NavmeshContainmentTolerance ? navPosition : worldPosition;
         }
 
-        private static void SnapUnitToNavmesh(RuntimeUnit unit)
+        private void SnapUnitToNavmesh(RuntimeUnit unit)
         {
             if (unit?.Pawn == null)
             {
@@ -1473,6 +1495,16 @@ namespace IronKingdoms.Combat
             }
 
             unit.Pawn.transform.position = GetGroundedNavmeshPositionForUnit(unit, unit.Pawn.transform.position);
+        }
+
+        private GraphMask GetPathGraphMask(RuntimeUnit unit)
+        {
+            if (unit?.Definition == null || navPathBuilder == null)
+            {
+                return GraphMask.everything;
+            }
+
+            return navPathBuilder.GetGraphMaskForModelSizeOrDefault(unit.Definition.Stats.modelSize);
         }
 
         private static List<Vector3> ClampPathToMovementBudget(List<Vector3> waypoints, float budget)
