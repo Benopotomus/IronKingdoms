@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 26263b01607e57c409cf7d61d7558359
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Scripts/Editor/FogOfWarWorldEditor.cs
+  uploadId: 916978

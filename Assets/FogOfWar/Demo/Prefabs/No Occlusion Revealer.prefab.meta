@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 25fec202bb74f5641b3c305029e47f3c
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/Prefabs/No Occlusion Revealer.prefab
+  uploadId: 916978

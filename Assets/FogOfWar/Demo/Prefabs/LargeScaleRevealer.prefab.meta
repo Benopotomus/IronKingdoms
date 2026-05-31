@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 5ba6708d6b1f91b4ea929877203d5fe0
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/Prefabs/LargeScaleRevealer.prefab
+  uploadId: 916978

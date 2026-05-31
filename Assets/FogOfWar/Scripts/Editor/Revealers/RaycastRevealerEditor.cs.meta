@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: ccd4cb66be22bf64b813310f4176c4bd
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Scripts/Editor/Revealers/RaycastRevealerEditor.cs
+  uploadId: 916978

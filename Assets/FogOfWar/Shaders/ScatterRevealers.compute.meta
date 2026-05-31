@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e219da27121706f4cb325510f3d915c2
+ComputeShaderImporter:
+  externalObjects: {}
+  preprocessorOverride: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Shaders/ScatterRevealers.compute
+  uploadId: 916978

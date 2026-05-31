@@ -1,0 +1,48 @@
+#pragma kernel ScatterRevealers
+
+struct RevealerDataStruct
+{
+    float totalRevealerRadius;
+    float2 revealerPosition;
+    float revealerHeight;
+    int numSegments;
+};
+
+struct GpuSightSegment
+{
+    float2 segmentDirection;
+    float length;
+};
+
+struct DirtyRevealerMeta
+{
+    int gpuId;
+    int stagingSegmentStart;
+    int numSegments;
+};
+
+StructuredBuffer<DirtyRevealerMeta>    _DirtyMeta;
+StructuredBuffer<RevealerDataStruct>   _StagingData;
+StructuredBuffer<GpuSightSegment>      _StagingSegments;
+
+RWStructuredBuffer<RevealerDataStruct> _RevealerDataBuffer;
+RWStructuredBuffer<GpuSightSegment>    _SightSegmentBuffer;
+
+int _DirtyCount;
+int _MaxSegmentsPerRevealer;
+
+[numthreads(64, 1, 1)]
+void ScatterRevealers(uint3 tid : SV_DispatchThreadID)
+{
+    if (tid.x >= (uint)_DirtyCount)
+        return;
+
+    DirtyRevealerMeta meta = _DirtyMeta[tid.x];
+
+    _RevealerDataBuffer[meta.gpuId] = _StagingData[tid.x];
+
+    int destBase = meta.gpuId * _MaxSegmentsPerRevealer;
+    int srcBase  = meta.stagingSegmentStart;
+    for (int s = 0; s < meta.numSegments; s++)
+        _SightSegmentBuffer[destBase + s] = _StagingSegments[srcBase + s];
+}

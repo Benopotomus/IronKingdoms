@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: d653c3ae35610f446a530593ede77e7c
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  preprocessorOverride: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Shaders/Partial Hiders/2D/PartialHider2D.shader
+  uploadId: 916978

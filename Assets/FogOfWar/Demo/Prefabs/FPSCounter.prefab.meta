@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 5f3ad53a8a79a704588c36ef653fc065
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/Prefabs/FPSCounter.prefab
+  uploadId: 916978

@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 49be68d3a3d169c428e8073d6933aa0b
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Scripts/Built-In (legacy) RP/FowImageEffectBase.cs
+  uploadId: 916978

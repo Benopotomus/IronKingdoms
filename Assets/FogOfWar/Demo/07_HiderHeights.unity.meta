@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 11363a29ce2c16e438ca72e3311a3c1f
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/07_HiderHeights.unity
+  uploadId: 916978

@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: f7f34347f23b1014f994b9c416bf2a10
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/Scripts/FpsCounter.cs
+  uploadId: 916978

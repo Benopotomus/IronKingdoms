@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 1fee0ec58aa2a754b9484343c2594bd8
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/Materials/MiniMap.mat
+  uploadId: 916978

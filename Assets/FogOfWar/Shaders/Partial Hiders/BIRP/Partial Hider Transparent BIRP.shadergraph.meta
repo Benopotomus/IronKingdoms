@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 5b7413d5d68f0ae4c906ca98f21494e7
+ScriptedImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 2
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+  script: {fileID: 11500000, guid: 625f186215c104763be7675aa2d941aa, type: 3}
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Shaders/Partial Hiders/BIRP/Partial Hider Transparent
+    BIRP.shadergraph
+  uploadId: 916978

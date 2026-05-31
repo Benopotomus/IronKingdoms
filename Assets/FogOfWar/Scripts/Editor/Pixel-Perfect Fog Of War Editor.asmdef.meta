@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: b173b37026be5f34a86988291d9769cc
+AssemblyDefinitionImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Scripts/Editor/Pixel-Perfect Fog Of War Editor.asmdef
+  uploadId: 916978

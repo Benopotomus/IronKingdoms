@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: ff4a340450b1e4f4ab381278ca531411
+AssemblyDefinitionImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/Pixel-Perfect Fog Of War Demos.asmdef
+  uploadId: 916978

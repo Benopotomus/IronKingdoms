@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 51d1004067165994cbc282b74b64fa98
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/Materials/PartialHiderGrid.mat
+  uploadId: 916978

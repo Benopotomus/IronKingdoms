@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: d16034dc2bbc0ac43b46c9a5cba7d6ef
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/06_PartialHiders.unity
+  uploadId: 916978

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 4cc70f2f192dc4746847b6d34099e628
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Demo/Prefabs/Quad Enemy.prefab
+  uploadId: 916978

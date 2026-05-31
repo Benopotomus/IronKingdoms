@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: a1c5c167456b49840b9539eb71a0e617
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229484
+  packageName: Pixel-Perfect Fog Of War
+  packageVersion: 3.3.0
+  assetPath: Assets/FogOfWar/Scripts/Extras/MiniMap/SetMiniMapImage.cs
+  uploadId: 916978
