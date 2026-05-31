@@ -151,6 +151,7 @@ namespace IronKingdoms.Combat
         private Vector3 previewPathTo;
         private float previewMovementBudget;
         private float stagedMoveAmountInches;
+        private float stagedRoughTerrainInches;
         private bool hasStagedMoveAmount;
         private float lastPathPreviewTime;
 
@@ -286,6 +287,7 @@ namespace IronKingdoms.Combat
         {
             hasStagedMoveAmount = false;
             stagedMoveAmountInches = 0f;
+            stagedRoughTerrainInches = 0f;
 
             if (movementPathLine == null)
             {
@@ -366,6 +368,7 @@ namespace IronKingdoms.Combat
                 var previewUnitRadius = GetUnitCollisionRadius(selectedUnit);
                 var fullLength = CalculatePathMovementCostInInches(previewPath, previewUnitRadius);
                 stagedMoveAmountInches = Mathf.Min(fullLength, effectiveBudget);
+                stagedRoughTerrainInches = CalculatePathRoughTerrainPhysicalInches(previewPath, stagedMoveAmountInches, previewUnitRadius);
                 hasStagedMoveAmount = true;
 
                 withinRange = fullLength <= effectiveBudget + WorldUnitsToInches(PositionArrivalTolerance);
@@ -1644,6 +1647,82 @@ namespace IronKingdoms.Combat
             return movementCost;
         }
 
+        // Returns the total physical distance (in inches) traveled through rough-terrain zones
+        // along the given path, walking only as far as the movement-cost budget allows.
+        private float CalculatePathRoughTerrainPhysicalInches(IReadOnlyList<Vector3> waypoints, float budget, float unitRadius = 0f)
+        {
+            if (waypoints == null || waypoints.Count < 2)
+            {
+                return 0f;
+            }
+
+            var roughInches = 0f;
+            var costCovered = 0f;
+            for (var i = 1; i < waypoints.Count; i++)
+            {
+                var remaining = budget - costCovered;
+                if (remaining <= MovementBudgetEpsilon)
+                {
+                    break;
+                }
+
+                roughInches += CalculateSegmentRoughTerrainPhysicalInches(waypoints[i - 1], waypoints[i], remaining, out var segmentCostConsumed, unitRadius);
+                costCovered += segmentCostConsumed;
+            }
+
+            return roughInches;
+        }
+
+        // Returns the physical rough-terrain inches for one segment, consuming up to budgetRemaining
+        // movement cost. costConsumed receives the actual movement cost used from this segment.
+        private float CalculateSegmentRoughTerrainPhysicalInches(Vector3 from, Vector3 to, float budgetRemaining, out float costConsumed, float unitRadius = 0f)
+        {
+            costConsumed = 0f;
+            var roughInches = 0f;
+            var totalDistance = Vector3.Distance(from, to);
+            if (totalDistance <= MovementBudgetEpsilon)
+            {
+                return 0f;
+            }
+
+            var sampleCount = GetTerrainCostSampleCount(totalDistance);
+            for (var sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
+            {
+                var subStartT = (float)sampleIndex / sampleCount;
+                var subEndT = (float)(sampleIndex + 1) / sampleCount;
+                var subStart = Vector3.Lerp(from, to, subStartT);
+                var subEnd = Vector3.Lerp(from, to, subEndT);
+                var samplePoint = Vector3.Lerp(subStart, subEnd, 0.5f);
+                var subDistInches = WorldUnitsToInches(Vector3.Distance(subStart, subEnd));
+                var speedMultiplier = GetMovementSpeedMultiplierAtPoint(samplePoint, unitRadius);
+                var subCost = subDistInches / speedMultiplier;
+                var isRoughTerrain = speedMultiplier < 1f - MovementBudgetEpsilon;
+
+                if (costConsumed + subCost > budgetRemaining + MovementBudgetEpsilon)
+                {
+                    // Partially consume this sub-segment up to the remaining budget.
+                    var remaining = Mathf.Max(0f, budgetRemaining - costConsumed);
+                    var fraction = subCost <= MovementBudgetEpsilon ? 0f : Mathf.Clamp01(remaining / subCost);
+                    if (isRoughTerrain)
+                    {
+                        roughInches += subDistInches * fraction;
+                    }
+
+                    costConsumed += subCost * fraction;
+                    break;
+                }
+
+                if (isRoughTerrain)
+                {
+                    roughInches += subDistInches;
+                }
+
+                costConsumed += subCost;
+            }
+
+            return roughInches;
+        }
+
         private bool TryGetSegmentStopPointAtMovementBudget(Vector3 segmentStart, Vector3 segmentEnd, float budgetRemaining, out Vector3 stopPoint, float unitRadius = 0f)
         {
             stopPoint = segmentStart;
@@ -2538,7 +2617,7 @@ namespace IronKingdoms.Combat
 
                 if (hasStagedMoveAmount)
                 {
-                    GUILayout.Label($"Total Move: {stagedMoveAmountInches:0.0}\"");
+                    GUILayout.Label($"Total Move: {stagedMoveAmountInches:0.0}\" ({stagedRoughTerrainInches:0.0}\" rough terrain)");
                 }
             }
 
