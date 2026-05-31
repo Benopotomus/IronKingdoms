@@ -1625,9 +1625,9 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
-            for (var i = 0; i < path.Count; i++)
+            foreach (var point in path)
             {
-                if (!IsFiniteWorldPoint(path[i]))
+                if (!IsFiniteWorldPoint(point))
                 {
                     return false;
                 }
