@@ -150,8 +150,8 @@ namespace IronKingdoms.Combat
         private bool previewPathPending;
         private Vector3 previewPathTo;
         private float previewMovementBudget;
-        private float stagedMoveTotalInches;
-        private bool hasStagedMoveTotal;
+        private float stagedMoveAmountInches;
+        private bool hasStagedMoveAmount;
         private float lastPathPreviewTime;
 
         private void Awake()
@@ -284,8 +284,8 @@ namespace IronKingdoms.Combat
 
         private void UpdateMovementVisualizer()
         {
-            hasStagedMoveTotal = false;
-            stagedMoveTotalInches = 0f;
+            hasStagedMoveAmount = false;
+            stagedMoveAmountInches = 0f;
 
             if (movementPathLine == null)
             {
@@ -365,8 +365,8 @@ namespace IronKingdoms.Combat
             {
                 var previewUnitRadius = GetUnitCollisionRadius(selectedUnit);
                 var fullLength = CalculatePathMovementCostInInches(previewPath, previewUnitRadius);
-                stagedMoveTotalInches = Mathf.Min(fullLength, effectiveBudget);
-                hasStagedMoveTotal = true;
+                stagedMoveAmountInches = Mathf.Min(fullLength, effectiveBudget);
+                hasStagedMoveAmount = true;
 
                 withinRange = fullLength <= effectiveBudget + WorldUnitsToInches(PositionArrivalTolerance);
                 if (TryGetPathStopPointAtMovementBudget(previewPath, effectiveBudget, out var stopPoint, previewUnitRadius))
@@ -532,8 +532,8 @@ namespace IronKingdoms.Combat
                 previewPath = null;
                 previewPathPending = false;
                 previewPathTo = Vector3.positiveInfinity;
-                hasStagedMoveTotal = false;
-                stagedMoveTotalInches = 0f;
+                hasStagedMoveAmount = false;
+                stagedMoveAmountInches = 0f;
 
                 if (movementPathLine != null)
                 {
@@ -2507,9 +2507,9 @@ namespace IronKingdoms.Combat
                 GUI.enabled = true;
                 GUILayout.EndHorizontal();
 
-                if (hasStagedMoveTotal)
+                if (hasStagedMoveAmount)
                 {
-                    GUILayout.Label($"Total Move: {stagedMoveTotalInches:0.0}\"");
+                    GUILayout.Label($"Total Move: {stagedMoveAmountInches:0.0}\"");
                 }
             }
 
