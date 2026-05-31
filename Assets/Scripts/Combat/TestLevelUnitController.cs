@@ -1407,12 +1407,7 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < hitCount; i++)
             {
                 var h = terrainRaycastBuffer[i];
-                if (IsUnitPawn(h.collider.gameObject) || IsRoughTerrainCollider(h.collider))
-                {
-                    continue;
-                }
-
-                if (h.distance < closestDist)
+                if (!IsUnitPawn(h.collider.gameObject) && !IsRoughTerrainCollider(h.collider) && h.distance < closestDist)
                 {
                     closestDist = h.distance;
                     point = h.point;
