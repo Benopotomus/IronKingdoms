@@ -15,7 +15,7 @@ MonoBehaviour:
   displayName: Steam Knight
   role: 1
   stats:
-    speed: 10
+    speed: 6
     modelSize: 2
     meleeAttack: 7
     rangedAttack: 5
