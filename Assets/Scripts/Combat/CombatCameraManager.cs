@@ -18,8 +18,8 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(0.001f)] private float cameraDragPanSensitivity = 0.02f;
         [SerializeField, Min(0.01f)] private float cameraRotationSensitivity = 0.2f;
         [SerializeField, Min(0.01f)] private float cameraZoomSensitivity = 20f;
-        [SerializeField, Min(CameraOrbitMinimumDistance)] private float cameraMinZoomDistance = 5f;
-        [SerializeField, Min(CameraOrbitMinimumDistance)] private float cameraMaxZoomDistance = 60f;
+        [SerializeField, Min(0.1f)] private float cameraMinZoomDistance = 5f;
+        [SerializeField, Min(0.1f)] private float cameraMaxZoomDistance = 60f;
         [SerializeField, Range(5f, 89f)] private float cameraMinPitch = 25f;
         [SerializeField, Range(5f, 89f)] private float cameraMaxPitch = 75f;
         [SerializeField, Min(0.1f)] private float cameraFocusTransitionSpeed = 12f;
@@ -39,8 +39,9 @@ namespace IronKingdoms.Combat
 
         private void OnValidate()
         {
-            cameraMinZoomDistance = Mathf.Max(CameraOrbitMinimumDistance, cameraMinZoomDistance);
-            cameraMaxZoomDistance = Mathf.Max(cameraMinZoomDistance, cameraMaxZoomDistance);
+            var zoomRange = GetValidatedZoomRange();
+            cameraMinZoomDistance = zoomRange.minDistance;
+            cameraMaxZoomDistance = zoomRange.maxDistance;
         }
 
         public void Tick(bool isMouseOverUi)
@@ -226,9 +227,8 @@ namespace IronKingdoms.Combat
             }
 
             isCameraFocusTransitioning = false;
-            var minDistance = Mathf.Max(CameraOrbitMinimumDistance, cameraMinZoomDistance);
-            var maxDistance = Mathf.Max(minDistance, cameraMaxZoomDistance);
-            cameraOrbitDistance = Mathf.Clamp(cameraOrbitDistance - (scrollDelta * cameraZoomSensitivity), minDistance, maxDistance);
+            var zoomRange = GetValidatedZoomRange();
+            cameraOrbitDistance = Mathf.Clamp(cameraOrbitDistance - (scrollDelta * cameraZoomSensitivity), zoomRange.minDistance, zoomRange.maxDistance);
             var cameraForward = activeCamera.transform.forward;
             activeCamera.transform.position = cameraOrbitGroundPivot - (cameraForward * cameraOrbitDistance);
         }
@@ -326,6 +326,13 @@ namespace IronKingdoms.Combat
         private static Vector3 GetPlanarRight(Vector3 planarForward)
         {
             return Vector3.Cross(Vector3.up, planarForward).normalized;
+        }
+
+        private (float minDistance, float maxDistance) GetValidatedZoomRange()
+        {
+            var minDistance = Mathf.Max(CameraOrbitMinimumDistance, cameraMinZoomDistance);
+            var maxDistance = Mathf.Max(minDistance, cameraMaxZoomDistance);
+            return (minDistance, maxDistance);
         }
     }
 }
