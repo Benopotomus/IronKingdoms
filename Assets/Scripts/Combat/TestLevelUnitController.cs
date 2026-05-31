@@ -57,7 +57,7 @@ namespace IronKingdoms.Combat
         private const float PathPreviewReuseToleranceMultiplier = 1.5f;
         private const float PathPreviewMinInterval = 0.08f;
         private const float PathVisualizationHeight = 0.05f;
-        private const int UnitNavmeshCutCircleResolution = 12;
+        private const int UnitNavmeshCutCircleResolution = 24;
         private const float UnitNavmeshCutMinimumHeight = 1f;
         private const float UnitNavmeshCutUpdateDistance = 0.1f;
         private const float NavmeshCutHeightMultiplier = 2f;
