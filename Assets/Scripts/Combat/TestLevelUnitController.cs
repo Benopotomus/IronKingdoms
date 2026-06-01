@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using FOW;
 using Pathfinding;
 using UnityEngine;
 
@@ -98,6 +99,9 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(0.1f)] private float aiThinkInterval = 0.5f;
         [SerializeField] private CombatCameraManager cameraManager;
         [SerializeField] private NavPathBuilder navPathBuilder;
+        [SerializeField] private FogOfWarWorld fogOfWarWorld;
+        [SerializeField, Min(0.1f)] private float playerFogRevealerRadius = 10f;
+        [SerializeField, Min(0.1f)] private float playerFogVisionHeight = 3f;
         [SerializeField] private bool autoSpawnOnStart = true;
         private MatchArmySpawner matchArmySpawner;
 
@@ -162,6 +166,7 @@ namespace IronKingdoms.Combat
             EnsureCameraManagerAssigned();
             EnsureNavPathBuilderAssigned();
             EnsureMatchArmySpawnerAssigned();
+            EnsureFogOfWarWorldAssigned();
         }
 
         private void Start()
@@ -222,6 +227,31 @@ namespace IronKingdoms.Combat
         private void EnsureMatchArmySpawnerAssigned()
         {
             matchArmySpawner ??= new MatchArmySpawner(navPathBuilder);
+        }
+
+        private void EnsureFogOfWarWorldAssigned()
+        {
+            if (fogOfWarWorld != null)
+            {
+                return;
+            }
+
+            fogOfWarWorld = FogOfWarWorld.instance;
+            if (fogOfWarWorld != null)
+            {
+                return;
+            }
+
+            fogOfWarWorld = FindFirstObjectByType<FogOfWarWorld>();
+            if (fogOfWarWorld != null)
+            {
+                return;
+            }
+
+            var fogWorldObject = new GameObject("FogOfWarWorld");
+            fogWorldObject.transform.SetParent(transform);
+            fogOfWarWorld = fogWorldObject.AddComponent<FogOfWarWorld>();
+            fogOfWarWorld.GamePlaneOrientation = FogOfWarWorld.GamePlane.XZ;
         }
 
         private void BuildVisualizers()
@@ -666,12 +696,37 @@ namespace IronKingdoms.Combat
                 }
 
                 ConfigureUnitNavmeshCut(pawn, pawnCollider, pawnScale);
+                if (isPlayerControlled)
+                {
+                    ConfigurePlayerFogRevealer(pawn, pawnCollider);
+                }
 
                 var runtimeUnit = new RuntimeUnit(unitDefinition, isPlayerControlled, pawn);
                 SnapUnitToNavmesh(runtimeUnit);
                 destination.Add(runtimeUnit);
                 allRuntimeUnits.Add(runtimeUnit);
             }
+        }
+
+        private void ConfigurePlayerFogRevealer(GameObject pawn, CapsuleCollider pawnCollider)
+        {
+            if (pawn == null)
+            {
+                return;
+            }
+
+            var revealer = pawn.GetComponent<FogOfWarRevealer3D>();
+            if (revealer != null)
+            {
+                return;
+            }
+
+            revealer = pawn.AddComponent<FogOfWarRevealer3D>();
+            revealer.StartRevealerAsStatic = false;
+            revealer.UseOcclusion = false;
+            revealer.ViewRadius = playerFogRevealerRadius;
+            revealer.VisionHeight = playerFogVisionHeight;
+            revealer.EyeOffset = pawnCollider != null ? pawnCollider.height * 0.5f : 0f;
         }
 
         private static void ConfigurePawnForModelSize(GameObject pawn, ModelSize modelSize)
