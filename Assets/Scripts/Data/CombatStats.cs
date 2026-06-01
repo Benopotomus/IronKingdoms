@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace IronKingdoms.Combat
 {
@@ -13,12 +15,21 @@ namespace IronKingdoms.Combat
         public int defense = 12;
         public int armor = 14;
         public int health = 10;
-        public UnitAdvantage advantages = UnitAdvantage.None;
+        public List<UnitAdvantage> advantageList = new();
+        [FormerlySerializedAs("advantages")]
+        [SerializeField, HideInInspector] private UnitAdvantage legacyAdvantages = UnitAdvantage.None;
         public WeaponProfile[] weapons = Array.Empty<WeaponProfile>();
+        [NonSerialized] private bool advantagesInitialized;
 
         public bool HasAdvantage(UnitAdvantage advantage)
         {
-            return advantage != UnitAdvantage.None && (advantages & advantage) == advantage;
+            if (advantage == UnitAdvantage.None)
+            {
+                return false;
+            }
+
+            EnsureAdvantageDefaults();
+            return advantageList.Contains(advantage);
         }
 
         public WeaponProfile GetPrimaryWeapon()
@@ -42,6 +53,37 @@ namespace IronKingdoms.Combat
             {
                 weapons[i] ??= WeaponProfile.CreateDefault();
             }
+        }
+
+        public void EnsureAdvantageDefaults()
+        {
+            if (advantagesInitialized)
+            {
+                return;
+            }
+
+            advantageList ??= new List<UnitAdvantage>();
+
+            if (legacyAdvantages != UnitAdvantage.None)
+            {
+                foreach (UnitAdvantage value in Enum.GetValues(typeof(UnitAdvantage)))
+                {
+                    if (value == UnitAdvantage.None)
+                    {
+                        continue;
+                    }
+
+                    if ((legacyAdvantages & value) == value && !advantageList.Contains(value))
+                    {
+                        advantageList.Add(value);
+                    }
+                }
+
+                legacyAdvantages = UnitAdvantage.None;
+            }
+
+            advantageList.RemoveAll(value => value == UnitAdvantage.None);
+            advantagesInitialized = true;
         }
     }
 }

@@ -96,7 +96,13 @@ namespace IronKingdoms.Editor
             statsProperty.FindPropertyRelative("defense").intValue = defense;
             statsProperty.FindPropertyRelative("armor").intValue = armor;
             statsProperty.FindPropertyRelative("health").intValue = health;
-            statsProperty.FindPropertyRelative("advantages").intValue = (int)advantages;
+            var advantagesProperty = statsProperty.FindPropertyRelative("advantageList");
+            var selectedAdvantages = GetSelectedAdvantages(advantages);
+            advantagesProperty.arraySize = selectedAdvantages.Count;
+            for (var i = 0; i < selectedAdvantages.Count; i++)
+            {
+                advantagesProperty.GetArrayElementAtIndex(i).intValue = (int)selectedAdvantages[i];
+            }
             statsProperty.FindPropertyRelative("startingResource").intValue = startingResource;
             var validWeapons = new List<WeaponProfile>();
             for (var i = 0; i < weapons.Count; i++)
@@ -132,6 +138,25 @@ namespace IronKingdoms.Editor
             }
 
             return string.IsNullOrWhiteSpace(value) ? "UnitType" : value;
+        }
+
+        private static List<UnitAdvantage> GetSelectedAdvantages(UnitAdvantage selectedFlags)
+        {
+            var selectedAdvantages = new List<UnitAdvantage>();
+            foreach (UnitAdvantage value in System.Enum.GetValues(typeof(UnitAdvantage)))
+            {
+                if (value == UnitAdvantage.None)
+                {
+                    continue;
+                }
+
+                if ((selectedFlags & value) == value)
+                {
+                    selectedAdvantages.Add(value);
+                }
+            }
+
+            return selectedAdvantages;
         }
 
         private static void DrawWeaponReferenceList(List<WeaponProfile> draftWeapons)
