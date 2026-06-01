@@ -19,6 +19,7 @@ namespace IronKingdoms.Combat
         [FormerlySerializedAs("advantages")]
         [SerializeField, HideInInspector] private UnitAdvantage legacyAdvantages = UnitAdvantage.None;
         public WeaponProfile[] weapons = Array.Empty<WeaponProfile>();
+        [NonSerialized] private bool advantagesInitialized;
 
         public bool HasAdvantage(UnitAdvantage advantage)
         {
@@ -39,8 +40,6 @@ namespace IronKingdoms.Combat
 
         public void EnsureWeaponDefaults()
         {
-            EnsureAdvantageDefaults();
-
             if (weapons == null || weapons.Length == 0 || weapons[0] == null)
             {
                 weapons = new[]
@@ -56,8 +55,13 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private void EnsureAdvantageDefaults()
+        public void EnsureAdvantageDefaults()
         {
+            if (advantagesInitialized)
+            {
+                return;
+            }
+
             advantageList ??= new List<UnitAdvantage>();
 
             if (legacyAdvantages != UnitAdvantage.None)
@@ -79,6 +83,7 @@ namespace IronKingdoms.Combat
             }
 
             advantageList.RemoveAll(value => value == UnitAdvantage.None);
+            advantagesInitialized = true;
         }
     }
 }

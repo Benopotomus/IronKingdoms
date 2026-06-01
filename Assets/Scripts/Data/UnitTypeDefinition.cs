@@ -25,6 +25,7 @@ namespace IronKingdoms.Combat
                 stats = new CombatStats();
             }
 
+            stats.EnsureAdvantageDefaults();
             stats.EnsureWeaponDefaults();
         }
 #endif
