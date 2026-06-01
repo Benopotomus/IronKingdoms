@@ -101,7 +101,7 @@ namespace IronKingdoms.Editor
             advantagesProperty.arraySize = selectedAdvantages.Count;
             for (var i = 0; i < selectedAdvantages.Count; i++)
             {
-                advantagesProperty.GetArrayElementAtIndex(i).enumValueIndex = (int)selectedAdvantages[i];
+                advantagesProperty.GetArrayElementAtIndex(i).intValue = (int)selectedAdvantages[i];
             }
             statsProperty.FindPropertyRelative("startingResource").intValue = startingResource;
             var validWeapons = new List<WeaponProfile>();
