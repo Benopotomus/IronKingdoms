@@ -106,6 +106,8 @@ namespace IronKingdoms.Combat
         private readonly List<RuntimeUnit> allRuntimeUnits = new();
         private readonly Plane boardPlane = new(Vector3.up, Vector3.zero);
         private readonly RaycastHit[] terrainRaycastBuffer = new RaycastHit[16];
+        private readonly RaycastHit[] lineOfSightRaycastBuffer = new RaycastHit[32];
+        private readonly List<CombatLineOfSightVolume> lineOfSightInterveningVolumes = new();
         private RuntimeUnit selectedUnit;
         private TurnSide activeTurnSide = TurnSide.Player;
         private float aiThinkTimer;
@@ -185,6 +187,7 @@ namespace IronKingdoms.Combat
             TickFloatingDamage(Time.deltaTime);
             UpdateMovementVisualizer();
             UpdateWeaponRangeRing();
+            UpdateFogOfWarVisibility();
             UpdateHoveredEnemy();
         }
 
@@ -437,7 +440,7 @@ namespace IronKingdoms.Combat
             var ringIndex = 0;
             foreach (var enemy in enemyRuntimeUnits)
             {
-                if (!enemy.IsAlive || !IsTargetInRange(selectedUnit, enemy, weapon))
+                if (!enemy.IsAlive || !enemy.IsVisibleToPlayer || !CanUnitTarget(selectedUnit, enemy, weapon))
                 {
                     continue;
                 }
@@ -587,6 +590,7 @@ namespace IronKingdoms.Combat
             SpawnArmy(playerUnits, playerSpawnAnchor, playerRuntimeUnits, true, new Color(0.2f, 0.5f, 1f));
             SpawnArmy(enemyUnits, enemySpawnAnchor, enemyRuntimeUnits, false, new Color(1f, 0.3f, 0.3f));
             StartPlayerTurn();
+            UpdateFogOfWarVisibility();
         }
 
         public void SetSpawnAnchors(Transform playerAnchor, Transform enemyAnchor)
@@ -632,6 +636,7 @@ namespace IronKingdoms.Combat
                 }
 
                 pawn.name = $"{unitDefinition.DisplayName} ({(isPlayerControlled ? "Player" : "Enemy")})";
+                ConfigurePawnForModelSize(pawn, unitDefinition.Stats.modelSize);
 
                 var baseColor = new Color(color.r * 0.55f, color.g * 0.55f, color.b * 0.55f);
                 var bodyTransform = pawn.transform.Find("Body");
@@ -667,6 +672,41 @@ namespace IronKingdoms.Combat
                 destination.Add(runtimeUnit);
                 allRuntimeUnits.Add(runtimeUnit);
             }
+        }
+
+        private static void ConfigurePawnForModelSize(GameObject pawn, ModelSize modelSize)
+        {
+            if (pawn == null)
+            {
+                return;
+            }
+
+            var pawnScale = modelSize.GetPawnScale();
+            var bodyTransform = pawn.transform.Find("Body");
+            if (bodyTransform != null)
+            {
+                bodyTransform.localPosition = new Vector3(0f, pawnScale.y, 0f);
+                bodyTransform.localScale = pawnScale;
+            }
+
+            var baseTransform = pawn.transform.Find("Base");
+            if (baseTransform != null)
+            {
+                baseTransform.localPosition = new Vector3(0f, PawnBaseHeightScale, 0f);
+                baseTransform.localScale = new Vector3(pawnScale.x, PawnBaseHeightScale, pawnScale.z);
+            }
+
+            var pawnCollider = pawn.GetComponent<CapsuleCollider>();
+            if (pawnCollider == null)
+            {
+                pawnCollider = pawn.AddComponent<CapsuleCollider>();
+            }
+
+            pawnCollider.direction = 1;
+            pawnCollider.center = new Vector3(0f, pawnScale.y, 0f);
+            pawnCollider.radius = Mathf.Max(0.1f, pawnScale.x * 0.5f);
+            pawnCollider.height = Mathf.Max(pawnCollider.radius * RadiusToDiameterMultiplier, pawnScale.y * RadiusToDiameterMultiplier);
+            pawnCollider.isTrigger = true;
         }
 
         private void ConfigureUnitNavmeshCut(GameObject pawn, CapsuleCollider pawnCollider, Vector3 pawnScale)
@@ -1010,7 +1050,7 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                if (IsTargetInRange(selectedUnit, enemy, attackWeapon))
+                if (enemy.IsVisibleToPlayer && CanUnitTarget(selectedUnit, enemy, attackWeapon))
                 {
                     ResolveAttack(selectedUnit, enemy, attackWeapon);
                     selectedUnit.HasActedThisTurn = true;
@@ -1188,6 +1228,11 @@ namespace IronKingdoms.Combat
             var distance = GetPlanarDistance(unit.Pawn.transform.position, target.Pawn.transform.position);
             var weapon = GetBestWeaponForDistance(unit, target, distance);
             if (weapon == null)
+            {
+                return false;
+            }
+
+            if (!CanUnitTarget(unit, target, weapon))
             {
                 return false;
             }
@@ -2300,6 +2345,11 @@ namespace IronKingdoms.Combat
             return best;
         }
 
+        private bool CanUnitTarget(RuntimeUnit attacker, RuntimeUnit target, WeaponProfile weapon)
+        {
+            return IsTargetInRange(attacker, target, weapon) && HasLineOfSight(attacker, target);
+        }
+
         private static bool IsTargetInRange(RuntimeUnit attacker, RuntimeUnit target, WeaponProfile weapon)
         {
             if (attacker?.Pawn == null || target?.Pawn == null || weapon == null)
@@ -2309,6 +2359,71 @@ namespace IronKingdoms.Combat
 
             var distance = GetPlanarDistance(attacker.Pawn.transform.position, target.Pawn.transform.position);
             return distance <= weapon.Range + GetCombinedUnitRadiiInches(attacker, target) + WorldUnitsToInches(PositionArrivalTolerance);
+        }
+
+        private bool HasLineOfSight(RuntimeUnit observer, RuntimeUnit target)
+        {
+            if (observer?.Pawn == null || target?.Pawn == null || !observer.IsAlive || !target.IsAlive)
+            {
+                return false;
+            }
+
+            var observerVolume = GetLineOfSightVolume(observer);
+            var targetVolume = GetLineOfSightVolume(target);
+            if (IsTerrainBlockingLineOfSight(observerVolume.SightPoint, targetVolume.SightPoint))
+            {
+                return false;
+            }
+
+            lineOfSightInterveningVolumes.Clear();
+            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            {
+                var candidate = allRuntimeUnits[i];
+                if (candidate == null || !candidate.IsAlive || ReferenceEquals(candidate, observer) || ReferenceEquals(candidate, target))
+                {
+                    continue;
+                }
+
+                lineOfSightInterveningVolumes.Add(GetLineOfSightVolume(candidate));
+            }
+
+            return CombatLineOfSight.HasLineOfSight(observerVolume, targetVolume, lineOfSightInterveningVolumes);
+        }
+
+        private CombatLineOfSightVolume GetLineOfSightVolume(RuntimeUnit unit)
+        {
+            return CombatLineOfSight.CreateVolume(GetPawnFeetPosition(unit), unit.Definition.Stats.modelSize);
+        }
+
+        private bool IsTerrainBlockingLineOfSight(Vector3 origin, Vector3 target)
+        {
+            var delta = target - origin;
+            var distance = delta.magnitude;
+            if (distance <= PositionArrivalTolerance)
+            {
+                return false;
+            }
+
+            var ray = new Ray(origin, delta / distance);
+            var hitCount = Physics.RaycastNonAlloc(
+                ray,
+                lineOfSightRaycastBuffer,
+                distance,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Collide);
+
+            for (var i = 0; i < hitCount; i++)
+            {
+                var collider = lineOfSightRaycastBuffer[i].collider;
+                if (collider == null || IsUnitPawn(collider.gameObject) || IsRoughTerrainCollider(collider))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
         }
 
         private static float GetCombinedUnitRadiiInches(RuntimeUnit first, RuntimeUnit second)
@@ -2361,10 +2476,60 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < enemyRuntimeUnits.Count; i++)
             {
                 var enemy = enemyRuntimeUnits[i];
-                if (enemy.IsAlive && enemy.Pawn == hit.collider.gameObject)
+                if (enemy.IsAlive && enemy.IsVisibleToPlayer && enemy.Pawn == hit.collider.gameObject)
                 {
                     hoveredEnemyUnit = enemy;
                     return;
+                }
+            }
+        }
+
+        private void UpdateFogOfWarVisibility()
+        {
+            for (var i = 0; i < enemyRuntimeUnits.Count; i++)
+            {
+                var enemy = enemyRuntimeUnits[i];
+                ApplyUnitVisibility(enemy, CanPlayerSeeUnit(enemy));
+            }
+        }
+
+        private bool CanPlayerSeeUnit(RuntimeUnit target)
+        {
+            if (target == null || !target.IsAlive)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < playerRuntimeUnits.Count; i++)
+            {
+                var observer = playerRuntimeUnits[i];
+                if (observer.IsAlive && HasLineOfSight(observer, target))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void ApplyUnitVisibility(RuntimeUnit unit, bool isVisible)
+        {
+            if (unit == null || unit.IsVisibleToPlayer == isVisible)
+            {
+                return;
+            }
+
+            unit.IsVisibleToPlayer = isVisible;
+            if (unit.Renderers == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < unit.Renderers.Length; i++)
+            {
+                if (unit.Renderers[i] != null)
+                {
+                    unit.Renderers[i].enabled = isVisible;
                 }
             }
         }
@@ -2480,10 +2645,18 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < enemyRuntimeUnits.Count; i++)
             {
                 var enemy = enemyRuntimeUnits[i];
-                var enemyLabel = $"{enemy.Definition.DisplayName} - HP {enemy.Health}/{enemy.Definition.Stats.health}";
+                string enemyLabel;
                 if (!enemy.IsAlive)
                 {
-                    enemyLabel += " (defeated)";
+                    enemyLabel = $"{enemy.Definition.DisplayName} - defeated";
+                }
+                else if (!enemy.IsVisibleToPlayer)
+                {
+                    enemyLabel = "Hidden by fog of war";
+                }
+                else
+                {
+                    enemyLabel = $"{enemy.Definition.DisplayName} - HP {enemy.Health}/{enemy.Definition.Stats.health}";
                 }
 
                 GUILayout.Label(enemyLabel);
@@ -2788,8 +2961,11 @@ namespace IronKingdoms.Combat
             if (currentPlayerMode == UnitActionMode.Attack && selectedUnit != null && selectedUnit.IsAlive && activeTurnSide == TurnSide.Player)
             {
                 var weapon = GetSelectedAttackWeapon(selectedUnit);
-                var inRange = IsTargetInRange(selectedUnit, hoveredEnemyUnit, weapon);
-                if (inRange)
+                if (!HasLineOfSight(selectedUnit, hoveredEnemyUnit))
+                {
+                    GUILayout.Label("No line of sight");
+                }
+                else if (IsTargetInRange(selectedUnit, hoveredEnemyUnit, weapon))
                 {
                     var hitChance = CalculateHitChancePercent(selectedUnit, hoveredEnemyUnit, weapon);
                     GUILayout.Label($"Hit Chance: {hitChance:0}%");
@@ -2830,6 +3006,7 @@ namespace IronKingdoms.Combat
                 IsPlayerControlled = isPlayerControlled;
                 Pawn = pawn;
                 NavmeshCut = pawn != null ? pawn.GetComponent<NavmeshCut>() : null;
+                Renderers = pawn != null ? pawn.GetComponentsInChildren<Renderer>(true) : null;
                 Health = definition.Stats.health;
                 definition.Stats.EnsureWeaponDefaults();
                 if (definition.Stats.weapons == null || definition.Stats.weapons.Length == 0)
@@ -2846,12 +3023,14 @@ namespace IronKingdoms.Combat
             public bool IsPlayerControlled { get; }
             public GameObject Pawn { get; }
             public NavmeshCut NavmeshCut { get; }
+            public Renderer[] Renderers { get; }
             public WeaponProfile[] Weapons { get; }
             public int Health { get; set; }
             public float RemainingMovementThisTurn { get; set; }
             public bool HasActedThisTurn { get; set; }
             public bool HasRunActionThisTurn { get; set; }
             public bool IsAimingThisTurn { get; set; }
+            public bool IsVisibleToPlayer { get; set; } = true;
             public Vector3? MoveTarget { get; set; }
             public bool IsAlive => Health > 0;
 
