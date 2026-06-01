@@ -724,8 +724,8 @@ namespace IronKingdoms.Combat
             revealer = pawn.AddComponent<FogOfWarRevealer3D>();
             revealer.StartRevealerAsStatic = false;
             revealer.UseOcclusion = false;
-            revealer.ViewRadius = Mathf.Max(0.1f, playerFogRevealerRadius);
-            revealer.VisionHeight = Mathf.Max(0.1f, playerFogVisionHeight);
+            revealer.ViewRadius = playerFogRevealerRadius;
+            revealer.VisionHeight = playerFogVisionHeight;
             revealer.EyeOffset = pawnCollider != null ? pawnCollider.height * 0.5f : 0f;
         }
 
