@@ -13,7 +13,13 @@ namespace IronKingdoms.Combat
         public int defense = 12;
         public int armor = 14;
         public int health = 10;
+        [EnumFlags] public UnitAdvantage advantages = UnitAdvantage.None;
         public WeaponProfile[] weapons = Array.Empty<WeaponProfile>();
+
+        public bool HasAdvantage(UnitAdvantage advantage)
+        {
+            return advantage != UnitAdvantage.None && (advantages & advantage) == advantage;
+        }
 
         public WeaponProfile GetPrimaryWeapon()
         {
