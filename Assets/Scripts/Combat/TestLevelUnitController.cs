@@ -231,9 +231,14 @@ namespace IronKingdoms.Combat
 
         private void EnsureFogOfWarWorldAssigned()
         {
-            if (fogOfWarWorld != null || FogOfWarWorld.instance != null)
+            if (fogOfWarWorld != null)
             {
-                fogOfWarWorld ??= FogOfWarWorld.instance;
+                return;
+            }
+
+            fogOfWarWorld = FogOfWarWorld.instance;
+            if (fogOfWarWorld != null)
+            {
                 return;
             }
 
@@ -711,11 +716,12 @@ namespace IronKingdoms.Combat
             }
 
             var revealer = pawn.GetComponent<FogOfWarRevealer3D>();
-            if (revealer == null)
+            if (revealer != null)
             {
-                revealer = pawn.AddComponent<FogOfWarRevealer3D>();
+                return;
             }
 
+            revealer = pawn.AddComponent<FogOfWarRevealer3D>();
             revealer.StartRevealerAsStatic = false;
             revealer.UseOcclusion = false;
             revealer.ViewRadius = Mathf.Max(0.1f, playerFogRevealerRadius);
