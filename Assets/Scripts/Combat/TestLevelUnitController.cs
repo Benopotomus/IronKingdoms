@@ -253,7 +253,6 @@ namespace IronKingdoms.Combat
             var fogWorldObject = new GameObject("FogOfWarWorld");
             fogWorldObject.transform.SetParent(transform);
             fogOfWarWorld = fogWorldObject.AddComponent<FogOfWarWorld>();
-            fogOfWarWorld.GamePlaneOrientation = FogOfWarWorld.GamePlane.XZ;
         }
 
         private void ConfigureFogOfWarWorld()
