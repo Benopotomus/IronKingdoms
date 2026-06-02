@@ -167,6 +167,8 @@ namespace IronKingdoms.Combat
             EnsureNavPathBuilderAssigned();
             EnsureMatchArmySpawnerAssigned();
             EnsureFogOfWarWorldAssigned();
+            ConfigureFogOfWarWorld();
+            EnsureFogOfWarCameraEffectAssigned();
         }
 
         private void Start()
@@ -252,6 +254,38 @@ namespace IronKingdoms.Combat
             fogWorldObject.transform.SetParent(transform);
             fogOfWarWorld = fogWorldObject.AddComponent<FogOfWarWorld>();
             fogOfWarWorld.GamePlaneOrientation = FogOfWarWorld.GamePlane.XZ;
+        }
+
+        private void ConfigureFogOfWarWorld()
+        {
+            if (fogOfWarWorld == null)
+            {
+                return;
+            }
+
+            fogOfWarWorld.GamePlaneOrientation = FogOfWarWorld.GamePlane.XZ;
+            fogOfWarWorld.FOWSamplingMode = FogOfWarWorld.FogSampleMode.Pixel_Perfect;
+            fogOfWarWorld.UpdateMethod = FogOfWarWorld.FowUpdateMethod.LateUpdate;
+            fogOfWarWorld.RevealerUpdateMode = FogOfWarWorld.RevealerUpdateMethod.Every_Frame;
+            fogOfWarWorld.HidersUseFogTexture = false;
+        }
+
+        private void EnsureFogOfWarCameraEffectAssigned()
+        {
+            var activeCamera = cameraManager?.ActiveCamera;
+            if (activeCamera == null)
+            {
+                activeCamera = Camera.main;
+            }
+
+            if (activeCamera == null
+                || activeCamera.GetComponent<FowImageEffectOpaque>() != null
+                || activeCamera.GetComponent<FowImageEffect>() != null)
+            {
+                return;
+            }
+
+            activeCamera.gameObject.AddComponent<FowImageEffectOpaque>();
         }
 
         private void BuildVisualizers()
