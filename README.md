@@ -20,3 +20,4 @@ Player activation is staged in the current prototype. Units move first, then tak
 
 Design notes live in `Docs/CombatPrototypeDesign.md`.
 Rulebook-derived reference notes live in `Docs/WMH_MK4_Rules_Reference.md`.
+Visibility range and inch/world scaling live in `Docs/VisibilityAndScale.md`.

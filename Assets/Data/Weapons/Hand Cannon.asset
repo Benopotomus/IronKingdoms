@@ -14,9 +14,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   displayName: Hand Cannon
   attackType: 1
-  power: 6
+  power: 12
   range: 12
   matModifier: 0
   ratModifier: 0
   attackFormula: {fileID: 11400000, guid: c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0, type: 2}
   damageFormula: {fileID: 11400000, guid: d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1, type: 2}
+  advantages:
+  - {fileID: 11400000, guid: c1d2e3f4a5b6478990abcdef10000106, type: 2}

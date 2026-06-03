@@ -10,8 +10,9 @@ namespace IronKingdoms.Combat
     /// hands off to <see cref="TestLevelUnitController"/> to place units.
     ///
     /// The A* navmesh (RecastGraph) must be baked and saved inside CombatMapScene in the
-    /// Unity editor (A* Inspector → Scan, then save the scene).  Set "Scan On Startup" to
-    /// false on the AstarPath component so the cached graph is used directly at runtime.
+    /// Unity editor. Use <b>Iron Kingdoms → Tools → Combat Navmesh → Scan Combat Map (High Quality)</b>,
+    /// then save the scene. Set "Scan On Startup" to false on the AstarPath component so the
+    /// cached graph is used directly at runtime.
     /// If no scanned data is present, this component performs a one-time runtime scan fallback.
     /// </summary>
     public class CombatMapSetup : MonoBehaviour
@@ -55,6 +56,7 @@ namespace IronKingdoms.Combat
             }
 
             EnsureNavigationReady();
+            CombatMapSceneProvider.RegisterMapScene(mapScene);
             ApplySpawnAnchors(mapScene, targetController);
 
             if (targetController != null)

@@ -42,6 +42,7 @@ This implementation intentionally stays at the "starter combat harness" level ra
 Each `UnitTypeDefinition` captures:
 - role,
 - movement speed,
+- visibility range (fog of war reveal radius in inches, default 36 — see `Docs/VisibilityAndScale.md`),
 - model size (Mk4 base diameter and volume height),
 - melee attack,
 - ranged attack,
@@ -68,6 +69,20 @@ Use `Iron Kingdoms/Tools/Unit Type Creator` from the Unity menu to create and ed
 
 ### Test scenarios
 Create or duplicate `TestCombatScenarioAsset` assets and point them at different attacker/defender unit definitions to validate new balance ideas.
+
+## Combat map navmesh (A* Recast)
+
+Movement uses five **RecastGraph** surfaces in `Assets/Scenes/CombatMapScene.unity` (one per `ModelSize`: `Base30mm` … `Base120mm`). Graphs are baked in the editor and cached on the `A*` object (`scanOnStartup = false`).
+
+**Higher quality bake**
+
+1. Open `CombatMapScene`.
+2. Run **Iron Kingdoms → Tools → Combat Navmesh → Scan Combat Map (High Quality)**.
+3. Save the scene.
+
+High quality lowers voxel size (`cellSize` 0.125), tightens contour simplification, subdivides long edges, and increases round-collider detail. Agent radius and walkable height are derived from each base size (`CombatRecastGraphSettings.cs`). Scan time and file size increase versus the default A* preset.
+
+To tune values, edit `CombatRecastGraphSettings` or use **Apply High Quality Settings** without scanning, adjust in the A* Inspector, then Scan manually.
 
 ## Included sample content
 - `Assets/Data/Units/Steam Knight.asset`: short-range armored bruiser with resource boosts.

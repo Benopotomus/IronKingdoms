@@ -1274,6 +1274,38 @@ namespace FOW
             RenderTexture.active = tmp;
         }
 
+        /// <summary>
+        /// Creates the fog persistence render texture when switching to texture storage after Initialize().
+        /// </summary>
+        public void EnsureTextureStorageReady()
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+#endif
+            var needsTexture = UseMiniMap
+                || FOWSamplingMode == FogSampleMode.Texture
+                || FOWSamplingMode == FogSampleMode.Both;
+            if (!needsTexture)
+            {
+                return;
+            }
+
+            if (FowTextureMaterial == null)
+            {
+                FowTextureMaterial = new Material(Shader.Find("Hidden/FullScreen/FOW/FOW_RT"));
+            }
+
+            if (GetFOWRT() == null)
+            {
+                InitFOWRT();
+            }
+
+            UpdateFowTextureMaterialProperties();
+        }
+
         #endregion
 
         #region All Bounds Stuff

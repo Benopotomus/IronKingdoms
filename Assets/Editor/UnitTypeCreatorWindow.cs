@@ -11,14 +11,14 @@ namespace IronKingdoms.Editor
         private string unitName = "New Unit";
         private UnitRole role = UnitRole.Infantry;
         private float speed = 5f;
+        private float visibilityRange = CombatScale.DefaultVisibilityRangeInches;
         private ModelSize modelSize = ModelSize.Base30mm;
         private int meleeAttack = 5;
         private int rangedAttack = 4;
         private int defense = 12;
         private int armor = 14;
         private int health = 10;
-        private UnitAdvantage advantages = UnitAdvantage.None;
-        private int startingResource;
+        private readonly List<CombatAdvantageDefinition> advantageDraft = new();
         private readonly List<WeaponProfile> weapons = new() { null };
         private string designNotes = string.Empty;
         private Vector2 scrollPosition;
@@ -38,14 +38,14 @@ namespace IronKingdoms.Editor
             unitName = EditorGUILayout.TextField("Display Name", unitName);
             role = (UnitRole)EditorGUILayout.EnumPopup("Role", role);
             speed = EditorGUILayout.FloatField("Speed", speed);
+            visibilityRange = EditorGUILayout.FloatField("Visibility Range (in)", visibilityRange);
             modelSize = (ModelSize)EditorGUILayout.EnumPopup("Model Size", modelSize);
             meleeAttack = EditorGUILayout.IntField("Melee Attack", meleeAttack);
             rangedAttack = EditorGUILayout.IntField("Ranged Attack", rangedAttack);
             defense = EditorGUILayout.IntField("Defense", defense);
             armor = EditorGUILayout.IntField("Armor", armor);
             health = EditorGUILayout.IntField("Health", health);
-            advantages = (UnitAdvantage)EditorGUILayout.EnumFlagsField("Advantages", advantages);
-            startingResource = EditorGUILayout.IntField("Starting Resource", startingResource);
+            DrawAdvantageReferenceList(advantageDraft);
             DrawWeaponReferenceList(weapons);
             designNotes = EditorGUILayout.TextArea(designNotes, GUILayout.MinHeight(60f));
 
@@ -90,20 +90,19 @@ namespace IronKingdoms.Editor
 
             var statsProperty = serializedObject.FindProperty("stats");
             statsProperty.FindPropertyRelative("speed").floatValue = speed;
+            statsProperty.FindPropertyRelative("visibilityRange").floatValue = visibilityRange;
             statsProperty.FindPropertyRelative("modelSize").enumValueIndex = (int)modelSize;
             statsProperty.FindPropertyRelative("meleeAttack").intValue = meleeAttack;
             statsProperty.FindPropertyRelative("rangedAttack").intValue = rangedAttack;
             statsProperty.FindPropertyRelative("defense").intValue = defense;
             statsProperty.FindPropertyRelative("armor").intValue = armor;
             statsProperty.FindPropertyRelative("health").intValue = health;
-            var advantagesProperty = statsProperty.FindPropertyRelative("advantageList");
-            var selectedAdvantages = GetSelectedAdvantages(advantages);
-            advantagesProperty.arraySize = selectedAdvantages.Count;
-            for (var i = 0; i < selectedAdvantages.Count; i++)
+            var advantagesProperty = statsProperty.FindPropertyRelative("advantages");
+            advantagesProperty.arraySize = advantageDraft.Count;
+            for (var i = 0; i < advantageDraft.Count; i++)
             {
-                advantagesProperty.GetArrayElementAtIndex(i).intValue = (int)selectedAdvantages[i];
+                advantagesProperty.GetArrayElementAtIndex(i).objectReferenceValue = advantageDraft[i];
             }
-            statsProperty.FindPropertyRelative("startingResource").intValue = startingResource;
             var validWeapons = new List<WeaponProfile>();
             for (var i = 0; i < weapons.Count; i++)
             {
@@ -140,23 +139,32 @@ namespace IronKingdoms.Editor
             return string.IsNullOrWhiteSpace(value) ? "UnitType" : value;
         }
 
-        private static List<UnitAdvantage> GetSelectedAdvantages(UnitAdvantage selectedFlags)
+        private static void DrawAdvantageReferenceList(List<CombatAdvantageDefinition> draftAdvantages)
         {
-            var selectedAdvantages = new List<UnitAdvantage>();
-            foreach (UnitAdvantage value in System.Enum.GetValues(typeof(UnitAdvantage)))
+            GUILayout.Space(8f);
+            GUILayout.Label("Advantages", EditorStyles.boldLabel);
+
+            for (var i = 0; i < draftAdvantages.Count; i++)
             {
-                if (value == UnitAdvantage.None)
+                EditorGUILayout.BeginHorizontal();
+                draftAdvantages[i] = (CombatAdvantageDefinition)EditorGUILayout.ObjectField(
+                    "Advantage Asset",
+                    draftAdvantages[i],
+                    typeof(CombatAdvantageDefinition),
+                    false);
+                if (GUILayout.Button("Remove", GUILayout.Width(72f)))
                 {
-                    continue;
+                    draftAdvantages.RemoveAt(i);
+                    i--;
                 }
 
-                if ((selectedFlags & value) == value)
-                {
-                    selectedAdvantages.Add(value);
-                }
+                EditorGUILayout.EndHorizontal();
             }
 
-            return selectedAdvantages;
+            if (GUILayout.Button("Add Advantage Slot"))
+            {
+                draftAdvantages.Add(null);
+            }
         }
 
         private static void DrawWeaponReferenceList(List<WeaponProfile> draftWeapons)

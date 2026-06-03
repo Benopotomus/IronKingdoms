@@ -183,7 +183,7 @@ namespace FOW
 			//Vector3Directions = new NativeArray<float3>(StepCount, Allocator.Persistent);
 
 #if UNITY_2022_2_OR_NEWER
-			RayQueryParameters = new QueryParameters(ObstacleMask, false, QueryTriggerInteraction.UseGlobal, false);
+			RayQueryParameters = new QueryParameters(ObstacleMask, false, QueryTriggerInteraction.Ignore, false);
 #endif
 			SetupJob = new Phase1SetupJob()
 			{

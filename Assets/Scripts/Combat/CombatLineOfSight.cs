@@ -18,11 +18,51 @@ namespace IronKingdoms.Combat
         public float Height { get; }
         public float BaseDiameterMillimeters { get; }
         public Vector3 SightPoint => Position + Vector3.up * (Height * 0.5f);
+
+        public Vector3 GetPlanarEdgeToward(Vector3 targetCenter)
+        {
+            var delta = targetCenter - Position;
+            delta.y = 0f;
+            if (delta.sqrMagnitude <= 0.001f)
+            {
+                return Position;
+            }
+
+            return Position + delta.normalized * Radius;
+        }
     }
 
     public static class CombatLineOfSight
     {
         private const float DistanceEpsilon = 0.001f;
+
+        public static void GetPlanarBaseEdgePoints(
+            CombatLineOfSightVolume origin,
+            CombatLineOfSightVolume target,
+            out Vector3 originEdge,
+            out Vector3 targetEdge)
+        {
+            originEdge = origin.GetPlanarEdgeToward(target.Position);
+            targetEdge = target.GetPlanarEdgeToward(origin.Position);
+        }
+
+        public static float GetPlanarEdgeToEdgeDistanceWorld(CombatLineOfSightVolume origin, CombatLineOfSightVolume target)
+        {
+            var delta = target.Position - origin.Position;
+            delta.y = 0f;
+            return Mathf.Max(0f, delta.magnitude - origin.Radius - target.Radius);
+        }
+
+        public static float GetPlanarEdgeToEdgeDistanceInches(CombatLineOfSightVolume origin, CombatLineOfSightVolume target)
+        {
+            return CombatScale.WorldUnitsToInches(GetPlanarEdgeToEdgeDistanceWorld(origin, target));
+        }
+
+        public static Vector3 GetSightPointAtPlanarEdgeToward(CombatLineOfSightVolume origin, Vector3 targetCenter)
+        {
+            var edge = origin.GetPlanarEdgeToward(targetCenter);
+            return new Vector3(edge.x, origin.SightPoint.y, edge.z);
+        }
 
         public static CombatLineOfSightVolume CreateVolume(Vector3 basePosition, ModelSize modelSize)
         {

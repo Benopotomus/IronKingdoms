@@ -25,5 +25,6 @@ MonoBehaviour:
     weapons:
     - {fileID: 11400000, guid: e8a5dca7ef44425e8fcb45e3e8ef8ba4, type: 2}
     - {fileID: 11400000, guid: 2d4ea5d59f8d4cf7b8d6c8c53e5c2a13, type: 2}
+    - {fileID: 11400000, guid: 6d3d4b1d3fa24c3aa6c2cc4b4517ce72, type: 2}
   designNotes: Small 30mm infantry skirmisher. Fast and accurate at range with a Long Rifle; carries a Bayonet for emergency melee. Lightweight armour keeps DEF high but ARM low.
   visualPrefab: {fileID: 100000, guid: e5f607182d3e4f5060718293a4b5c6d7, type: 3}

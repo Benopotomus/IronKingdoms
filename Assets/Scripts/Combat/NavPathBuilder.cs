@@ -151,6 +151,171 @@ namespace IronKingdoms.Combat
             return true;
         }
 
+        /// <summary>
+        /// Returns true when a straight segment from <paramref name="from"/> to <paramref name="to"/>
+        /// lies entirely on walkable navmesh for <paramref name="graphMask"/> (Mk4 charge movement).
+        /// </summary>
+        public bool IsStraightLineFullyOnNavmesh(Vector3 from, Vector3 to, GraphMask graphMask, float endpointTolerance = 0.02f)
+        {
+            if (AstarPath.active == null)
+            {
+                return false;
+            }
+
+            FlushPendingNavmeshUpdates();
+
+            var lineEnd = to;
+            lineEnd.y = from.y;
+
+            var walkableConstraint = NearestNodeConstraint.Walkable;
+            walkableConstraint.graphMask = graphMask;
+
+            var startNearest = AstarPath.active.GetNearest(from, walkableConstraint);
+            var endNearest = AstarPath.active.GetNearest(lineEnd, walkableConstraint);
+            if (startNearest.node == null || endNearest.node == null)
+            {
+                return false;
+            }
+
+            if (HorizontalDistanceXZ(from, startNearest.position) > endpointTolerance
+                || HorizontalDistanceXZ(lineEnd, endNearest.position) > endpointTolerance)
+            {
+                return false;
+            }
+
+            var raycastGraph = GetRaycastableGraph(graphMask);
+            if (raycastGraph == null)
+            {
+                return false;
+            }
+
+            var traversalConstraint = TraversalConstraint.None;
+            traversalConstraint.graphMask = graphMask;
+
+            var lineStart = startNearest.position;
+            lineEnd = endNearest.position;
+            lineEnd.y = lineStart.y;
+
+            return !raycastGraph.Linecast(lineStart, lineEnd, out _, ref traversalConstraint, null);
+        }
+
+        /// <summary>
+        /// Resolves a straight-line charge destination from <paramref name="from"/> toward
+        /// <paramref name="clickPosition"/>. The click direction defines the ray; the result is
+        /// the farthest point on that ray (up to the click distance) where the full segment stays
+        /// on the navmesh, snapping the destination instead of rejecting off-mesh clicks.
+        /// </summary>
+        public bool TryResolveStraightLineChargeDestination(
+            Vector3 from,
+            Vector3 clickPosition,
+            GraphMask graphMask,
+            out Vector3 resolvedDestination,
+            float endpointTolerance = 0.02f)
+        {
+            resolvedDestination = clickPosition;
+            if (AstarPath.active == null)
+            {
+                return false;
+            }
+
+            FlushPendingNavmeshUpdates();
+
+            var flatEnd = clickPosition;
+            flatEnd.y = from.y;
+            var deltaX = flatEnd.x - from.x;
+            var deltaZ = flatEnd.z - from.z;
+            var maxClickDistance = Mathf.Sqrt(deltaX * deltaX + deltaZ * deltaZ);
+            if (maxClickDistance <= endpointTolerance)
+            {
+                return false;
+            }
+
+            var dirX = deltaX / maxClickDistance;
+            var dirZ = deltaZ / maxClickDistance;
+
+            if (!TryFindFarthestValidStraightLineDistance(
+                    from,
+                    dirX,
+                    dirZ,
+                    maxClickDistance,
+                    graphMask,
+                    endpointTolerance,
+                    out var validDistance))
+            {
+                return false;
+            }
+
+            resolvedDestination = new Vector3(
+                from.x + dirX * validDistance,
+                from.y,
+                from.z + dirZ * validDistance);
+            return true;
+        }
+
+        private static bool TryFindFarthestValidStraightLineDistance(
+            Vector3 from,
+            float dirX,
+            float dirZ,
+            float maxDistance,
+            GraphMask graphMask,
+            float endpointTolerance,
+            out float validDistance)
+        {
+            validDistance = 0f;
+            if (maxDistance <= endpointTolerance)
+            {
+                return false;
+            }
+
+            var instance = NavPathBuilder.instance;
+            if (instance == null)
+            {
+                return false;
+            }
+
+            if (instance.IsStraightLineFullyOnNavmesh(
+                    from,
+                    PointOnChargeRay(from, dirX, dirZ, maxDistance),
+                    graphMask,
+                    endpointTolerance))
+            {
+                validDistance = maxDistance;
+                return true;
+            }
+
+            var low = 0f;
+            var high = maxDistance;
+            for (var iteration = 0; iteration < 16; iteration++)
+            {
+                var mid = (low + high) * 0.5f;
+                if (instance.IsStraightLineFullyOnNavmesh(
+                        from,
+                        PointOnChargeRay(from, dirX, dirZ, mid),
+                        graphMask,
+                        endpointTolerance))
+                {
+                    low = mid;
+                }
+                else
+                {
+                    high = mid;
+                }
+            }
+
+            if (low <= endpointTolerance)
+            {
+                return false;
+            }
+
+            validDistance = low;
+            return true;
+        }
+
+        private static Vector3 PointOnChargeRay(Vector3 from, float dirX, float dirZ, float distance)
+        {
+            return new Vector3(from.x + dirX * distance, from.y, from.z + dirZ * distance);
+        }
+
         // -----------------------------------------------------------------------------------------
         // Private helpers
         // -----------------------------------------------------------------------------------------
@@ -238,6 +403,31 @@ namespace IronKingdoms.Combat
                 ModelSize.Base120mm => base120GraphName,
                 _ => string.Empty
             };
+        }
+
+        private static IRaycastableGraph GetRaycastableGraph(GraphMask graphMask)
+        {
+            var graphs = AstarPath.active?.data?.graphs;
+            if (graphs == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < graphs.Length; i++)
+            {
+                var graph = graphs[i];
+                if (graph != null && graphMask.Contains(graph) && graph is IRaycastableGraph raycastable)
+                {
+                    return raycastable;
+                }
+            }
+
+            return null;
+        }
+
+        private static float HorizontalDistanceXZ(Vector3 a, Vector3 b)
+        {
+            return new Vector2(a.x - b.x, a.z - b.z).magnitude;
         }
         
     }

@@ -66,6 +66,7 @@
 | **ARM** | Armor | Model takes 1 damage point per point the damage roll exceeds ARM. |
 | **ARC** | Arcana | Number of focus (warcasters) or fury (warlocks) points per turn. |
 | **CTRL** | Control Range | Radius in inches of the warcaster/warlock's control range. |
+| **VIS** | Visibility Range | *(Prototype only.)* Radius in inches out to which this model reveals fog of war for its player. Default **36"**. See [`VisibilityAndScale.md`](VisibilityAndScale.md). |
 | **FURY** | Fury | Max fury a warbeast can generate before risking frenzy. |
 | **THR** | Threshold | Warbeast's resistance to frenzying. |
 
@@ -687,6 +688,7 @@ Charge attack = automatically boosted first damage roll (if charged ≥ 3")
 ### Stats to Track Per Unit
 
 - SPD, MAT, RAT, DEF, ARM, damage capacity
+- VIS (prototype): visibility range in inches for fog of war — default 36", see [`VisibilityAndScale.md`](VisibilityAndScale.md)
 - For warcasters: ARC, CTRL, focus points current value, upkeep spells
 - For warjacks: damage grid (6 columns), system damage (C, M, F, L, R, H)
 - Weapon: RNG, ROF, AOE, POW, type (melee/ranged), weapon qualities

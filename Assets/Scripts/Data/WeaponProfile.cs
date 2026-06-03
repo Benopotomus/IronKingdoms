@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
@@ -24,12 +25,79 @@ namespace IronKingdoms.Combat
         [Tooltip("Formula ScriptableObject that governs damage dice count and damage calculation. Uses standard 2d6 rules when unassigned.")]
         public DamageRollFormula damageFormula;
 
+        [SerializeField] private List<CombatWeaponAdvantageDefinition> advantages = new();
+
         public string DisplayName => string.IsNullOrWhiteSpace(displayName) ? "Weapon" : displayName;
         public WeaponAttackType AttackType => attackType;
         public int Power => Mathf.Max(1, power);
         public float Range => Mathf.Max(0.5f, range);
         public int MatModifier => matModifier;
         public int RatModifier => ratModifier;
+        public IReadOnlyList<CombatWeaponAdvantageDefinition> Advantages => advantages;
+
+        public bool HasWeaponAdvantage(CombatWeaponAdvantageDefinition advantage)
+        {
+            return advantage != null && advantages != null && advantages.Contains(advantage);
+        }
+
+        public bool HasWeaponAdvantage(WeaponAdvantageKind kind)
+        {
+            if (advantages == null || kind == WeaponAdvantageKind.Other)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < advantages.Count; i++)
+            {
+                var advantage = advantages[i];
+                if (advantage != null && advantage.Kind == kind)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public bool AddsExtraDamageDie()
+        {
+            return HasWeaponAdvantageFlag(advantage => advantage.AddsExtraDamageDie);
+        }
+
+        public bool IgnoresTargetInMeleeDefBonus()
+        {
+            return HasWeaponAdvantageFlag(advantage => advantage.IgnoresTargetInMeleeDefBonus);
+        }
+
+        public bool IgnoresShieldAndBucklerArmor()
+        {
+            return HasWeaponAdvantageFlag(advantage => advantage.IgnoresShieldAndBucklerArmor);
+        }
+
+        public bool IgnoresSpellDefAndArmBonuses()
+        {
+            return HasWeaponAdvantageFlag(advantage => advantage.IgnoresSpellDefAndArmBonuses);
+        }
+
+        public int GetShieldAndBucklerArmorBonus()
+        {
+            var total = 0;
+            if (advantages == null)
+            {
+                return total;
+            }
+
+            for (var i = 0; i < advantages.Count; i++)
+            {
+                var advantage = advantages[i];
+                if (advantage != null)
+                {
+                    total += advantage.ArmorBonus;
+                }
+            }
+
+            return total;
+        }
 
         public int GetAttackModifier()
         {
@@ -69,7 +137,13 @@ namespace IronKingdoms.Combat
         /// <summary>Returns the number of damage dice for a standard or boosted roll.</summary>
         public int GetDamageDiceCount(bool boosted)
         {
-            return damageFormula != null ? damageFormula.GetDiceCount(boosted) : (boosted ? 3 : 2);
+            var diceCount = damageFormula != null ? damageFormula.GetDiceCount(boosted) : (boosted ? 3 : 2);
+            if (AddsExtraDamageDie())
+            {
+                diceCount += 1;
+            }
+
+            return diceCount;
         }
 
         /// <summary>Calculates damage applied to a target after subtracting ARM.</summary>
@@ -90,6 +164,27 @@ namespace IronKingdoms.Combat
             power = Power;
             range = Range;
             displayName = DisplayName;
+            advantages ??= new List<CombatWeaponAdvantageDefinition>();
+            advantages.RemoveAll(value => value == null);
+        }
+
+        private bool HasWeaponAdvantageFlag(System.Func<CombatWeaponAdvantageDefinition, bool> predicate)
+        {
+            if (advantages == null || predicate == null)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < advantages.Count; i++)
+            {
+                var advantage = advantages[i];
+                if (advantage != null && predicate(advantage))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public static WeaponProfile CreateDefault()

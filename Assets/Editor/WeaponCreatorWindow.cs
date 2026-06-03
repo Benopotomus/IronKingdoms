@@ -101,6 +101,7 @@ namespace IronKingdoms.Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("ratModifier"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("attackFormula"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("damageFormula"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("advantages"), true);
             serializedObject.ApplyModifiedProperties();
 
             if (GUILayout.Button("Apply Weapon Changes"))

@@ -15,10 +15,6 @@ namespace IronKingdoms.Combat
         private const float PositionArrivalTolerance = 0.05f;
         private const float NavmeshContainmentTolerance = 0.02f;
         private const float MovementBudgetEpsilon = 0.001f;
-        private const float MillimetersPerInch = 25.4f;
-        private const float MillimetersPerWorldUnit = 30f;
-        private const float WorldUnitsPerInch = MillimetersPerInch / MillimetersPerWorldUnit;
-        private const float InchesPerWorldUnit = MillimetersPerWorldUnit / MillimetersPerInch;
         private const float VisualizerLineWidth = 0.06f;
         // 5 mm physical base height: cylinder native height = 2 units, base scale = 30 mm per unit → scaleY = 5/(30×2)
         private const float PawnBaseHeightScale = 5f / 60f;
@@ -86,6 +82,7 @@ namespace IronKingdoms.Combat
 
         private enum MovementStepOption
         {
+            None,
             Advance,
             Run,
             Charge
@@ -100,8 +97,11 @@ namespace IronKingdoms.Combat
         [SerializeField] private CombatCameraManager cameraManager;
         [SerializeField] private NavPathBuilder navPathBuilder;
         [SerializeField] private FogOfWarWorld fogOfWarWorld;
-        [SerializeField, Min(0.1f)] private float playerFogRevealerRadius = 10f;
-        [SerializeField, Min(0.1f)] private float playerFogVisionHeight = 3f;
+        [SerializeField] private CombatDefinitionCatalog definitionCatalog;
+        [SerializeField] private Vector2 fogWorldBoundsCenter = Vector2.zero;
+        [SerializeField] private Vector2 fogWorldBoundsSize = new Vector2(24f, 24f);
+        [SerializeField, Range(0.05f, 1f)] private float fogExploredShroudVisibility = 0.35f;
+        [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
         [SerializeField] private bool autoSpawnOnStart = true;
         private MatchArmySpawner matchArmySpawner;
 
@@ -148,10 +148,8 @@ namespace IronKingdoms.Combat
         private int uiCancelFrame = -1;
 
         // Movement preview state ----------------------------------------------------------------
-        // previewPath holds the last NavPathBuilder-computed waypoints for the current hover.
-        // It is set asynchronously; the most recent result is always used for both visualisation
-        // and (on click-confirm) for the actual movement order, so preview and execution are 100%
-        // identical.
+        // previewPath holds waypoints for the current hover (nav path, or a straight line for charge).
+        // Nav paths are set asynchronously; charge paths are built synchronously each hover update.
         private List<Vector3> previewPath;
         private bool previewPathPending;
         private Vector3 previewPathTo;
@@ -160,12 +158,14 @@ namespace IronKingdoms.Combat
         private float stagedRoughTerrainInches;
         private bool hasStagedMoveAmount;
         private float lastPathPreviewTime;
+        private readonly List<Vector3> chargePathScratch = new(2);
 
         private void Awake()
         {
             EnsureCameraManagerAssigned();
             EnsureNavPathBuilderAssigned();
             EnsureMatchArmySpawnerAssigned();
+            EnsureDefinitionCatalogAssigned();
             EnsureFogOfWarWorldAssigned();
             ConfigureFogOfWarWorld();
             EnsureFogOfWarCameraEffectAssigned();
@@ -231,6 +231,18 @@ namespace IronKingdoms.Combat
             matchArmySpawner ??= new MatchArmySpawner(navPathBuilder);
         }
 
+        private void EnsureDefinitionCatalogAssigned()
+        {
+            if (definitionCatalog != null)
+            {
+                definitionCatalog.RegisterAsActiveCatalog();
+                return;
+            }
+
+            definitionCatalog = CombatDefinitionCatalog.Instance;
+            definitionCatalog?.RegisterAsActiveCatalog();
+        }
+
         private void EnsureFogOfWarWorldAssigned()
         {
             if (fogOfWarWorld != null)
@@ -263,10 +275,43 @@ namespace IronKingdoms.Combat
             }
 
             fogOfWarWorld.GamePlaneOrientation = FogOfWarWorld.GamePlane.XZ;
-            fogOfWarWorld.FOWSamplingMode = FogOfWarWorld.FogSampleMode.Pixel_Perfect;
+            fogOfWarWorld.FOWSamplingMode = FogOfWarWorld.FogSampleMode.Texture;
             fogOfWarWorld.UpdateMethod = FogOfWarWorld.FowUpdateMethod.LateUpdate;
             fogOfWarWorld.RevealerUpdateMode = FogOfWarWorld.RevealerUpdateMethod.Every_Frame;
             fogOfWarWorld.HidersUseFogTexture = false;
+
+            // Texture storage + regrow keeps explored-but-out-of-sight areas dimmed (shroud)
+            // while never-visited areas stay fully black.
+            fogOfWarWorld.UseRegrow = true;
+            fogOfWarWorld.RevealerFadeIn = false;
+            fogOfWarWorld.RevealerFadeOut = false;
+            fogOfWarWorld.InitialFogExplorationValue = 0f;
+            fogOfWarWorld.MaxFogRegrowAmount = fogExploredShroudVisibility;
+            fogOfWarWorld.UseConstantBlur = false;
+            fogOfWarWorld.FogType = FogOfWarWorld.FogOfWarType.Soft;
+            fogOfWarWorld.FogFade = FogOfWarWorld.FogOfWarFadeType.Smoothstep;
+            fogOfWarWorld.EdgeSoftenDistance = fogVisionEdgeSoftenDistance;
+            fogOfWarWorld.SightExtraAmount = 0.05f;
+            fogOfWarWorld.FowResX = 512;
+            fogOfWarWorld.FowResY = 512;
+
+            var halfExtents = new Vector3(
+                fogWorldBoundsSize.x * 0.5f,
+                0.5f,
+                fogWorldBoundsSize.y * 0.5f);
+            fogOfWarWorld.UpdateWorldBounds(
+                new Vector3(fogWorldBoundsCenter.x, 0f, fogWorldBoundsCenter.y),
+                halfExtents);
+
+            // Alpha 0 uses the solid unknown color in the FOW shader; non-zero alpha multiplies
+            // the live scene color through, which leaves terrain visible in unseen areas.
+            fogOfWarWorld.UnknownColor = new Color(0f, 0f, 0f, 0f);
+
+            // FogOfWarWorld.Initialize() runs during AddComponent, before these values are set.
+            fogOfWarWorld.EnsureTextureStorageReady();
+            fogOfWarWorld.SwitchHidersUseFogTextureMode(fogOfWarWorld.HidersUseFogTexture);
+            fogOfWarWorld.UpdateAllShaderProperties();
+            FogOfWarWorld.SetFowEffectStrength(1f);
         }
 
         private void EnsureFogOfWarCameraEffectAssigned()
@@ -400,10 +445,18 @@ namespace IronKingdoms.Combat
                 previewPathTo = Vector3.positiveInfinity;
             }
 
-            // Request a new path from NavPathBuilder when the hover target has moved enough
-            // and no request is already in flight.
+            // Charge: straight line on the XZ plane, snapped to the nearest valid nav point along that ray.
             var horizontalDist = new Vector2(previewPathTo.x - hoverPos.x, previewPathTo.z - hoverPos.z).magnitude;
-            if (navPathBuilder != null && !previewPathPending && (horizontalDist >= PathPreviewUpdateDistance
+            if (selectedMovementOption == MovementStepOption.Charge)
+            {
+                previewPathTo = hoverPos;
+                previewPath ??= new List<Vector3>(2);
+                if (!TryResolveChargePath(selectedUnit, hoverPos, previewPath, out _))
+                {
+                    previewPath.Clear();
+                }
+            }
+            else if (navPathBuilder != null && !previewPathPending && (horizontalDist >= PathPreviewUpdateDistance
                 || Time.unscaledTime - lastPathPreviewTime >= PathPreviewMinInterval && horizontalDist > 0.01f))
             {
                 previewPathTo = hoverPos;
@@ -416,7 +469,8 @@ namespace IronKingdoms.Combat
                 {
                     previewPathPending = false;
                     // Only accept the result if we're still in Move mode for the same unit.
-                    if (selectedUnit == null || currentPlayerMode != UnitActionMode.Move)
+                    if (selectedUnit == null || currentPlayerMode != UnitActionMode.Move
+                        || selectedMovementOption == MovementStepOption.Charge)
                     {
                         return;
                     }
@@ -454,7 +508,7 @@ namespace IronKingdoms.Combat
                 ? new Color(0.15f, 0.85f, 0.85f, 0.8f)
                 : new Color(0.95f, 0.35f, 0.15f, 0.8f);
 
-            // Draw only nav-path waypoints; no straight-line fallback.
+            // Draw path waypoints (nav path or straight-line charge).
             movementPathLine.enabled = hasPreviewPath;
             if (hasPreviewPath)
             {
@@ -684,7 +738,8 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < placements.Count; i++)
             {
                 var unitDefinition = placements[i].UnitDefinition;
-                unitDefinition.Stats.EnsureWeaponDefaults();
+                unitDefinition.Stats.EnsureAdvantageDefaults();
+                unitDefinition.Stats.EnsureAbilityDefaults();
                 var pawnScale = unitDefinition.Stats.modelSize.GetPawnScale();
                 var spawnPos = placements[i].Position;
 
@@ -700,6 +755,7 @@ namespace IronKingdoms.Combat
 
                 pawn.name = $"{unitDefinition.DisplayName} ({(isPlayerControlled ? "Player" : "Enemy")})";
                 ConfigurePawnForModelSize(pawn, unitDefinition.Stats.modelSize);
+                CombatMapSceneProvider.MoveToMapScene(pawn);
 
                 var baseColor = new Color(color.r * 0.55f, color.g * 0.55f, color.b * 0.55f);
                 var bodyTransform = pawn.transform.Find("Body");
@@ -731,7 +787,7 @@ namespace IronKingdoms.Combat
                 ConfigureUnitNavmeshCut(pawn, pawnCollider, pawnScale);
                 if (isPlayerControlled)
                 {
-                    ConfigurePlayerFogRevealer(pawn, pawnCollider);
+                    ConfigurePlayerFogRevealer(pawn, pawnCollider, unitDefinition);
                 }
 
                 var runtimeUnit = new RuntimeUnit(unitDefinition, isPlayerControlled, pawn);
@@ -741,25 +797,35 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private void ConfigurePlayerFogRevealer(GameObject pawn, CapsuleCollider pawnCollider)
+        private void ConfigurePlayerFogRevealer(GameObject pawn, CapsuleCollider pawnCollider, UnitTypeDefinition unitDefinition)
         {
-            if (pawn == null)
+            if (pawn == null || unitDefinition == null)
             {
                 return;
             }
 
-            var revealer = pawn.GetComponent<FogOfWarRevealer3D>();
-            if (revealer != null)
+            if (pawn.GetComponent<CombatFogOfWarRevealer3D>() != null)
             {
                 return;
             }
 
-            revealer = pawn.AddComponent<FogOfWarRevealer3D>();
+            CombatMapSceneProvider.MoveToMapScene(pawn);
+
+            var wasActive = pawn.activeSelf;
+            pawn.SetActive(false);
+
+            var stats = unitDefinition.Stats;
+            var revealer = pawn.AddComponent<CombatFogOfWarRevealer3D>();
+            revealer.ConfigureForUnit(unitDefinition);
             revealer.StartRevealerAsStatic = false;
-            revealer.UseOcclusion = false;
-            revealer.ViewRadius = playerFogRevealerRadius;
-            revealer.VisionHeight = playerFogVisionHeight;
+            revealer.UseOcclusion = true;
+            revealer.AddCorners = true;
+            revealer.ObstacleLayerMask = CombatLayers.FogOccluderMask;
+            revealer.ViewRadius = CombatScale.InchesToWorldUnits(stats.visibilityRange);
+            revealer.VisionHeight = stats.modelSize.VolumeHeightWorldUnits();
             revealer.EyeOffset = pawnCollider != null ? pawnCollider.height * 0.5f : 0f;
+
+            pawn.SetActive(wasActive);
         }
 
         private static void ConfigurePawnForModelSize(GameObject pawn, ModelSize modelSize)
@@ -1017,6 +1083,28 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            if (selectedUnit.HasChargedThisTurn)
+            {
+                return;
+            }
+
+            if (selectedMovementOption == MovementStepOption.Charge
+                && (selectedUnit.HasAdvancedThisTurn || selectedUnit.HasRunActionThisTurn))
+            {
+                return;
+            }
+
+            if (selectedMovementOption == MovementStepOption.Run && selectedUnit.HasAdvancedThisTurn)
+            {
+                return;
+            }
+
+            if (selectedMovementOption == MovementStepOption.Advance
+                && (selectedUnit.HasRunActionThisTurn || selectedUnit.HasChargedThisTurn))
+            {
+                return;
+            }
+
             var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
             if (activeCamera == null)
             {
@@ -1071,20 +1159,37 @@ namespace IronKingdoms.Combat
 
             selectedUnit.RemainingMovementThisTurn = movementBudget;
             selectedUnit.IsAimingThisTurn = false;
+            selectedUnit.ActiveMovementStep = selectedMovementOption;
 
-            // Reuse the preview path if it was computed for a position close enough to where
-            // the player just clicked, so the unit follows exactly the path they saw.
-            var clickedNearPreview = previewPath != null && previewPath.Count >= 2
-                && new Vector2(previewPathTo.x - destination.x, previewPathTo.z - destination.z).magnitude
-                   <= PathPreviewUpdateDistance * PathPreviewReuseToleranceMultiplier;
-
-            if (clickedNearPreview)
+            if (selectedMovementOption == MovementStepOption.Charge)
             {
-                IssueMoveOrderFromPath(selectedUnit, previewPath, movementBudget);
+                if (TryResolveChargePath(selectedUnit, destination, chargePathScratch, out _))
+                {
+                    selectedUnit.HasChargedThisTurn = true;
+                    IssueMoveOrderFromPath(selectedUnit, chargePathScratch, movementBudget);
+                }
             }
             else
             {
-                IssueMoveOrder(selectedUnit, destination, movementBudget);
+                if (selectedMovementOption == MovementStepOption.Advance)
+                {
+                    selectedUnit.HasAdvancedThisTurn = true;
+                }
+
+                // Reuse the preview path if it was computed for a position close enough to where
+                // the player just clicked, so the unit follows exactly the path they saw.
+                var clickedNearPreview = previewPath != null && previewPath.Count >= 2
+                    && new Vector2(previewPathTo.x - destination.x, previewPathTo.z - destination.z).magnitude
+                       <= PathPreviewUpdateDistance * PathPreviewReuseToleranceMultiplier;
+
+                if (clickedNearPreview)
+                {
+                    IssueMoveOrderFromPath(selectedUnit, previewPath, movementBudget);
+                }
+                else
+                {
+                    IssueMoveOrder(selectedUnit, destination, movementBudget);
+                }
             }
 
             SetCurrentMode(UnitActionMode.None);
@@ -1163,15 +1268,23 @@ namespace IronKingdoms.Combat
                 var unitRadius = GetUnitCollisionRadius(unit);
                 var terrainSpeedMultiplier = GetMovementSpeedMultiplierAtPoint(unit, unit.Pawn.transform.position, unitRadius);
                 var maxStepThisFrame = InchesToWorldUnits(unit.Definition.Stats.speed * terrainSpeedMultiplier) * deltaTime;
-                var allowedStep = Mathf.Min(maxStepThisFrame, InchesToWorldUnits(unit.RemainingMovementThisTurn));
+                var currentPosition = unit.Pawn.transform.position;
+                var distanceToTarget = Vector3.Distance(currentPosition, targetPosition);
+                var rawStep = Mathf.Min(maxStepThisFrame, distanceToTarget);
+                var allowedStep = GetAffordableWorldStepAlongSegment(
+                    unit,
+                    currentPosition,
+                    targetPosition,
+                    rawStep,
+                    unitRadius);
                 if (allowedStep <= 0f)
                 {
                     unit.MoveTarget = null;
                     unit.PathWaypoints = null;
+                    unit.ActiveMovementStep = MovementStepOption.None;
                     continue;
                 }
 
-                var currentPosition = unit.Pawn.transform.position;
                 var nextPosition = Vector3.MoveTowards(currentPosition, targetPosition, allowedStep);
                 // Keep units grounded on terrain without forcing XZ onto navmesh every frame.
                 nextPosition = GetGroundedPositionKeepingXZ(unit, nextPosition);
@@ -1203,6 +1316,7 @@ namespace IronKingdoms.Combat
                     {
                         unit.MoveTarget = null;
                         unit.PathWaypoints = null;
+                        unit.ActiveMovementStep = MovementStepOption.None;
                     }
                 }
             }
@@ -1427,6 +1541,7 @@ namespace IronKingdoms.Combat
             {
                 unit.MoveTarget = null;
                 unit.PathWaypoints = null;
+                unit.ActiveMovementStep = MovementStepOption.None;
                 return;
             }
 
@@ -1448,6 +1563,7 @@ namespace IronKingdoms.Combat
             // Nav-only movement: do not issue direct movement when no nav path is available.
             unit.MoveTarget = null;
             unit.PathWaypoints = null;
+            unit.ActiveMovementStep = MovementStepOption.None;
         }
 
         /// <summary>
@@ -1460,6 +1576,11 @@ namespace IronKingdoms.Combat
             if (unit == null || !unit.IsAlive || unit.Pawn == null)
             {
                 return;
+            }
+
+            if (unit.ActiveMovementStep == MovementStepOption.None)
+            {
+                unit.ActiveMovementStep = MovementStepOption.Advance;
             }
 
             var waypoints = ClampPathToMovementBudget(unit, smoothedPath, movementBudget, GetUnitCollisionRadius(unit));
@@ -1530,7 +1651,7 @@ namespace IronKingdoms.Combat
             }
 
             var zone = collider.GetComponentInParent<CombatZone>();
-            return zone != null && zone.ZoneType == CombatZoneType.RoughTerrain;
+            return zone != null && zone.IsRoughTerrain;
         }
 
         /// <summary>
@@ -1682,6 +1803,46 @@ namespace IronKingdoms.Combat
             return navPathBuilder.GetGraphMaskForModelSizeOrDefault(unit.Definition.Stats.modelSize);
         }
 
+        /// <summary>
+        /// Builds a two-point path along a straight line on the XZ plane (Mk4 charge movement).
+        /// </summary>
+        private static void BuildStraightLineChargePath(Vector3 from, Vector3 to, List<Vector3> path)
+        {
+            path.Clear();
+            var start = from;
+            var end = to;
+            end.y = start.y;
+            path.Add(start);
+            path.Add(end);
+        }
+
+        /// <summary>
+        /// Projects the click onto a straight charge line, snaps to the nearest walkable nav point
+        /// along that ray, and clamps to the farthest valid straight segment on the navmesh.
+        /// </summary>
+        private bool TryResolveChargePath(RuntimeUnit unit, Vector3 clickPosition, List<Vector3> path, out Vector3 resolvedDestination)
+        {
+            resolvedDestination = clickPosition;
+            if (unit == null || path == null || navPathBuilder == null)
+            {
+                return false;
+            }
+
+            var from = GetPawnFeetPosition(unit);
+            if (!navPathBuilder.TryResolveStraightLineChargeDestination(
+                    from,
+                    clickPosition,
+                    GetPathGraphMask(unit),
+                    out resolvedDestination,
+                    NavmeshContainmentTolerance))
+            {
+                return false;
+            }
+
+            BuildStraightLineChargePath(from, resolvedDestination, path);
+            return true;
+        }
+
         private List<Vector3> ClampPathToMovementBudget(RuntimeUnit unit, IReadOnlyList<Vector3> waypoints, float budget, float unitRadius = 0f)
         {
             var result = new List<Vector3>();
@@ -1784,6 +1945,11 @@ namespace IronKingdoms.Combat
         // along the given path, walking only as far as the movement-cost budget allows.
         private float CalculatePathRoughTerrainPhysicalInches(RuntimeUnit unit, IReadOnlyList<Vector3> waypoints, float budget, float unitRadius = 0f)
         {
+            if (UnitIgnoresRoughTerrainMovementCost(unit))
+            {
+                return 0f;
+            }
+
             if (waypoints == null || waypoints.Count < 2)
             {
                 return 0f;
@@ -1911,20 +2077,121 @@ namespace IronKingdoms.Combat
             return Mathf.Max(1, Mathf.CeilToInt(segmentDistanceWorldUnits / sampleStep));
         }
 
-        private bool IsUnitInRoughTerrain(RuntimeUnit unit)
+        private static void DrawUnitAdvantageDebug(RuntimeUnit unit)
         {
-            var position = unit.Pawn.transform.position;
-            var activeZones = CombatZone.ActiveZones;
-            for (var i = 0; i < activeZones.Count; i++)
+            if (unit?.Definition?.Stats == null)
             {
-                var zone = activeZones[i];
-                if (zone != null && zone.ZoneType == CombatZoneType.RoughTerrain && zone.ContainsPoint(position))
+                return;
+            }
+
+            unit.Definition.Stats.EnsureAdvantageDefaults();
+            var advantages = unit.Definition.Stats.advantages;
+            if (advantages == null || advantages.Count == 0)
+            {
+                GUILayout.Label("Advantages: none");
+                return;
+            }
+
+            var labels = new List<string>(advantages.Count);
+            for (var i = 0; i < advantages.Count; i++)
+            {
+                if (advantages[i] != null)
                 {
-                    return true;
+                    labels.Add(advantages[i].DisplayName);
                 }
             }
 
-            return false;
+            GUILayout.Label(labels.Count > 0 ? $"Advantages: {string.Join(", ", labels)}" : "Advantages: none");
+        }
+
+        private static void DrawUnitDefenseModifierDebug(RuntimeUnit unit)
+        {
+            if (unit?.Definition == null || unit.Pawn == null)
+            {
+                return;
+            }
+
+            var modifiers = CombatDefenseEvaluator.CollectActiveDefenseModifiers(unit.Definition, unit.Pawn);
+            if (modifiers.Count == 0)
+            {
+                GUILayout.Label("Defense Modifiers: none");
+                return;
+            }
+
+            for (var i = 0; i < modifiers.Count; i++)
+            {
+                var modifier = modifiers[i];
+                if (modifier.Definition == null)
+                {
+                    continue;
+                }
+
+                GUILayout.Label(
+                    $"Terrain Modifier: {modifier.Definition.DisplayName} (+{modifier.Definition.DefenseBonus} DEF) via {modifier.SourceLabel}");
+            }
+        }
+
+        private static void DrawUnitTerrainStateDebug(RuntimeUnit unit)
+        {
+            if (unit?.Definition == null || unit.Pawn == null)
+            {
+                GUILayout.Label("Terrain: unknown");
+                return;
+            }
+
+            var terrainState = CombatAbilitySolver.ResolveTerrainState(unit.Definition, unit.Pawn);
+            GUILayout.Label($"Rough Terrain: {(terrainState.IsInRoughTerrain ? "Yes" : "No")}");
+            GUILayout.Label($"Forest: {terrainState.ForestStatusLabel}");
+        }
+
+        private static void DrawUnitAbilityDebug(RuntimeUnit unit)
+        {
+            if (unit?.Definition == null)
+            {
+                return;
+            }
+
+            unit.Definition.Stats.EnsureAbilityDefaults();
+            var abilities = unit.Definition.Stats.abilities;
+            if (abilities == null || abilities.Count == 0)
+            {
+                GUILayout.Label("Abilities: none");
+                return;
+            }
+
+            var abilityNames = new List<string>(abilities.Count);
+            for (var i = 0; i < abilities.Count; i++)
+            {
+                if (abilities[i] != null)
+                {
+                    abilityNames.Add(abilities[i].DisplayName);
+                }
+            }
+
+            GUILayout.Label(abilityNames.Count > 0 ? $"Abilities: {string.Join(", ", abilityNames)}" : "Abilities: none");
+
+            var passives = CombatAbilitySolver.DescribeAbilityPassives(unit.Definition, unit.Pawn);
+            for (var i = 0; i < passives.Count; i++)
+            {
+                var passive = passives[i];
+                if (passive.Ability == null)
+                {
+                    continue;
+                }
+
+                var prefix = passive.IsActive ? "ACTIVE" : "inactive";
+                GUILayout.Label($"  {prefix}: {passive.Ability.DisplayName} — {passive.EffectLabel}");
+            }
+        }
+
+        private bool IsUnitInRoughTerrain(RuntimeUnit unit)
+        {
+            if (unit?.Definition == null || unit.Pawn == null)
+            {
+                return false;
+            }
+
+            return CombatAbilitySolver.ResolveTerrainState(unit.Definition, unit.Pawn).IsInRoughTerrain;
         }
 
         private bool IsPointInRoughTerrain(Vector3 worldPoint, float unitRadius = 0f)
@@ -1947,9 +2214,82 @@ namespace IronKingdoms.Combat
             return false;
         }
 
+        private static bool IsIntentionalAdvancingMovementStep(MovementStepOption step)
+        {
+            return step == MovementStepOption.Advance
+                || step == MovementStepOption.Run
+                || step == MovementStepOption.Charge;
+        }
+
+        private MovementStepOption GetRoughTerrainMovementStepForUnit(RuntimeUnit unit)
+        {
+            if (unit == null)
+            {
+                return MovementStepOption.None;
+            }
+
+            if (unit.ActiveMovementStep != MovementStepOption.None)
+            {
+                return unit.ActiveMovementStep;
+            }
+
+            return unit == selectedUnit ? selectedMovementOption : MovementStepOption.None;
+        }
+
+        private bool UnitIgnoresRoughTerrainMovementCost(RuntimeUnit unit)
+        {
+            if (unit?.Definition?.Stats == null)
+            {
+                return false;
+            }
+
+            unit.Definition.Stats.EnsureAdvantageDefaults();
+            if (!unit.Definition.Stats.TreatsRoughTerrainAsOpenWhileAdvancing())
+            {
+                return false;
+            }
+
+            return IsIntentionalAdvancingMovementStep(GetRoughTerrainMovementStepForUnit(unit));
+        }
+
+        private float GetAffordableWorldStepAlongSegment(
+            RuntimeUnit unit,
+            Vector3 segmentStart,
+            Vector3 segmentEnd,
+            float maxPhysicalStep,
+            float unitRadius)
+        {
+            if (maxPhysicalStep <= MovementBudgetEpsilon)
+            {
+                return 0f;
+            }
+
+            var segmentLength = Vector3.Distance(segmentStart, segmentEnd);
+            if (segmentLength <= MovementBudgetEpsilon)
+            {
+                return 0f;
+            }
+
+            var step = Mathf.Min(maxPhysicalStep, segmentLength);
+            var trialEnd = segmentStart + (segmentEnd - segmentStart) * (step / segmentLength);
+            var movementCost = CalculateMovementCostForSegmentInInches(unit, segmentStart, trialEnd, unitRadius);
+            var remaining = unit.RemainingMovementThisTurn;
+            if (movementCost <= remaining + MovementBudgetEpsilon)
+            {
+                return step;
+            }
+
+            if (movementCost <= MovementBudgetEpsilon)
+            {
+                return step;
+            }
+
+            return step * Mathf.Clamp01(remaining / movementCost);
+        }
+
         private float GetMovementSpeedMultiplierAtPoint(RuntimeUnit unit, Vector3 worldPoint, float unitRadius = 0f)
         {
-            if (unit?.Definition?.Stats != null && unit.Definition.Stats.HasAdvantage(UnitAdvantage.Pathfinder))
+            if (UnitIgnoresRoughTerrainMovementCost(unit))
             {
                 return 1f;
             }
@@ -2026,9 +2366,12 @@ namespace IronKingdoms.Combat
                 unit.RemainingMovementThisTurn = unit.Definition.Stats.speed;
                 unit.HasActedThisTurn = false;
                 unit.HasRunActionThisTurn = false;
+                unit.HasAdvancedThisTurn = false;
+                unit.HasChargedThisTurn = false;
                 unit.IsAimingThisTurn = false;
                 unit.MoveTarget = null;
                 unit.PathWaypoints = null;
+                unit.ActiveMovementStep = MovementStepOption.None;
             }
         }
 
@@ -2049,12 +2392,13 @@ namespace IronKingdoms.Combat
 
             var attackRoll = atkDie1 + atkDie2 + extraDiceTotal + attackValue + attackModifier;
             var modifierText = FormatAttackModifierText(attackModifier);
-            if (!weapon.EvaluateAttackHit(atkDie1, atkDie2, attackRoll, defender.Definition.Stats.defense))
+            var effectiveDefense = GetEffectiveDefense(defender, attacker, weapon);
+            if (!weapon.EvaluateAttackHit(atkDie1, atkDie2, attackRoll, effectiveDefense))
             {
                 SpawnFloatingText(GetPawnCenterPosition(defender), "Miss!", new Color(1f, 0.9f, 0.2f, 1f));
                 AddCombatLogEntry(
                     $"{attacker.Definition.DisplayName} → {defender.Definition.DisplayName}  " +
-                    $"ATK [{atkDie1}+{atkDie2}]+{attackValue}{modifierText} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Miss");
+                    $"ATK [{atkDie1}+{atkDie2}]+{attackValue}{modifierText} {attackStatLabel} = {attackRoll} vs DEF {effectiveDefense} → Miss");
                 attacker.IsAimingThisTurn = false;
                 return;
             }
@@ -2077,7 +2421,7 @@ namespace IronKingdoms.Combat
             var logResult = damage > 0 ? $"-{damage} HP" : "Blocked";
             AddCombatLogEntry(
                 $"{attacker.Definition.DisplayName} → {defender.Definition.DisplayName}  " +
-                $"ATK [{atkDie1}+{atkDie2}]+{attackValue}{modifierText} {attackStatLabel} = {attackRoll} vs DEF {defender.Definition.Stats.defense} → Hit!  " +
+                $"ATK [{atkDie1}+{atkDie2}]+{attackValue}{modifierText} {attackStatLabel} = {attackRoll} vs DEF {effectiveDefense} → Hit!  " +
                 $"DMG [{dmgDie1}+{dmgDie2}]+{weapon.Power} POW = {damageRoll + weapon.Power} vs ARM {defender.Definition.Stats.armor} → {logResult}");
             attacker.IsAimingThisTurn = false;
             if (!defender.IsAlive)
@@ -2169,13 +2513,18 @@ namespace IronKingdoms.Combat
         {
             var attackStat = GetAttackStatForWeapon(attacker, weapon);
             var attackModifier = GetToHitModifier(attacker);
+            var effectiveDefense = CombatDefenseEvaluator.GetEffectiveDefense(
+                defender.Definition,
+                defender.Pawn,
+                attacker?.Definition?.Stats,
+                weapon);
             var hits = 0;
             for (var d1 = 1; d1 <= 6; d1++)
             {
                 for (var d2 = 1; d2 <= 6; d2++)
                 {
                     var attackRoll = d1 + d2 + attackStat + attackModifier;
-                    if (weapon.EvaluateAttackHit(d1, d2, attackRoll, defender.Definition.Stats.defense))
+                    if (weapon.EvaluateAttackHit(d1, d2, attackRoll, effectiveDefense))
                     {
                         hits++;
                     }
@@ -2183,6 +2532,20 @@ namespace IronKingdoms.Combat
             }
 
             return hits / 36f * 100f;
+        }
+
+        private static int GetEffectiveDefense(RuntimeUnit defender, RuntimeUnit attacker, WeaponProfile weapon)
+        {
+            if (defender?.Definition == null)
+            {
+                return 0;
+            }
+
+            return CombatDefenseEvaluator.GetEffectiveDefense(
+                defender.Definition,
+                defender.Pawn,
+                attacker?.Definition?.Stats,
+                weapon);
         }
 
         private static int GetAttackStatForWeapon(RuntimeUnit attacker, WeaponProfile weapon)
@@ -2435,7 +2798,56 @@ namespace IronKingdoms.Combat
 
         private bool CanUnitTarget(RuntimeUnit attacker, RuntimeUnit target, WeaponProfile weapon)
         {
-            return IsTargetInRange(attacker, target, weapon) && HasLineOfSight(attacker, target);
+            if (!IsTargetInRange(attacker, target, weapon) || !HasLineOfSight(attacker, target))
+            {
+                return false;
+            }
+
+            return !attacker.IsPlayerControlled || HasPlayerFogVisionForTarget(attacker, target);
+        }
+
+        private bool HasPlayerFogVisionForTarget(RuntimeUnit observer, RuntimeUnit target)
+        {
+            if (!IsWithinObserverVisibilityRange(observer, target))
+            {
+                return false;
+            }
+
+            return IsInLiveFogVision(GetLineOfSightVolume(target).SightPoint);
+        }
+
+        private bool IsWithinObserverVisibilityRange(RuntimeUnit observer, RuntimeUnit target)
+        {
+            if (observer?.Pawn == null || target?.Pawn == null || observer.Definition?.Stats == null)
+            {
+                return false;
+            }
+
+            var distanceInches = CombatLineOfSight.GetPlanarEdgeToEdgeDistanceInches(
+                GetLineOfSightVolume(observer),
+                GetLineOfSightVolume(target));
+            return distanceInches <= observer.Definition.Stats.visibilityRange + WorldUnitsToInches(PositionArrivalTolerance);
+        }
+
+        private bool IsInLiveFogVision(Vector3 worldPosition)
+        {
+            if (fogOfWarWorld == null || FogOfWarWorld.instance == null)
+            {
+                return true;
+            }
+
+            if (FogOfWarWorld.instance.FOWSamplingMode != FogOfWarWorld.FogSampleMode.Texture)
+            {
+                return true;
+            }
+
+            return FogOfWarWorld.SampleFogTextureColorAtPoint(worldPosition) > GetLiveFogVisibilityThreshold();
+        }
+
+        private float GetLiveFogVisibilityThreshold()
+        {
+            // Shroud regrows to fogExploredShroudVisibility (~0.35); live vision is ~1.0.
+            return Mathf.Max(0.5f, fogExploredShroudVisibility + 0.12f);
         }
 
         private static bool IsTargetInRange(RuntimeUnit attacker, RuntimeUnit target, WeaponProfile weapon)
@@ -2458,7 +2870,17 @@ namespace IronKingdoms.Combat
 
             var observerVolume = GetLineOfSightVolume(observer);
             var targetVolume = GetLineOfSightVolume(target);
-            if (IsTerrainBlockingLineOfSight(observerVolume.SightPoint, targetVolume.SightPoint))
+            if (IsTerrainBlockingLineOfSight(observerVolume, targetVolume))
+            {
+                return false;
+            }
+
+            if (CombatTerrainLineOfSight.IsForestDepthBlockingLineOfSight(
+                    observerVolume,
+                    targetVolume,
+                    target.Definition.Stats.modelSize,
+                    observer.Definition,
+                    observer.Pawn))
             {
                 return false;
             }
@@ -2483,22 +2905,40 @@ namespace IronKingdoms.Combat
             return CombatLineOfSight.CreateVolume(GetPawnFeetPosition(unit), unit.Definition.Stats.modelSize);
         }
 
-        private bool IsTerrainBlockingLineOfSight(Vector3 origin, Vector3 target)
+        private bool IsTerrainBlockingLineOfSight(CombatLineOfSightVolume observer, CombatLineOfSightVolume target)
         {
-            var delta = target - origin;
+            var origin = CombatLineOfSight.GetSightPointAtPlanarEdgeToward(observer, target.Position);
+            var targetPoint = CombatLineOfSight.GetSightPointAtPlanarEdgeToward(target, observer.Position);
+            var delta = targetPoint - origin;
             var distance = delta.magnitude;
             if (distance <= PositionArrivalTolerance)
             {
                 return false;
             }
 
-            var ray = new Ray(origin, delta / distance);
+            var direction = delta / distance;
+            var blockerMask = CombatLayers.LineOfSightBlockerMask;
+
+            if (CombatMapSceneProvider.TryGetMapPhysicsScene(out var mapPhysicsScene))
+            {
+                if (mapPhysicsScene.Raycast(origin, direction, out var hit, distance, blockerMask, QueryTriggerInteraction.Ignore)
+                    && hit.collider != null
+                    && !IsUnitPawn(hit.collider.gameObject)
+                    && !IsRoughTerrainCollider(hit.collider))
+                {
+                    return true;
+                }
+
+                return false;
+            }
+
+            var ray = new Ray(origin, direction);
             var hitCount = Physics.RaycastNonAlloc(
                 ray,
                 lineOfSightRaycastBuffer,
                 distance,
-                Physics.DefaultRaycastLayers,
-                QueryTriggerInteraction.Collide);
+                blockerMask,
+                QueryTriggerInteraction.Ignore);
 
             for (var i = 0; i < hitCount; i++)
             {
@@ -2533,12 +2973,12 @@ namespace IronKingdoms.Combat
 
         private static float InchesToWorldUnits(float inches)
         {
-            return inches * WorldUnitsPerInch;
+            return CombatScale.InchesToWorldUnits(inches);
         }
 
         private static float WorldUnitsToInches(float worldUnits)
         {
-            return worldUnits * InchesPerWorldUnit;
+            return CombatScale.WorldUnitsToInches(worldUnits);
         }
 
         private void UpdateHoveredEnemy()
@@ -2588,10 +3028,18 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
+            var targetSightPoint = GetLineOfSightVolume(target).SightPoint;
+            if (!IsInLiveFogVision(targetSightPoint))
+            {
+                return false;
+            }
+
             for (var i = 0; i < playerRuntimeUnits.Count; i++)
             {
                 var observer = playerRuntimeUnits[i];
-                if (observer.IsAlive && HasLineOfSight(observer, target))
+                if (observer.IsAlive
+                    && IsWithinObserverVisibilityRange(observer, target)
+                    && HasLineOfSight(observer, target))
                 {
                     return true;
                 }
@@ -2763,8 +3211,10 @@ namespace IronKingdoms.Combat
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
             GUILayout.Label(BuildHealthBoxes(selectedUnit.Health, selectedUnit.Definition.Stats.health));
             GUILayout.Label($"Speed: {selectedUnit.Definition.Stats.speed:0.0}  |  Move left: {selectedUnit.RemainingMovementThisTurn:0.0}\"");
-            var inRoughTerrain = IsUnitInRoughTerrain(selectedUnit);
-            GUILayout.Label($"In Rough Terrain: {(inRoughTerrain ? "Yes" : "No")}");
+            DrawUnitTerrainStateDebug(selectedUnit);
+            DrawUnitDefenseModifierDebug(selectedUnit);
+            DrawUnitAbilityDebug(selectedUnit);
+            DrawUnitAdvantageDebug(selectedUnit);
             GUILayout.Label($"Model Size: {selectedUnit.Definition.Stats.modelSize.DisplayName()}");
             var selectedWeapon = GetSelectedAttackWeapon(selectedUnit);
             GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
@@ -2796,7 +3246,8 @@ namespace IronKingdoms.Combat
 
             var canMove = selectedUnit.RemainingMovementThisTurn > MovementBudgetEpsilon
                 && !selectedUnit.MoveTarget.HasValue
-                && (!selectedUnit.HasActedThisTurn || selectedUnit.HasRunActionThisTurn);
+                && (!selectedUnit.HasActedThisTurn || selectedUnit.HasRunActionThisTurn)
+                && !selectedUnit.HasChargedThisTurn;
             GUI.enabled = canMove;
             var moveLabel = currentPlayerMode == UnitActionMode.Move ? "[ Move ]" : "Move";
             if (GUILayout.Button(moveLabel, GUILayout.Height(30f)))
@@ -2854,15 +3305,22 @@ namespace IronKingdoms.Combat
                 GUILayout.Space(6f);
                 GUILayout.BeginHorizontal();
                 var runLocked = selectedUnit.HasRunActionThisTurn;
+                var chargeLocked = selectedUnit.HasChargedThisTurn
+                    || runLocked
+                    || selectedUnit.HasAdvancedThisTurn;
                 if (runLocked)
                 {
                     selectedMovementOption = MovementStepOption.Run;
+                }
+                else if (selectedUnit.HasChargedThisTurn)
+                {
+                    selectedMovementOption = MovementStepOption.Charge;
                 }
 
                 var advanceBudget = selectedUnit.RemainingMovementThisTurn;
                 var advanceCore = $"Advance ({advanceBudget:0.0}\")";
                 var advanceLabel = selectedMovementOption == MovementStepOption.Advance ? $"[ {advanceCore} ]" : advanceCore;
-                GUI.enabled = !runLocked;
+                GUI.enabled = !runLocked && !selectedUnit.HasChargedThisTurn;
                 if (GUILayout.Button(advanceLabel))
                 {
                     selectedMovementOption = MovementStepOption.Advance;
@@ -2873,7 +3331,7 @@ namespace IronKingdoms.Combat
                     : selectedUnit.RemainingMovementThisTurn * RunMovementMultiplier;
                 var runCore = $"Run ({runBudget:0.0}\")";
                 var runLabel = selectedMovementOption == MovementStepOption.Run ? $"[ {runCore} ]" : runCore;
-                GUI.enabled = canMove;
+                GUI.enabled = canMove && !selectedUnit.HasAdvancedThisTurn && !selectedUnit.HasChargedThisTurn;
                 if (GUILayout.Button(runLabel))
                 {
                     selectedMovementOption = MovementStepOption.Run;
@@ -2883,7 +3341,7 @@ namespace IronKingdoms.Combat
                     + (GetSelectedAttackWeapon(selectedUnit).attackType == WeaponAttackType.Melee ? ChargeMovementBonus : 0f);
                 var chargeCore = $"Charge ({chargeBudget:0.0}\")";
                 var chargeLabel = selectedMovementOption == MovementStepOption.Charge ? $"[ {chargeCore} ]" : chargeCore;
-                GUI.enabled = !runLocked;
+                GUI.enabled = canMove && !chargeLocked;
                 if (GUILayout.Button(chargeLabel))
                 {
                     selectedMovementOption = MovementStepOption.Charge;
@@ -2903,7 +3361,18 @@ namespace IronKingdoms.Combat
 
                 if (hasStagedMoveAmount)
                 {
-                    GUILayout.Label($"Total Move: {stagedMoveAmountInches:0.0}\" ({stagedRoughTerrainInches:0.0}\" rough terrain)");
+                    if (UnitIgnoresRoughTerrainMovementCost(selectedUnit))
+                    {
+                        GUILayout.Label($"Total Move: {stagedMoveAmountInches:0.0}\" (Pathfinder: rough terrain treated as open)");
+                    }
+                    else if (stagedRoughTerrainInches > MovementBudgetEpsilon)
+                    {
+                        GUILayout.Label($"Total Move: {stagedMoveAmountInches:0.0}\" ({stagedRoughTerrainInches:0.0}\" rough terrain)");
+                    }
+                    else
+                    {
+                        GUILayout.Label($"Total Move: {stagedMoveAmountInches:0.0}\"");
+                    }
                 }
             }
 
@@ -2919,6 +3388,7 @@ namespace IronKingdoms.Combat
 
             unit.MoveTarget = null;
             unit.PathWaypoints = null;
+            unit.ActiveMovementStep = MovementStepOption.None;
             unit.RemainingMovementThisTurn = 0f;
             unit.IsAimingThisTurn = true;
             AddCombatLogEntry($"{unit.Definition.DisplayName} aims (+{AimToHitBonus} to hit).");
@@ -3045,11 +3515,26 @@ namespace IronKingdoms.Combat
             GUILayout.Label(hoveredEnemyUnit.Definition.DisplayName);
             GUILayout.Label($"HP: {hoveredEnemyUnit.Health}/{hoveredEnemyUnit.Definition.Stats.health}");
             GUILayout.Label(BuildHealthBoxes(hoveredEnemyUnit.Health, hoveredEnemyUnit.Definition.Stats.health));
-            GUILayout.Label($"DEF: {hoveredEnemyUnit.Definition.Stats.defense}  |  ARM: {hoveredEnemyUnit.Definition.Stats.armor}");
+            var baseDefense = hoveredEnemyUnit.Definition.Stats.defense;
+            var effectiveDefense = selectedUnit != null && currentPlayerMode == UnitActionMode.Attack
+                ? GetEffectiveDefense(hoveredEnemyUnit, selectedUnit, GetSelectedAttackWeapon(selectedUnit))
+                : baseDefense;
+            var defenseLabel = effectiveDefense != baseDefense
+                ? $"DEF: {baseDefense} → {effectiveDefense} (mod)  |  ARM: {hoveredEnemyUnit.Definition.Stats.armor}"
+                : $"DEF: {baseDefense}  |  ARM: {hoveredEnemyUnit.Definition.Stats.armor}";
+            GUILayout.Label(defenseLabel);
             if (currentPlayerMode == UnitActionMode.Attack && selectedUnit != null && selectedUnit.IsAlive && activeTurnSide == TurnSide.Player)
             {
                 var weapon = GetSelectedAttackWeapon(selectedUnit);
-                if (!HasLineOfSight(selectedUnit, hoveredEnemyUnit))
+                if (!IsInLiveFogVision(GetLineOfSightVolume(hoveredEnemyUnit).SightPoint))
+                {
+                    GUILayout.Label("Not in vision (fog of war)");
+                }
+                else if (!IsWithinObserverVisibilityRange(selectedUnit, hoveredEnemyUnit))
+                {
+                    GUILayout.Label("Outside visibility range");
+                }
+                else if (!HasLineOfSight(selectedUnit, hoveredEnemyUnit))
                 {
                     GUILayout.Label("No line of sight");
                 }
@@ -3096,6 +3581,8 @@ namespace IronKingdoms.Combat
                 NavmeshCut = pawn != null ? pawn.GetComponent<NavmeshCut>() : null;
                 Renderers = pawn != null ? pawn.GetComponentsInChildren<Renderer>(true) : null;
                 Health = definition.Stats.health;
+                definition.Stats.EnsureAdvantageDefaults();
+                definition.Stats.EnsureAbilityDefaults();
                 definition.Stats.EnsureWeaponDefaults();
                 if (definition.Stats.weapons == null || definition.Stats.weapons.Length == 0)
                 {
@@ -3117,6 +3604,8 @@ namespace IronKingdoms.Combat
             public float RemainingMovementThisTurn { get; set; }
             public bool HasActedThisTurn { get; set; }
             public bool HasRunActionThisTurn { get; set; }
+            public bool HasAdvancedThisTurn { get; set; }
+            public bool HasChargedThisTurn { get; set; }
             public bool IsAimingThisTurn { get; set; }
             public bool IsVisibleToPlayer { get; set; } = true;
             public Vector3? MoveTarget { get; set; }
@@ -3127,6 +3616,9 @@ namespace IronKingdoms.Combat
 
             /// <summary>Index of the waypoint the unit is currently moving toward.</summary>
             public int PathWaypointIndex { get; set; }
+
+            /// <summary>Advance, run, or charge step that issued the current move (for Pathfinder rough-terrain rules).</summary>
+            public MovementStepOption ActiveMovementStep { get; set; }
         }
     }
 }

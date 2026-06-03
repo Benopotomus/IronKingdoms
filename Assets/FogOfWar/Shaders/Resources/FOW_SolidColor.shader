@@ -51,17 +51,13 @@ Shader "Hidden/FullScreen/FOW/SolidColor"
             float4 _unKnownColor;
             float _maxDistance;
 
+            // Soft transition from fully unexplored (black) into shroud / live vision.
+            static const float UnexploredFadeRange = 0.08;
+
             fixed4 frag (v2f i) : SV_Target
             {
                 fixed4 color = tex2D(_MainTex, i.uv);
 
-                //float2 uvClip = i.uv * 2.0 - 1.0;
-                //float4 clipPos = float4(uvClip, z, 1.0);
-                //float4 viewPos = mul(_inverseProjectionMatrix, clipPos); // inverse projection by clip position
-                //viewPos /= viewPos.w; // perspective division
-                //float3 worldPos = mul(_camToWorldMatrix, viewPos).xyz;
-
-                
                 float2 pos;
                 float height;
 #if FOW_IS_2D
@@ -84,22 +80,38 @@ Shader "Hidden/FullScreen/FOW/SolidColor"
                 float zPers = near * far / lerp(far, near, d);
                 float vz = lerp(zPers, zOrtho, isOrtho);
 
-                if (vz > _maxDistance)
-                    return color;
-
                 float3 vpos = float3((i.uv * 2 - 1 - p13_31) / p11_22 * lerp(vz, 1, isOrtho), -vz);
                 float4 worldPos = mul(_camToWorldMatrix, float4(vpos, 1));
 
                 GetFowSpacePosition(worldPos, pos, height);
+
+                // Sky / far-depth pixels skip fog by default; sample at the ground-plane hit instead.
+                if (vz >= _maxDistance * 0.999)
+                {
+                    float3 camPos = _WorldSpaceCameraPos;
+                    float3 dir = normalize(worldPos.xyz - camPos);
+                    if (abs(dir.y) > 1e-5)
+                    {
+                        float t = -camPos.y / dir.y;
+                        if (t > 0)
+                        {
+                            float3 groundHit = camPos + dir * t;
+                            GetFowSpacePosition(groundHit, pos, height);
+                        }
+                    }
+                }
 #endif
 
                 float coneCheckOut = 0;
                 FOW_Sample_float(pos, height, coneCheckOut);
 
+                float visibility = coneCheckOut;
+                float blackOut = 1.0 - smoothstep(0.0, UnexploredFadeRange, visibility);
+
                 OutOfBoundsCheck(pos, color);
                 float3 fogColor = lerp(_unKnownColor.rgb, color.rgb * _unKnownColor.rgb, _unKnownColor.a);
-                return float4(lerp(fogColor, color.rgb, coneCheckOut), color.a);
-                //return float4(lerp( lerp(_unKnownColor.rgb, color.rgb * _unKnownColor.rgb, _unKnownColor.a), color.rgb, coneCheckOut), color.a);
+                float3 lit = lerp(fogColor, color.rgb, visibility);
+                return float4(lerp(lit, float3(0, 0, 0), blackOut), color.a);
             }
             ENDCG
         }

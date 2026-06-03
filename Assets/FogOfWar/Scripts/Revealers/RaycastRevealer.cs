@@ -68,6 +68,16 @@ namespace FOW
 
         #region Public Properties
 
+        public LayerMask ObstacleLayerMask
+        {
+            get => ObstacleMask;
+            set
+            {
+                ObstacleMask = value;
+                RevealerValuesChanged();
+            }
+        }
+
         public float RaycastResolution { get { return raycastResolution; } set { raycastResolution = value; RevealerValuesChanged(); } }
         public int NumExtraRaysOnIteration { get { return numExtraRaysOnIteration; } set { numExtraRaysOnIteration = value; RevealerValuesChanged(); } }
         public float EdgeDstThreshold { get { return edgeDstThreshold; } set { edgeDstThreshold = value; RevealerValuesChanged(); } }
