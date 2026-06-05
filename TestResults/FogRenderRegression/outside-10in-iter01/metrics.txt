@@ -1,0 +1,2 @@
+CoverageError=0.008003
+MeanAbsoluteError=0.001556

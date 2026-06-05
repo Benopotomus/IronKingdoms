@@ -1281,8 +1281,16 @@ PrefabInstance:
       value: ForestZone
       objectReference: {fileID: 0}
     - target: {fileID: 100001, guid: f1e2d3c4b5a6478990abcdef12000020, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 100001, guid: f1e2d3c4b5a6478990abcdef12000020, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 100001, guid: f1e2d3c4b5a6478990abcdef12000020, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -6.02
+      value: -8.44
       objectReference: {fileID: 0}
     - target: {fileID: 100001, guid: f1e2d3c4b5a6478990abcdef12000020, type: 3}
       propertyPath: m_LocalPosition.y
@@ -1290,7 +1298,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 100001, guid: f1e2d3c4b5a6478990abcdef12000020, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 5.91
+      value: 3.56
       objectReference: {fileID: 0}
     - target: {fileID: 100001, guid: f1e2d3c4b5a6478990abcdef12000020, type: 3}
       propertyPath: m_LocalRotation.w

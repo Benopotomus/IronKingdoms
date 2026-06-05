@@ -1,139 +1,432 @@
+using System.Collections.Generic;
 using FOW;
+using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Fog revealer that clips vision rays at Mk4 limited-depth terrain (forest) in addition to FogOccluder geometry.
+    /// Unit revealer that keeps stock FOW wall raycasts and applies per-ray analytic forest depth
+    /// clipping to phase-1 results. Forest rules are evaluated independently on each direction,
+    /// so edge-straddling observers do not split into separate inside/outside visibility states.
     /// </summary>
     public class CombatFogOfWarRevealer3D : FogOfWarRevealer3D
     {
+        [Header("Forest Debug")]
+        [SerializeField] private bool drawForestClipDebug = true;
+        [SerializeField] private bool drawForestClipInGameView = true;
+        [SerializeField] private Color debugClipRayColor = new(0.1f, 1f, 0.2f, 1f);
+        [SerializeField] private Color debugBridgeRayColor = new(1f, 0.85f, 0.1f, 1f);
+        [SerializeField] private Color debugContourColor = new(0.2f, 0.9f, 1f, 1f);
+
+        private CombatForestFogBlockerRing blockerRing;
         private bool ignoresForestForLineOfSight;
-        private float planarOriginRadius;
+
+        private readonly List<Vector3> debugClipPointsWorld = new();
+        private readonly List<Vector3> debugBridgePointsWorld = new();
+        private readonly List<Vector3> debugContourPointsWorld = new();
+        private readonly HashSet<int> debugBridgedRayIndices = new();
+        private const int ForestLimitedAngularScanSteps = 96;
+        private Vector3 debugEyeWorld;
+        private bool hasForestDebugContour;
 
         public void ConfigureForUnit(UnitTypeDefinition definition)
         {
             ignoresForestForLineOfSight = definition != null
                 && CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(definition, null);
-            planarOriginRadius = definition?.Stats != null
-                ? definition.Stats.modelSize.BaseDiameterWorldUnits() * 0.5f
-                : 0f;
+
+            EnsureBlockerRing();
+            blockerRing.ConfigureForUnit(definition);
         }
 
-        protected override void IterationOne(float firstAngle, float angleStep)
+        public override void LineOfSightPhase1()
         {
-            base.IterationOne(firstAngle, angleStep);
+            EnsureBlockerRing();
+            blockerRing?.DisableForFogCalculation();
+            base.LineOfSightPhase1();
+        }
 
-            if (!ignoresForestForLineOfSight)
+        public override void LineOfSightPhase2()
+        {
+            debugBridgedRayIndices.Clear();
+
+            if (useOcclusion && ShouldApplyForestClip())
             {
-                PreReqJobHandle.Complete();
-                ApplyLimitedDepthTerrainClippingToFirstIteration();
-                PreReqJobHandle = default;
+                CompletePhaseOneBeforeForestClip();
+                ApplyForestClipToFirstIteration();
+                FillForestMissBridges();
+                FirstIterationPointsAndConditionsJob.Run(FirstIterationStepCount);
+                ForceForestContourViewPoints();
+                ForceForestAdjacentOpenContourPoints();
+                CaptureForestDebugContour();
+                if (drawForestClipDebug)
+                {
+                    blockerRing?.RebuildForDebug();
+                }
+            }
+            else if (drawForestClipDebug)
+            {
+                blockerRing?.DisableForFogCalculation();
+                hasForestDebugContour = false;
+            }
+
+            base.LineOfSightPhase2();
+
+            if (drawForestClipDebug && drawForestClipInGameView && hasForestDebugContour)
+            {
+                DrawForestDebugLines();
             }
         }
 
-        protected override void RayCast(float angle, ref SightRay ray)
+        private void CompletePhaseOneBeforeForestClip()
         {
-            base.RayCast(angle, ref ray);
+            PreReqJobHandle.Complete();
+            FirstIterationPointsAndConditionsJobHandle.Complete();
+        }
 
+        private bool ShouldApplyForestClip()
+        {
             if (ignoresForestForLineOfSight)
             {
-                return;
-            }
-
-            ApplyLimitedDepthTerrainClip(angle, ref ray);
-        }
-
-        private void ApplyLimitedDepthTerrainClippingToFirstIteration()
-        {
-            if (FirstIteration == null || !FirstIteration.Distances.IsCreated)
-            {
-                return;
+                return false;
             }
 
             CombatForestFogClipper.EnsureCache();
-            if (!CombatForestFogClipper.HasActiveZones)
-            {
-                return;
-            }
+            return CombatForestFogClipper.HasActiveZones;
+        }
 
-            var origin = (Vector3)EyePosition;
+        private void ApplyForestClipToFirstIteration()
+        {
+            var depthWorld = GetForestDepthWorld();
+            var eyeWorld = (Vector3)GetEyePosition();
+            var projectedEye = Projection.Project((float3)eyeWorld);
+            var maxRadius = TotalRevealerRadius;
+
             for (var i = 0; i < FirstIterationStepCount; i++)
             {
-                var maxDistance = FirstIteration.Hits[i]
-                    ? FirstIteration.Distances[i]
-                    : TotalRevealerRadius;
-
-                if (!TryGetTerrainClipDistance(origin, FirstIteration.RayAngles[i], maxDistance, out var terrainClip))
+                var dir2 = FirstIteration.Directions[i];
+                if (math.lengthsq(dir2) <= 1e-8f)
                 {
                     continue;
                 }
 
-                var direction2D = GetVector2D(DirFromAngle(FirstIteration.RayAngles[i]));
-                FirstIteration.Distances[i] = terrainClip;
+                dir2 = math.normalize(dir2);
+                var dir3 = Direction2DToWorld(dir2);
+                var forestClip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                    eyeWorld,
+                    dir3,
+                    maxRadius,
+                    depthWorld);
+
+                var physicsHit = FirstIteration.Hits[i];
+                var physicsDist = physicsHit ? FirstIteration.Distances[i] : maxRadius;
+                var finalDist = Mathf.Min(physicsDist, forestClip);
+
+                if (finalDist >= maxRadius - 0.001f)
+                {
+                    FirstIteration.Hits[i] = false;
+                    FirstIteration.Distances[i] = maxRadius;
+                    FirstIteration.Points[i] = projectedEye + (dir2 * maxRadius);
+                    FirstIteration.Normals[i] = -dir2;
+                    continue;
+                }
+
+                var forestIsTighter = forestClip < physicsDist - 0.001f;
                 FirstIteration.Hits[i] = true;
-                FirstIteration.Points[i] = GetVector2D(EyePosition) + direction2D * terrainClip;
-                FirstIteration.Normals[i] = BuildClipNormal(direction2D);
+                FirstIteration.Distances[i] = finalDist;
+                FirstIteration.Points[i] = projectedEye + (dir2 * finalDist);
+                if (forestIsTighter || !physicsHit)
+                {
+                    FirstIteration.Normals[i] = -dir2;
+                }
             }
         }
 
-        private void ApplyLimitedDepthTerrainClip(float angle, ref SightRay ray)
+        /// <summary>
+        /// Per-ray bridge: any sample the clipper would limit gets a hit so SortData does not
+        /// draw a miss chord across it. Open rays (clipper returns max radius) stay misses.
+        /// </summary>
+        private void FillForestMissBridges()
         {
-            var maxDistance = ray.hit ? ray.distance : TotalRevealerRadius;
-            if (!TryGetTerrainClipDistance((Vector3)EyePosition, angle, maxDistance, out var terrainClip))
+            var eyeWorld = (Vector3)GetEyePosition();
+            var depthWorld = GetForestDepthWorld();
+            var projectedEye = Projection.Project((float3)eyeWorld);
+            var maxRadius = TotalRevealerRadius;
+            var count = FirstIterationStepCount;
+
+            for (var i = 0; i < count; i++)
+            {
+                if (FirstIteration.Hits[i])
+                {
+                    continue;
+                }
+
+                var dir2 = FirstIteration.Directions[i];
+                if (math.lengthsq(dir2) <= 1e-8f)
+                {
+                    continue;
+                }
+
+                dir2 = math.normalize(dir2);
+                var dir3 = Direction2DToWorld(dir2);
+                var forestClip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                    eyeWorld,
+                    dir3,
+                    maxRadius,
+                    depthWorld);
+                if (forestClip >= maxRadius - 0.01f)
+                {
+                    continue;
+                }
+
+                BridgeForestRay(i, dir2, forestClip, projectedEye);
+            }
+        }
+
+        private void BridgeForestRay(int index, float2 dir2, float bridgeDist, float2 projectedEye)
+        {
+            FirstIteration.Hits[index] = true;
+            FirstIteration.Distances[index] = bridgeDist;
+            FirstIteration.Points[index] = projectedEye + (dir2 * bridgeDist);
+            FirstIteration.Normals[index] = -dir2;
+            debugBridgedRayIndices.Add(index);
+        }
+
+        /// <summary>
+        /// Stock FOW SortData can skip clipped rays; force every forest-limited sample into the contour.
+        /// </summary>
+        private void ForceForestContourViewPoints()
+        {
+            var maxRadius = TotalRevealerRadius;
+            for (var i = 0; i < FirstIterationStepCount; i++)
+            {
+                if (!FirstIteration.Hits[i] || FirstIteration.Distances[i] >= maxRadius - 0.01f)
+                {
+                    continue;
+                }
+
+                FirstIterationConditions[i] = true;
+            }
+        }
+
+        /// <summary>
+        /// Genuinely open rays (clipper returns max radius) near the forest-depth arc must stay
+        /// in the contour even when many consecutive arc samples sit between them and the arc.
+        /// </summary>
+        private void ForceForestAdjacentOpenContourPoints()
+        {
+            var eyeWorld = (Vector3)GetEyePosition();
+            var maxRadius = TotalRevealerRadius;
+            var depthWorld = GetForestDepthWorld();
+            var count = FirstIterationStepCount;
+
+            for (var i = 0; i < count; i++)
+            {
+                if (!IsOpenMissRay(i, maxRadius))
+                {
+                    continue;
+                }
+
+                var dir3 = Direction2DToWorld(math.normalize(FirstIteration.Directions[i]));
+                var forestClip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                    eyeWorld,
+                    dir3,
+                    maxRadius,
+                    depthWorld);
+                if (forestClip < maxRadius - 0.01f)
+                {
+                    continue;
+                }
+
+                if (!ForestLimitedHitWithinAngularScan(i, maxRadius, count))
+                {
+                    continue;
+                }
+
+                FirstIterationConditions[i] = true;
+            }
+        }
+
+        private bool ForestLimitedHitWithinAngularScan(int index, float maxRadius, int count)
+        {
+            for (var d = 1; d <= ForestLimitedAngularScanSteps; d++)
+            {
+                var prev = index - d;
+                if (prev >= 0 && IsForestLimitedHit(prev, maxRadius))
+                {
+                    return true;
+                }
+
+                var next = index + d;
+                if (next < count && IsForestLimitedHit(next, maxRadius))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsOpenMissRay(int index, float maxRadius)
+        {
+            return !FirstIteration.Hits[index] && FirstIteration.Distances[index] >= maxRadius - 0.01f;
+        }
+
+        private void CaptureForestDebugContour()
+        {
+            debugClipPointsWorld.Clear();
+            debugBridgePointsWorld.Clear();
+            debugContourPointsWorld.Clear();
+            hasForestDebugContour = false;
+
+            if (!drawForestClipDebug)
             {
                 return;
             }
 
-            var direction2D = GetVector2D(DirFromAngle(angle));
-            ray.distance = terrainClip;
-            ray.hit = true;
-            ray.point = GetVector2D(EyePosition) + direction2D * terrainClip;
-            ray.normal = BuildClipNormal(direction2D);
+            debugEyeWorld = (Vector3)GetEyePosition();
+            var maxRadius = TotalRevealerRadius;
+
+            for (var i = 0; i < FirstIterationStepCount; i++)
+            {
+                if (!FirstIteration.Hits[i] || FirstIteration.Distances[i] >= maxRadius - 0.01f)
+                {
+                    continue;
+                }
+
+                var dir2 = math.normalize(FirstIteration.Directions[i]);
+                var pointWorld = debugEyeWorld + (Direction2DToWorld(dir2) * FirstIteration.Distances[i]);
+                debugContourPointsWorld.Add(pointWorld);
+                hasForestDebugContour = true;
+
+                if (debugBridgedRayIndices.Contains(i))
+                {
+                    debugBridgePointsWorld.Add(pointWorld);
+                }
+                else
+                {
+                    debugClipPointsWorld.Add(pointWorld);
+                }
+            }
         }
 
-        private bool TryGetTerrainClipDistance(Vector3 origin, float angle, float maxDistance, out float terrainClip)
+        private void DrawForestDebugLines()
         {
-            terrainClip = maxDistance;
-
-            CombatForestFogClipper.EnsureCache();
-            if (!CombatForestFogClipper.HasActiveZones)
+            for (var i = 0; i < debugClipPointsWorld.Count; i++)
             {
-                return false;
+                Debug.DrawLine(debugEyeWorld, debugClipPointsWorld[i], debugClipRayColor, 0f, false);
             }
 
-            var direction = (Vector3)DirFromAngle(angle);
-            var planarDirection = new Vector3(direction.x, 0f, direction.z);
-            if (planarDirection.sqrMagnitude <= 1e-6f)
+            for (var i = 0; i < debugBridgePointsWorld.Count; i++)
             {
-                return false;
+                Debug.DrawLine(debugEyeWorld, debugBridgePointsWorld[i], debugBridgeRayColor, 0f, false);
             }
 
-            planarDirection.Normalize();
-            var clip = CombatForestFogClipper.GetClipDistanceWorld(
-                origin,
-                planarDirection,
-                maxDistance,
-                planarOriginRadius);
-            if (clip >= maxDistance - 0.001f)
+            for (var i = 1; i < debugContourPointsWorld.Count; i++)
             {
-                return false;
+                Debug.DrawLine(debugContourPointsWorld[i - 1], debugContourPointsWorld[i], debugContourColor, 0f, false);
             }
 
-            terrainClip = clip;
-            return true;
+            if (debugContourPointsWorld.Count > 1)
+            {
+                Debug.DrawLine(
+                    debugContourPointsWorld[debugContourPointsWorld.Count - 1],
+                    debugContourPointsWorld[0],
+                    debugContourColor,
+                    0f,
+                    false);
+            }
         }
 
-        private static float2 BuildClipNormal(float2 direction)
+        private void OnDrawGizmos()
         {
-            var length = math.length(direction);
-            if (length <= 1e-4f)
+            if (!drawForestClipDebug || !Application.isPlaying || !hasForestDebugContour)
             {
-                return direction;
+                return;
             }
 
-            return -direction / length;
+            Gizmos.color = debugClipRayColor;
+            for (var i = 0; i < debugClipPointsWorld.Count; i++)
+            {
+                Gizmos.DrawLine(debugEyeWorld, debugClipPointsWorld[i]);
+                Gizmos.DrawSphere(debugClipPointsWorld[i], 0.05f);
+            }
+
+            Gizmos.color = debugBridgeRayColor;
+            for (var i = 0; i < debugBridgePointsWorld.Count; i++)
+            {
+                Gizmos.DrawLine(debugEyeWorld, debugBridgePointsWorld[i]);
+                Gizmos.DrawSphere(debugBridgePointsWorld[i], 0.06f);
+            }
+
+            Gizmos.color = debugContourColor;
+            for (var i = 1; i < debugContourPointsWorld.Count; i++)
+            {
+                Gizmos.DrawLine(debugContourPointsWorld[i - 1], debugContourPointsWorld[i]);
+            }
+
+            if (debugContourPointsWorld.Count > 1)
+            {
+                Gizmos.DrawLine(
+                    debugContourPointsWorld[debugContourPointsWorld.Count - 1],
+                    debugContourPointsWorld[0]);
+            }
+
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(debugEyeWorld, 0.08f);
+        }
+
+        private static float GetForestDepthWorld()
+        {
+            var depthWorld = CombatForestFogClipper.GetStrictestLimitedDepthWorld();
+            if (depthWorld <= 0.001f)
+            {
+                depthWorld = CombatScale.InchesToWorldUnits(3f);
+            }
+
+            return depthWorld;
+        }
+
+        private bool IsForestLimitedHit(int index, float maxRadius)
+        {
+            return FirstIteration.Hits[index] && FirstIteration.Distances[index] < maxRadius - 0.01f;
+        }
+
+        private Vector3 Direction2DToWorld(float2 dir2)
+        {
+            var dir3 = float3.zero;
+            dir3[Projection.Axis0] = dir2.x;
+            dir3[Projection.Axis1] = dir2.y;
+            return (Vector3)math.normalizesafe(dir3);
+        }
+
+        private void Reset()
+        {
+            EnsureBlockerRing();
+        }
+
+        private void OnValidate()
+        {
+            EnsureBlockerRing();
+        }
+
+        private void Awake()
+        {
+            EnsureBlockerRing();
+        }
+
+        private void EnsureBlockerRing()
+        {
+            if (blockerRing == null)
+            {
+                blockerRing = GetComponent<CombatForestFogBlockerRing>();
+            }
+
+            if (blockerRing == null)
+            {
+                blockerRing = gameObject.AddComponent<CombatForestFogBlockerRing>();
+            }
         }
     }
 }

@@ -30,6 +30,7 @@ namespace IronKingdoms.Combat
         private const float RosterAreaHeight = 300f;
         private const float SelectedUnitPanelWidth = 280f;
         private const float SelectedUnitPanelHeight = 310f;
+        private const float SelectedUnitPanelChromeHeight = 28f;
         private const float SelectedUnitPanelOffsetX = 12f;
         private const float SelectedUnitPanelOffsetY = 12f;
         private const float ActionBarWidth = 560f;
@@ -66,6 +67,7 @@ namespace IronKingdoms.Combat
         private const float ChargeMovementBonus = 3f;
         private const int AimToHitBonus = 2;
         private const float TerrainCostSampleStepInches = 0.25f;
+        private const float MaxExecutedMoveSpeedWorldUnitsPerSecond = 5f;
 
         private enum TurnSide
         {
@@ -102,6 +104,7 @@ namespace IronKingdoms.Combat
         [SerializeField] private Vector2 fogWorldBoundsSize = new Vector2(24f, 24f);
         [SerializeField, Range(0.05f, 1f)] private float fogExploredShroudVisibility = 0.35f;
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
+        [SerializeField] private bool debugUseCrispFogRendering = true;
         [SerializeField] private bool autoSpawnOnStart = true;
         private MatchArmySpawner matchArmySpawner;
 
@@ -139,6 +142,7 @@ namespace IronKingdoms.Combat
         private readonly List<FloatingDamageEntry> floatingDamageEntries = new();
         private readonly List<string> combatLog = new();
         private Vector2 combatLogScrollPosition;
+        private Vector2 selectedUnitPanelScrollPosition;
         private GUIStyle floatingDamageStyle;
         private GUIStyle floatingDamageShadowStyle;
         private GameObject destinationMarkerObject;
@@ -279,6 +283,11 @@ namespace IronKingdoms.Combat
             fogOfWarWorld.UpdateMethod = FogOfWarWorld.FowUpdateMethod.LateUpdate;
             fogOfWarWorld.RevealerUpdateMode = FogOfWarWorld.RevealerUpdateMethod.Every_Frame;
             fogOfWarWorld.HidersUseFogTexture = false;
+            var previousMaxSegments = fogOfWarWorld.MaxPossibleSegmentsPerRevealer;
+            fogOfWarWorld.MaxPossibleSegmentsPerRevealer = Mathf.Max(previousMaxSegments, 512);
+            fogOfWarWorld.SightExtraAmount = 0f;
+            fogOfWarWorld.PixelateFog = false;
+            fogOfWarWorld.RoundRevealerPosition = false;
 
             // Texture storage + regrow keeps explored-but-out-of-sight areas dimmed (shroud)
             // while never-visited areas stay fully black.
@@ -288,12 +297,17 @@ namespace IronKingdoms.Combat
             fogOfWarWorld.InitialFogExplorationValue = 0f;
             fogOfWarWorld.MaxFogRegrowAmount = fogExploredShroudVisibility;
             fogOfWarWorld.UseConstantBlur = false;
-            fogOfWarWorld.FogType = FogOfWarWorld.FogOfWarType.Soft;
-            fogOfWarWorld.FogFade = FogOfWarWorld.FogOfWarFadeType.Smoothstep;
-            fogOfWarWorld.EdgeSoftenDistance = fogVisionEdgeSoftenDistance;
-            fogOfWarWorld.SightExtraAmount = 0.05f;
-            fogOfWarWorld.FowResX = 512;
-            fogOfWarWorld.FowResY = 512;
+            fogOfWarWorld.FogType = debugUseCrispFogRendering
+                ? FogOfWarWorld.FogOfWarType.Hard
+                : FogOfWarWorld.FogOfWarType.Soft;
+            fogOfWarWorld.FogFade = debugUseCrispFogRendering
+                ? FogOfWarWorld.FogOfWarFadeType.Linear
+                : FogOfWarWorld.FogOfWarFadeType.Smoothstep;
+            fogOfWarWorld.EdgeSoftenDistance = debugUseCrispFogRendering
+                ? 0.05f
+                : fogVisionEdgeSoftenDistance;
+            fogOfWarWorld.FowResX = 1024;
+            fogOfWarWorld.FowResY = 1024;
 
             var halfExtents = new Vector3(
                 fogWorldBoundsSize.x * 0.5f,
@@ -312,6 +326,16 @@ namespace IronKingdoms.Combat
             fogOfWarWorld.SwitchHidersUseFogTextureMode(fogOfWarWorld.HidersUseFogTexture);
             fogOfWarWorld.UpdateAllShaderProperties();
             FogOfWarWorld.SetFowEffectStrength(1f);
+
+            // Segment budget is consumed during FogOfWarWorld.Initialize(); if we raised it
+            // after initialization, reinitialize once so new buffers are allocated.
+            if (fogOfWarWorld.MaxPossibleSegmentsPerRevealer != previousMaxSegments
+                && ReferenceEquals(FogOfWarWorld.instance, fogOfWarWorld)
+                && fogOfWarWorld.isActiveAndEnabled)
+            {
+                fogOfWarWorld.enabled = false;
+                fogOfWarWorld.enabled = true;
+            }
         }
 
         private void EnsureFogOfWarCameraEffectAssigned()
@@ -804,23 +828,31 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            if (pawn.GetComponent<CombatFogOfWarRevealer3D>() != null)
-            {
-                return;
-            }
-
             CombatMapSceneProvider.MoveToMapScene(pawn);
 
             var wasActive = pawn.activeSelf;
             pawn.SetActive(false);
 
             var stats = unitDefinition.Stats;
-            var revealer = pawn.AddComponent<CombatFogOfWarRevealer3D>();
+            var revealer = pawn.GetComponent<CombatFogOfWarRevealer3D>();
+            if (revealer == null)
+            {
+                revealer = pawn.AddComponent<CombatFogOfWarRevealer3D>();
+            }
             revealer.ConfigureForUnit(unitDefinition);
             revealer.StartRevealerAsStatic = false;
             revealer.UseOcclusion = true;
-            revealer.AddCorners = true;
+            // Forest depth is enforced by analytic clip in CombatFogOfWarRevealer3D phase 2.
+            revealer.AddCorners = false;
+            revealer.ResolveEdge = false;
+            revealer.OcclusionQuality = RaycastRevealer.RaycastRevealerOcclusionQualityPreset.HighResolution;
+            revealer.RaycastResolution = 0.5f;
+            // Extra edge refinement rays are tuned for hard collider silhouettes and can
+            // distort depth-capped forest circles into wedges/half-arcs.
+            revealer.NumExtraIterations = 0;
+            revealer.NumExtraRaysOnIteration = 0;
             revealer.ObstacleLayerMask = CombatLayers.FogOccluderMask;
+            revealer.ViewAngle = 360f;
             revealer.ViewRadius = CombatScale.InchesToWorldUnits(stats.visibilityRange);
             revealer.VisionHeight = stats.modelSize.VolumeHeightWorldUnits();
             revealer.EyeOffset = pawnCollider != null ? pawnCollider.height * 0.5f : 0f;
@@ -1264,43 +1296,75 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var targetPosition = unit.MoveTarget.Value;
                 var unitRadius = GetUnitCollisionRadius(unit);
-                var terrainSpeedMultiplier = GetMovementSpeedMultiplierAtPoint(unit, unit.Pawn.transform.position, unitRadius);
-                var maxStepThisFrame = InchesToWorldUnits(unit.Definition.Stats.speed * terrainSpeedMultiplier) * deltaTime;
-                var currentPosition = unit.Pawn.transform.position;
-                var distanceToTarget = Vector3.Distance(currentPosition, targetPosition);
-                var rawStep = Mathf.Min(maxStepThisFrame, distanceToTarget);
-                var allowedStep = GetAffordableWorldStepAlongSegment(
-                    unit,
-                    currentPosition,
-                    targetPosition,
-                    rawStep,
-                    unitRadius);
-                if (allowedStep <= 0f)
+                var remainingFrameTime = deltaTime;
+                var safetySteps = 0;
+                while (unit.MoveTarget.HasValue && remainingFrameTime > 0.0001f && safetySteps++ < 32)
                 {
-                    unit.MoveTarget = null;
-                    unit.PathWaypoints = null;
-                    unit.ActiveMovementStep = MovementStepOption.None;
-                    continue;
-                }
+                    var targetPosition = unit.MoveTarget.Value;
+                    var currentPosition = unit.Pawn.transform.position;
+                    var distanceToTarget = Vector3.Distance(currentPosition, targetPosition);
+                    if (distanceToTarget <= PositionArrivalTolerance)
+                    {
+                        distanceToTarget = 0f;
+                    }
 
-                var nextPosition = Vector3.MoveTowards(currentPosition, targetPosition, allowedStep);
-                // Keep units grounded on terrain without forcing XZ onto navmesh every frame.
-                nextPosition = GetGroundedPositionKeepingXZ(unit, nextPosition);
-                // Safety guard: if movement drifts off navmesh, snap back to the nearest
-                // walkable point so units cannot leave the nav surface.
-                nextPosition = ConstrainPositionToNavmesh(unit, nextPosition);
-                var movedDistance = Vector3.Distance(currentPosition, nextPosition);
-                unit.Pawn.transform.position = nextPosition;
-                var movementCost = CalculateMovementCostForSegmentInInches(unit, currentPosition, nextPosition, unitRadius);
-                unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movementCost);
+                    var terrainSpeedMultiplier = GetMovementSpeedMultiplierAtPoint(unit, currentPosition, unitRadius);
+                    var worldSpeedPerSecond = InchesToWorldUnits(unit.Definition.Stats.speed * terrainSpeedMultiplier);
+                    worldSpeedPerSecond = Mathf.Min(worldSpeedPerSecond, MaxExecutedMoveSpeedWorldUnitsPerSecond);
+                    if (worldSpeedPerSecond <= 0.0001f)
+                    {
+                        unit.MoveTarget = null;
+                        unit.PathWaypoints = null;
+                        unit.ActiveMovementStep = MovementStepOption.None;
+                        break;
+                    }
 
-                var reachedCurrentTarget = Vector3.Distance(nextPosition, targetPosition) <= PositionArrivalTolerance
-                    || unit.RemainingMovementThisTurn <= MovementBudgetEpsilon;
+                    var maxStepForRemainingTime = worldSpeedPerSecond * remainingFrameTime;
+                    var rawStep = Mathf.Min(maxStepForRemainingTime, distanceToTarget);
+                    var allowedStep = GetAffordableWorldStepAlongSegment(
+                        unit,
+                        currentPosition,
+                        targetPosition,
+                        rawStep,
+                        unitRadius);
+                    if (allowedStep <= 0f)
+                    {
+                        unit.MoveTarget = null;
+                        unit.PathWaypoints = null;
+                        unit.ActiveMovementStep = MovementStepOption.None;
+                        break;
+                    }
 
-                if (reachedCurrentTarget)
-                {
+                    var nextPosition = Vector3.MoveTowards(currentPosition, targetPosition, allowedStep);
+                    // Keep units grounded on terrain without forcing XZ onto navmesh every frame.
+                    nextPosition = GetGroundedPositionKeepingXZ(unit, nextPosition);
+                    // Safety guard: if movement drifts off navmesh, snap back to the nearest
+                    // walkable point so units cannot leave the nav surface.
+                    nextPosition = ConstrainPositionToNavmesh(unit, nextPosition);
+                    var movedDistance = Vector3.Distance(currentPosition, nextPosition);
+                    if (movedDistance <= 0.0001f)
+                    {
+                        unit.MoveTarget = null;
+                        unit.PathWaypoints = null;
+                        unit.ActiveMovementStep = MovementStepOption.None;
+                        break;
+                    }
+
+                    unit.Pawn.transform.position = nextPosition;
+                    var movementCost = CalculateMovementCostForSegmentInInches(unit, currentPosition, nextPosition, unitRadius);
+                    unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movementCost);
+
+                    var timeConsumed = movedDistance / worldSpeedPerSecond;
+                    remainingFrameTime = Mathf.Max(0f, remainingFrameTime - timeConsumed);
+
+                    var reachedCurrentTarget = Vector3.Distance(nextPosition, targetPosition) <= PositionArrivalTolerance
+                        || unit.RemainingMovementThisTurn <= MovementBudgetEpsilon;
+                    if (!reachedCurrentTarget)
+                    {
+                        break;
+                    }
+
                     // Advance to the next waypoint if one is available.
                     var waypoints = unit.PathWaypoints;
                     var nextIndex = unit.PathWaypointIndex + 1;
@@ -1311,13 +1375,13 @@ namespace IronKingdoms.Combat
                         var nextWaypoint = waypoints[nextIndex];
                         nextWaypoint = GetGroundedNavmeshPositionForUnit(unit, nextWaypoint);
                         unit.MoveTarget = nextWaypoint;
+                        continue;
                     }
-                    else
-                    {
-                        unit.MoveTarget = null;
-                        unit.PathWaypoints = null;
-                        unit.ActiveMovementStep = MovementStepOption.None;
-                    }
+
+                    unit.MoveTarget = null;
+                    unit.PathWaypoints = null;
+                    unit.ActiveMovementStep = MovementStepOption.None;
+                    break;
                 }
             }
         }
@@ -1654,6 +1718,11 @@ namespace IronKingdoms.Combat
             return zone != null && zone.IsRoughTerrain;
         }
 
+        private static bool IsForestFogZoneBlockerCollider(Collider collider)
+        {
+            return collider != null && collider.GetComponent<CombatForestFogBlocker>() != null;
+        }
+
         /// <summary>
         /// Casts a ray against the 3D scene geometry and returns the first terrain hit point
         /// (ignoring unit pawns).  Falls back to <paramref name="boardPlane"/> when no geometry
@@ -1673,7 +1742,10 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < hitCount; i++)
             {
                 var h = terrainRaycastBuffer[i];
-                if (!IsUnitPawn(h.collider.gameObject) && !IsRoughTerrainCollider(h.collider) && h.distance < closestDist)
+                if (!IsUnitPawn(h.collider.gameObject)
+                    && !IsRoughTerrainCollider(h.collider)
+                    && !IsForestFogZoneBlockerCollider(h.collider)
+                    && h.distance < closestDist)
                 {
                     closestDist = h.distance;
                     point = h.point;
@@ -2924,7 +2996,8 @@ namespace IronKingdoms.Combat
                 if (mapPhysicsScene.Raycast(origin, direction, out var hit, distance, blockerMask, QueryTriggerInteraction.Ignore)
                     && hit.collider != null
                     && !IsUnitPawn(hit.collider.gameObject)
-                    && !IsRoughTerrainCollider(hit.collider))
+                    && !IsRoughTerrainCollider(hit.collider)
+                    && !IsForestFogZoneBlockerCollider(hit.collider))
                 {
                     return true;
                 }
@@ -2943,7 +3016,10 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < hitCount; i++)
             {
                 var collider = lineOfSightRaycastBuffer[i].collider;
-                if (collider == null || IsUnitPawn(collider.gameObject) || IsRoughTerrainCollider(collider))
+                if (collider == null
+                    || IsUnitPawn(collider.gameObject)
+                    || IsRoughTerrainCollider(collider)
+                    || IsForestFogZoneBlockerCollider(collider))
                 {
                     continue;
                 }
@@ -3206,6 +3282,13 @@ namespace IronKingdoms.Combat
             }
 
             GUILayout.BeginArea(GetSelectedUnitPanelRect(), "Selected Unit", GUI.skin.window);
+            var selectedUnitScrollHeight = SelectedUnitPanelHeight - SelectedUnitPanelChromeHeight;
+            selectedUnitPanelScrollPosition = GUILayout.BeginScrollView(
+                selectedUnitPanelScrollPosition,
+                false,
+                true,
+                GUILayout.Width(SelectedUnitPanelWidth - 8f),
+                GUILayout.Height(selectedUnitScrollHeight));
             GUILayout.Label(selectedUnit.Definition.DisplayName);
             GUILayout.Label($"Role: {selectedUnit.Definition.Role}");
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
@@ -3228,7 +3311,7 @@ namespace IronKingdoms.Combat
             var effectiveMat = selectedUnit.Definition.Stats.meleeAttack + selectedWeapon.MatModifier;
             var effectiveRat = selectedUnit.Definition.Stats.rangedAttack + selectedWeapon.RatModifier;
             GUILayout.Label($"Effective MAT: {effectiveMat}  |  Effective RAT: {effectiveRat}");
-
+            GUILayout.EndScrollView();
             GUILayout.EndArea();
             DrawActionBar();
             DrawHoveredEnemyHealth();

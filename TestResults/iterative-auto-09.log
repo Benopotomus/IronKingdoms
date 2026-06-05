@@ -1,0 +1,388 @@
+[Licensing::Module] Trying to connect to existing licensing client channel...
+Built from '6000.3/staging' branch; Version is '6000.3.10f1 (e35f0c77bd8e) revision 14901004'; Using compiler version '194234433'; Build Type 'Release'
+OS: 'Windows 11  (10.0.26200) Core' Language: 'en' Physical Memory: 31860 MB
+BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1
+System  architecture: x64
+Process architecture: x64
+Date: 2026-06-05T12:21:44Z
+[Licensing::IpcConnector] Channel LicenseClient-benop doesn't exist
+[Licensing::Module] Successfully launched the LicensingClient (PId: 13812)
+
+COMMAND LINE ARGUMENTS:
+C:\Program Files\Unity\Hub\Editor\6000.3.10f1\Editor\Unity.exe
+-batchmode
+-projectPath
+C:\PersonalProjects\UnityProjects\IronKingdoms
+-executeMethod
+IronKingdoms.Editor.Tests.ForestFogRenderRegressionBatchRunner.Run
+-logFile
+C:\PersonalProjects\UnityProjects\IronKingdoms\TestResults\iterative-auto-09.log
+-quit
+Successfully changed project path to: C:\PersonalProjects\UnityProjects\IronKingdoms
+C:/PersonalProjects/UnityProjects/IronKingdoms
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-temp-allocator-size-preload-manager=33554432"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=33554432"
+    "memorysetup-bucket-allocator-block-count=8"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=33554432"
+    "memorysetup-profiler-bucket-allocator-block-count=8"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=16777216"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+Player connection [11560]  Target information:
+
+Player connection [11560]  * "[IP] 192.168.1.73 [Port] 55504 [Flags] 2 [Guid] 2162197319 [EditorId] 2162197319 [Version] 1048832 [Id] WindowsEditor(7,Gandalf) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [11560] Host joined multi-casting on [225.0.0.222:54997]...
+Player connection [11560] Host joined alternative multi-casting on [225.0.0.222:34997]...
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-benop" at "2026-06-05T12:21:44.5093099Z"
+[Package Manager] Connected to IPC stream "Upm-12224" after 0.2 seconds.
+[Licensing::Module] Licensing is not yet initialized.
+[Licensing::Client] Handshaking with LicensingClient:
+  Version:                 1.17.4+4293ba1
+  Session Id:              7691f717828b4988b8d1b455626c49ac
+  Correlation Id:          a844742878c56747350f824df678757e
+  External correlation Id: 2869180870955155936
+  Machine Id:              GMxvW7s4lNrhMipsgILL4x/4hQw=
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-benop" (connect: 0.16s, validation: 0.04s, handshake: 1.11s)
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-benop-notifications" at "2026-06-05T12:21:45.6530664Z"
+[Licensing::Module] Connected to LicensingClient (PId: 13812, launch time: 0.00, total connection time: 1.30s)
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: 13567-UnityPersXXXX
+  Product: Unity Personal
+  Type: Assigned
+  Expiration: Unlimited
+[Licensing::Client] Successfully updated license, isAsync: True, time: 0.01
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] Licensing Background thread has ended after 1.32s
+[Licensing::Module] Licensing is initialized (took 1.04s).
+[Licensing::Client] Successfully resolved entitlement details
+Library Redirect Path: Library/
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Preloading 0 native plugins for Editor in 0.00 ms.
+Initialize engine version: 6000.3.10f1 (e35f0c77bd8e)
+[Subsystems] Discovering subsystems at path C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/Resources/UnitySubsystems
+[Subsystems] Discovering subsystems at path C:/PersonalProjects/UnityProjects/IronKingdoms/Assets
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+Direct3D:
+    Version:  Direct3D 11.0 [level 11.1]
+    Renderer: AMD Radeon RX 7900 XTX (ID=0x744c)
+    Vendor:   ATI
+    VRAM:     24517 MB
+    Driver:   32.0.31019.2002
+Initialize mono
+Mono path[0] = 'C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/Managed'
+Mono path[1] = 'C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/MonoBleedingEdge/lib/mono/unityjit-win32'
+Mono config path = 'C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/MonoBleedingEdge/etc'
+Using monoOptions --debugger-agent=transport=dt_socket,embedding=1,server=y,suspend=n,address=127.0.0.1:56224
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+Using cacheserver namespaces - metadata:defaultmetadata, artifacts:defaultartifacts
+ImportWorker Server TCP listen port: 0
+AcceleratorClientConnectionCallback - disconnected - :0
+Begin MonoManager ReloadAssembly
+Registering precompiled unity dll's ...
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/WebGLSupport/UnityEditor.WebGL.Extensions.dll
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/MacStandaloneSupport/UnityEditor.OSXStandalone.Extensions.dll
+[Licensing::Client] Successfully resolved entitlement details
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/VisionOSPlayer/UnityEditor.VisionOS.Extensions.dll
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport/UnityEditor.WindowsStandalone.Extensions.dll
+[Licensing::Client] Successfully resolved entitlement details
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/MetroSupport/UnityEditor.UWP.Extensions.dll
+[Licensing::Client] Successfully resolved entitlement details
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/AndroidPlayer/UnityEditor.Android.Extensions.dll
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/iOSSupport/UnityEditor.iOS.Extensions.dll
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/AppleTVSupport/UnityEditor.AppleTV.Extensions.dll
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/LinuxStandaloneSupport/UnityEditor.LinuxStandalone.Extensions.dll
+Registered in 0.006351 seconds.
+- Loaded All Assemblies, in  0.246 seconds
+Native extension for LinuxStandalone target not found
+Native extension for AppleTV target not found
+Native extension for iOS target not found
+Native extension for Android target not found
+Android Extension - Scanning For ADB Devices 2128 ms
+Native extension for UWP target not found
+Native extension for WindowsStandalone target not found
+Failed to load: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/VisionOSPlayer\x64\UnityEditor.VisionOS.Native.dll
+Native extension for VisionOS target not found
+Native extension for OSXStandalone target not found
+Native extension for WebGL target not found
+Package Manager log level set to [2]
+[Licensing::Client] Successfully resolved entitlement details
+ScheduleIndexationOnStartup MainProcess:False IndexOnStartup:True
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  3.225 seconds
+Domain Reload Profiling: 3470ms
+	BeginReloadAssembly (83ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (0ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (19ms)
+	RebuildCommonClasses (22ms)
+	RebuildNativeTypeToScriptingClass (8ms)
+	initialDomainReloadingComplete (30ms)
+	LoadAllAssembliesAndSetupDomain (102ms)
+		LoadAssemblies (64ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (99ms)
+			TypeCache.Refresh (98ms)
+				TypeCache.ScanAssembly (90ms)
+			BuildScriptInfoCaches (0ms)
+			ResolveRequiredComponents (0ms)
+	FinalizeReload (3225ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (3204ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (2217ms)
+			SetLoadedEditorAssemblies (3ms)
+			BeforeProcessingInitializeOnLoad (49ms)
+			ProcessInitializeOnLoadAttributes (75ms)
+			ProcessInitializeOnLoadMethodAttributes (861ms)
+			AfterProcessingInitializeOnLoad (0ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (0ms)
+[Licensing::Client] Successfully resolved entitlement details
+Application.AssetDatabase Initial Refresh Start
+[Package Manager] Restoring resolved packages state from cache
+[Package Manager] Registered 32 packages:
+  Packages from [https://packages.unity.com]:
+    com.unity.burst@1.8.28 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.burst@07790c2d06d9)
+    com.unity.collections@2.6.2 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.collections@aea9d3bd5e19)
+    com.unity.ide.rider@3.0.40 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.ide.rider@e4950c6d131b)
+    com.unity.mathematics@1.3.3 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.mathematics@19a9377c4ffa)
+    com.unity.nuget.mono-cecil@1.11.6 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.nuget.mono-cecil@ecb9724e46ff)
+    com.unity.test-framework.performance@3.2.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.test-framework.performance@0840f58e4562)
+  Built-in packages:
+    com.unity.modules.ai@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.ai)
+    com.unity.modules.animation@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.animation)
+    com.unity.modules.audio@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.audio)
+    com.unity.modules.imageconversion@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.imageconversion)
+    com.unity.modules.particlesystem@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.particlesystem)
+    com.unity.modules.physics@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.physics)
+    com.unity.modules.physics2d@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.physics2d)
+    com.unity.modules.ui@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.ui)
+    com.unity.modules.uielements@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.uielements)
+    com.unity.modules.unitywebrequest@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.unitywebrequest)
+    com.unity.modules.unitywebrequestassetbundle@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.unitywebrequestassetbundle)
+    com.unity.modules.unitywebrequestaudio@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.unitywebrequestaudio)
+    com.unity.modules.unitywebrequesttexture@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.unitywebrequesttexture)
+    com.unity.modules.unitywebrequestwww@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.unitywebrequestwww)
+    com.unity.modules.video@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.video)
+    com.unity.modules.assetbundle@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.assetbundle)
+    com.unity.modules.imgui@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.imgui)
+    com.unity.modules.jsonserialize@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.jsonserialize)
+    com.unity.modules.hierarchycore@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.hierarchycore)
+    com.unity.ext.nunit@2.0.5 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.ext.nunit@d8c07649098d)
+    com.unity.test-framework@1.6.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.test-framework@0b7a23ab2e1d)
+    com.unity.modules.terrain@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.terrain)
+    com.unity.modules.terrainphysics@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.terrainphysics)
+    com.unity.modules.tilemap@1.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.modules.tilemap)
+    com.unity.ugui@2.0.0 (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Library\PackageCache\com.unity.ugui@bb329a87fcdc)
+  Embedded packages:
+    com.arongranberg.astar@file:C:\PersonalProjects\UnityProjects\IronKingdoms\Packages\com.arongranberg.astar (location: C:\PersonalProjects\UnityProjects\IronKingdoms\Packages\com.arongranberg.astar)
+[Subsystems] No new subsystems found in resolved package list.
+[Package Manager] Done registering packages in 0.00 seconds
+Starting: C:\Program Files\Unity\Hub\Editor\6000.3.10f1\Editor\Data\Tools\BuildPipeline\bee_backend.exe --ipc --defer-dag-verification --dagfile="Library/Bee/1900b0aEDbg.dag" --continue-on-failure --profile="Library/Bee/backend1.traceevents" ScriptAssemblies
+WorkingDir: C:/PersonalProjects/UnityProjects/IronKingdoms
+DisplayProgressbar: Compiling Scripts
+ExitCode: 0 Duration: 0s155ms
+[419/507    0s] ILPP-Configuration Library/ilpp-configuration.nevergeneratedoutput
+*** Tundra build success (0.14 seconds), 1 items updated, 507 evaluated
+AssetDatabase: script compilation time: 1.163700s
+Begin MonoManager ReloadAssembly
+- Loaded All Assemblies, in  0.405 seconds
+Refreshing native plugins compatible for Editor in 0.00 ms, found 0 plugins.
+Native extension for LinuxStandalone target not found
+Native extension for AppleTV target not found
+Native extension for iOS target not found
+Native extension for Android target not found
+Native extension for UWP target not found
+Native extension for WindowsStandalone target not found
+Failed to load: C:/Program Files/Unity/Hub/Editor/6000.3.10f1/Editor/Data/PlaybackEngines/VisionOSPlayer\x64\UnityEditor.VisionOS.Native.dll
+Native extension for VisionOS target not found
+Native extension for OSXStandalone target not found
+Native extension for WebGL target not found
+ScheduleIndexationOnStartup MainProcess:True IndexOnStartup:True
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  1.900 seconds
+Domain Reload Profiling: 2304ms
+	BeginReloadAssembly (221ms)
+		ExecutionOrderSort (0ms)
+		DisableScriptedObjects (7ms)
+		BackupInstance (0ms)
+		ReleaseScriptingObjects (0ms)
+		CreateAndSetChildDomain (146ms)
+	RebuildCommonClasses (20ms)
+	RebuildNativeTypeToScriptingClass (8ms)
+	initialDomainReloadingComplete (14ms)
+	LoadAllAssembliesAndSetupDomain (140ms)
+		LoadAssemblies (145ms)
+		RebuildTransferFunctionScriptingTraits (0ms)
+		AnalyzeDomain (44ms)
+			TypeCache.Refresh (32ms)
+				TypeCache.ScanAssembly (28ms)
+			BuildScriptInfoCaches (8ms)
+			ResolveRequiredComponents (2ms)
+	FinalizeReload (1900ms)
+		ReleaseScriptCaches (0ms)
+		RebuildScriptCaches (0ms)
+		SetupLoadedEditorAssemblies (1831ms)
+			LogAssemblyErrors (0ms)
+			InitializePlatformSupportModulesInManaged (33ms)
+			SetLoadedEditorAssemblies (2ms)
+			BeforeProcessingInitializeOnLoad (82ms)
+			ProcessInitializeOnLoadAttributes (1637ms)
+			ProcessInitializeOnLoadMethodAttributes (75ms)
+			AfterProcessingInitializeOnLoad (3ms)
+			EditorAssembliesLoaded (0ms)
+		ExecutionOrderSort2 (0ms)
+		AwakeInstancesAfterBackupRestoration (5ms)
+Asset Pipeline Refresh (id=c9bddc2d4e9b014448f68e5df72f85f4): Total: 3.611 seconds - Initiated by InitialRefreshV2(ForceSynchronousImport)
+	Summary:
+		Imports: total=0 (actual=0, local cache=0, cache server=0)
+		Asset DB Process Time: managed=0 ms, native=2012 ms
+		Asset DB Callback time: managed=8 ms, native=2 ms
+		Scripting: domain reloads=1, domain reload time=405 ms, compile time=1165 ms, other=17 ms
+		Project Asset Count: scripts=403, non-scripts=451
+		Asset File Changes: new=0, changed=0, moved=0, deleted=0
+		Scan Filter Count: 0
+	InvokeCustomDependenciesCallbacks: 0.001ms
+	InvokePackagesCallback: 3.350ms
+	ApplyChangesToAssetFolders: 0.340ms
+	Scan: 28.979ms
+	OnSourceAssetsModified: 0.002ms
+	CategorizeAssetsWithTransientArtifact: 6.625ms
+	ProcessAssetsWithTransientArtifactChanges: 12.058ms
+	CategorizeAssets: 4.299ms
+	ImportOutOfDateAssets: 1901.580ms (736.531ms without children)
+		CompileScripts: 1164.696ms
+		ReloadNativeAssets: 0.003ms
+		UnloadImportedAssets: 0.127ms
+		EnsureUptoDateAssetsAreRegisteredWithGuidPM: 0.067ms
+		InitializingProgressBar: 0.000ms
+		PostProcessAllAssetNotificationsAddChangedAssets: 0.000ms
+		OnDemandSchedulerStart: 0.153ms
+	PostProcessAllAssets: 8.431ms
+	GatherAllCurrentPrimaryArtifactRevisions: 0.002ms
+	UnloadStreamsBegin: 0.970ms
+	PersistCurrentRevisions: 0.017ms
+	UnloadStreamsEnd: 0.001ms
+	GenerateScriptTypeHashes: 0.867ms
+	Untracked: 1644.440ms
+
+Application.AssetDatabase Initial Refresh End
+Launched and connected shader compiler UnityShaderCompiler.exe after 0.01 seconds
+Scanning for USB devices : 6.947ms
+Initializing Unity extensions:
+Script 'Library/PackageCache/com.unity.test-framework@0b7a23ab2e1d/Tests/TestNewCustomAssembly/TestNewCustomAssembly.asmdef' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+Script 'Library/PackageCache/com.unity.modules.jsonserialize/package.json' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+Script 'Library/PackageCache/com.unity.mathematics@19a9377c4ffa/Tests/Unity.Mathematics.Tests.asmdef' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+Script 'Library/PackageCache/com.unity.collections@aea9d3bd5e19/Unity.Collections.Tests/System.Runtime.CompilerServices.Unsafe/System.Runtime.CompilerServices.Unsafe.xml' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+Script 'Library/PackageCache/com.unity.collections@aea9d3bd5e19/DocCodeSamples.Tests/DocCodeSamples.Tests.asmdef' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+Script 'Library/PackageCache/com.unity.collections@aea9d3bd5e19/Unity.Collections.PerformanceTests/Unity.Collections.PerformanceTests.asmdef' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+Script 'Library/PackageCache/com.unity.ugui@bb329a87fcdc/Tests/Runtime/UGUI/UnityEngine.UI.Tests.asmdef' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+Script 'Library/PackageCache/com.unity.collections@aea9d3bd5e19/Unity.Collections.Tests.Playmode/FixedListPlayModeTests.tt' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+Script 'Library/PackageCache/com.unity.ugui@bb329a87fcdc/Tests/Runtime/TMP/Unity.TextMeshPro.Tests.asmdef' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+Script 'Library/PackageCache/com.unity.collections@aea9d3bd5e19/Unity.Collections.BurstCompatibilityGen/Unity.Collections.BurstCompatibilityGen.asmdef' will not be compiled because it exists outside the Assets folder and does not to belong to any assembly definition file.
+[MODES] ModeService[none].Initialize
+[MODES] ModeService[none].LoadModes
+[MODES] Loading mode Default (0) for mode-current-id-IronKingdoms
+Unloading 4 Unused Serialized files (Serialized files now loaded: 0)
+Unloading 1717 unused Assets / (1.2 MB). Loaded Objects now: 2353.
+Memory consumption went from 119.4 MB to 118.3 MB.
+Total: 4.880900 ms (FindLiveObjects: 0.162100 ms CreateObjectMapping: 0.030800 ms MarkObjects: 4.215100 ms  DeleteObjects: 0.471900 ms)
+
+[FogRegressionBatch] Artifact root: C:\PersonalProjects\UnityProjects\IronKingdoms\TestResults\FogRenderRegression
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:Log (object)
+IronKingdoms.Editor.Tests.ForestFogRenderRegressionBatchRunner:Run () (at Assets/Editor/Tests/ForestFogRenderRegressionBatchRunner.cs:39)
+
+(Filename: Assets/Editor/Tests/ForestFogRenderRegressionBatchRunner.cs Line: 39)
+
+FogOfWarWorld: UseStagedGPUUploads is enabled but ScatterRevealersShader is not assigned. Staged uploads will fall back to legacy per-revealer SetData.
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogWarning (object)
+FOW.FogOfWarWorld:AllocateStagedBuffers () (at Assets/FogOfWar/Scripts/FogOfWarWorld.cs:932)
+FOW.FogOfWarWorld:Initialize () (at Assets/FogOfWar/Scripts/FogOfWarWorld.cs:851)
+IronKingdoms.Editor.Tests.ForestFogRenderRegressionBatchRunner:BuildScenario () (at Assets/Editor/Tests/ForestFogRenderRegressionBatchRunner.cs:154)
+IronKingdoms.Editor.Tests.ForestFogRenderRegressionBatchRunner:Run () (at Assets/Editor/Tests/ForestFogRenderRegressionBatchRunner.cs:41)
+
+(Filename: Assets/FogOfWar/Scripts/FogOfWarWorld.cs Line: 932)
+
+[FogRegressionBatch] FAIL: System.InvalidOperationException: outside-10in-iter01: radial contour mismatch (mean=0.049, max=2.388) exceeds limits (mean<=0.200, max<=0.550). worstBin=43 err=2.388 actual[42,43,44]=[13.949,14.118,15.240] expected[42,43,44]=[11.956,11.730,15.240]
+  at IronKingdoms.Editor.Tests.ForestFogRenderRegressionBatchRunner.ValidateContourShape (System.String label, System.Single[] actualRadii, System.Single[] expectedRadii) [0x0013e] in C:\PersonalProjects\UnityProjects\IronKingdoms\Assets\Editor\Tests\ForestFogRenderRegressionBatchRunner.cs:951 
+  at IronKingdoms.Editor.Tests.ForestFogRenderRegressionBatchRunner.VerifyPosition (IronKingdoms.Editor.Tests.ForestFogRenderRegressionBatchRunner+ScenarioContext context, System.String label, UnityEngine.Vector3 unitPosition) [0x000da] in C:\PersonalProjects\UnityProjects\IronKingdoms\Assets\Editor\Tests\ForestFogRenderRegressionBatchRunner.cs:127 
+  at IronKingdoms.Editor.Tests.ForestFogRenderRegressionBatchRunner.Run () [0x00134] in C:\PersonalProjects\UnityProjects\IronKingdoms\Assets\Editor\Tests\ForestFogRenderRegressionBatchRunner.cs:69 
+UnityEngine.Debug:ExtractStackTraceNoAlloc (byte*,int,string)
+UnityEngine.StackTraceUtility:ExtractStackTrace ()
+UnityEngine.DebugLogHandler:Internal_Log (UnityEngine.LogType,UnityEngine.LogOption,string,UnityEngine.Object)
+UnityEngine.DebugLogHandler:LogFormat (UnityEngine.LogType,UnityEngine.Object,string,object[])
+UnityEngine.Logger:Log (UnityEngine.LogType,object)
+UnityEngine.Debug:LogError (object)
+IronKingdoms.Editor.Tests.ForestFogRenderRegressionBatchRunner:Run () (at Assets/Editor/Tests/ForestFogRenderRegressionBatchRunner.cs:86)
+
+(Filename: Assets/Editor/Tests/ForestFogRenderRegressionBatchRunner.cs Line: 86)
+
+Killing ADB server in 0.0324673 seconds.
+[Physics::Module] Cleanup current backend.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input System polling thread exited.
+Input System module state changed to: Shutdown.
+[Licensing::IpcConnector] LicenseClient-benop-notifications channel disconnected successfully.
+[Licensing::IpcConnector] LicenseClient-benop channel disconnected successfully.
+AcceleratorClientConnectionCallback - disconnected - :0
+Cleanup mono
+08:21:55.919 |V| RiderPlugin                    | :1                             | AppDomain.CurrentDomain.DomainUnload lifetimeDefinition.Terminate
+Leak Detected : Persistent allocates 7017 individual allocations. To find out more please enable 'Preferences > Jobs > Leak Detection Level > Enabled With Stack Trace' and reproduce the leak again.
+Checking for leaked weakptr:
+  Found no leaked weakptrs.
+[Package Manager] Server process was shutdown
+##utp:{"type":"MemoryLeaks","version":2,"phase":"Immediate","time":1780662119366,"processId":12224,"allocatedMemory":12033829,"memoryLabels":[{"Default":29313},{"Permanent":15236},{"NewDelete":67419},{"Thread":4230384},{"Manager":626781},{"VertexData":8},{"Geometry":816},{"Texture":160},{"Shader":79669},{"Material":24},{"GfxDevice":56769},{"GfxThread":168},{"Animation":392},{"Audio":2664},{"FreeType":8},{"FontEngine":736},{"Physics":2090},{"Physics2D":16},{"Serialization":16},{"Input":14984},{"JobScheduler":33024},{"TextLib":216},{"Mono":32},{"ScriptingNativeRuntime":155060},{"BaseObject":1620912},{"Resource":1336},{"Renderer":3000},{"Transform":4685},{"File":1016},{"WebCam":616},{"Culling":32},{"Terrain":11394},{"Wind":24},{"STL":40},{"String":15499},{"DynamicArray":101197},{"HashMap":65871},{"Utility":2661910},{"Curl":2559},{"PoolAlloc":2296},{"AI":80},{"TypeTree":5341},{"ScriptManager":512},{"RuntimeInitializeOnLoadManager":64},{"SpriteAtlas":112},{"GI":7792},{"Director":8240},{"CloudService":7344},{"WebRequest":845},{"VR":47994},{"SceneManager":504},{"Video":64},{"LazyScriptCache":32},{"NativeArray":311840},{"Camera":17},{"Secure":2113},{"SerializationCache":1576},{"APIUpdating":10320},{"Subsystems":336},{"VirtualTexturing":57888},{"StaticSafetyDebugInfo":278528},{"Analytics":384},{"Hierarchy":608},{"CoreStats":13032},{"Identifiers":12960},{"Gui":96},{"EditorUtility":106139},{"VersionControl":4},{"Undo":947},{"AssetDatabase":1304161},{"EditorGi":328},{"UnityConnect":29208},{"Upm":1896},{"AssetCompliance":64},{"DrivenProperties":72},{"LocalIPC":211},{"ProfilerEditor":9746},{"CoreBusinessMetrics":2867},{"Licensing":1232},{"AssetReference":32},{"IPCStream":32}]}

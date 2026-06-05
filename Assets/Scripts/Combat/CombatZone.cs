@@ -54,6 +54,15 @@ namespace IronKingdoms.Combat
 
         private void OnEnable()
         {
+            EnsureRegistered();
+        }
+
+        /// <summary>
+        /// Ensures this zone is present in <see cref="ActiveZones"/>.
+        /// Editor batch tests may assign terrain features after component creation.
+        /// </summary>
+        public void EnsureRegistered()
+        {
             EnsureLegacyTerrainFeatureResolved();
             if (!ActiveZoneRegistry.Contains(this))
             {

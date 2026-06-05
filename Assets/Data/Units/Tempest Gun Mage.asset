@@ -15,7 +15,7 @@ MonoBehaviour:
   displayName: Tempest Gun Mage
   role: 0
   stats:
-    speed: 10
+    speed: 100
     visibilityRange: 36
     modelSize: 0
     meleeAttack: 5

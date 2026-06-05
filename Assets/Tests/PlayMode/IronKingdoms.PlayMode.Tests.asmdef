@@ -1,0 +1,20 @@
+{
+  "name": "IronKingdoms.PlayMode.Tests",
+  "references": [
+    "IronKingdoms.Runtime",
+    "Pixel-PerfectFogOfWar",
+    "Unity.Mathematics"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

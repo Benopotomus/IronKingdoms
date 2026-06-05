@@ -1,0 +1,21 @@
+{
+  "name": "IronKingdoms.Editor.Tests",
+  "references": [
+    "IronKingdoms.Runtime",
+    "IronKingdoms.Editor",
+    "Pixel-PerfectFogOfWar"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

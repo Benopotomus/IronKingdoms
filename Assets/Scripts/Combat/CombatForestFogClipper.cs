@@ -7,8 +7,12 @@ namespace IronKingdoms.Combat
     /// Fast XZ analytic forest depth along sight lines (Mk4: up to 3" of forest may be seen through).
     /// Only forest thickness along the ray counts — open ground after a short forest exit does not consume depth.
     /// </summary>
-    internal static class CombatForestFogClipper
+    public static class CombatForestFogClipper
     {
+        private const float ClipVerificationMarginInches = 0.05f;
+        private const float CandidateSmoothingRadiusInches = 0.2f;
+        private const int AngularSmoothingSamples = 16;
+
         private struct ClipInterval
         {
             public float Enter;
@@ -31,10 +35,157 @@ namespace IronKingdoms.Combat
 
         public static bool HasActiveZones => CachedZones.Count > 0;
 
+        /// <summary>
+        /// Planar corners of every active limited-depth zone footprint (XZ at collider center Y).
+        /// </summary>
+        public static void CollectLimitedDepthZoneCornersWorld(List<Vector3> corners)
+        {
+            corners.Clear();
+            EnsureCache();
+
+            var activeZones = CombatZone.ActiveZones;
+            for (var i = 0; i < activeZones.Count; i++)
+            {
+                var zone = activeZones[i];
+                var feature = zone?.TerrainFeature;
+                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                {
+                    continue;
+                }
+
+                var collider = zone.GetComponent<Collider>();
+                if (collider == null || !collider.enabled)
+                {
+                    continue;
+                }
+
+                var bounds = collider.bounds;
+                var y = bounds.center.y;
+                corners.Add(new Vector3(bounds.min.x, y, bounds.min.z));
+                corners.Add(new Vector3(bounds.max.x, y, bounds.min.z));
+                corners.Add(new Vector3(bounds.max.x, y, bounds.max.z));
+                corners.Add(new Vector3(bounds.min.x, y, bounds.max.z));
+            }
+        }
+
+        /// <summary>
+        /// When <paramref name="origin"/> is inside forest, returns distance along the ray to the
+        /// first point outside the forest footprint. Returns -1 when not inside or no exit in range.
+        /// </summary>
+        public static float GetForestExitDistanceFromInsideWorld(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld)
+        {
+            EnsureCache();
+            if (maxDistanceWorld <= 0.001f)
+            {
+                return -1f;
+            }
+
+            if (!RayStartsInsideForest(origin, planarDirection))
+            {
+                return -1f;
+            }
+
+            origin.y = 0f;
+            return FindFirstOutsideDistanceFromInside(origin, planarDirection, maxDistanceWorld);
+        }
+
+        /// <summary>
+        /// True when <paramref name="worldPoint"/> (optionally expanded by <paramref name="radius"/> on XZ)
+        /// lies inside a limited-depth terrain zone such as forest.
+        /// </summary>
+        public static bool IsInsideLimitedDepthForest(Vector3 worldPoint, float radius = 0f)
+        {
+            var activeZones = CombatZone.ActiveZones;
+            for (var i = 0; i < activeZones.Count; i++)
+            {
+                var zone = activeZones[i];
+                var feature = zone?.TerrainFeature;
+                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                {
+                    continue;
+                }
+
+                if (radius > 0.001f)
+                {
+                    if (zone.IntersectsDisc(worldPoint, radius))
+                    {
+                        return true;
+                    }
+                }
+                else if (zone.ContainsPoint(worldPoint))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static float GetStrictestLimitedDepthWorld()
+        {
+            var depthLimitWorld = float.MaxValue;
+            var activeZones = CombatZone.ActiveZones;
+            for (var i = 0; i < activeZones.Count; i++)
+            {
+                var feature = activeZones[i]?.TerrainFeature;
+                if (feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                {
+                    continue;
+                }
+
+                var limit = CombatScale.InchesToWorldUnits(feature.LineOfSightPassThroughDepthInches);
+                if (limit < depthLimitWorld)
+                {
+                    depthLimitWorld = limit;
+                }
+            }
+
+            if (depthLimitWorld == float.MaxValue)
+            {
+                EnsureCache();
+                for (var i = 0; i < CachedZones.Count; i++)
+                {
+                    if (CachedZones[i].DepthLimitWorld < depthLimitWorld)
+                    {
+                        depthLimitWorld = CachedZones[i].DepthLimitWorld;
+                    }
+                }
+
+            }
+
+            return depthLimitWorld == float.MaxValue ? 0f : depthLimitWorld;
+        }
+
+        public static void InvalidateCache()
+        {
+            LastCacheFrame = -1;
+            CachedZones.Clear();
+        }
+
+        /// <summary>
+        /// Editor/batch fallback when zone lifecycle registration is unavailable.
+        /// </summary>
+        public static void SeedCachedZoneFromBounds(Bounds bounds, float depthLimitWorld)
+        {
+            InvalidateCache();
+            CachedZones.Add(new ClipZone
+            {
+                MinX = bounds.min.x,
+                MaxX = bounds.max.x,
+                MinZ = bounds.min.z,
+                MaxZ = bounds.max.z,
+                DepthLimitWorld = depthLimitWorld
+            });
+            LastCacheFrame = Time.frameCount;
+        }
+
         public static void EnsureCache()
         {
             var frame = Time.frameCount;
-            if (frame == LastCacheFrame)
+            if (frame == LastCacheFrame && CachedZones.Count > 0)
             {
                 return;
             }
@@ -96,6 +247,13 @@ namespace IronKingdoms.Combat
             float originRadius = 0f)
         {
             originRadius = Mathf.Max(0f, originRadius);
+            // Inside a forest volume, measure the depth budget from the eye. Base-edge offset
+            // can miss the zone on some rays across large forest colliders.
+            if (IsInsideLimitedDepthForest(origin, 0f))
+            {
+                originRadius = 0f;
+            }
+
             if (maxDistanceWorld <= 0.001f || CachedZones.Count == 0)
             {
                 return maxDistanceWorld;
@@ -109,6 +267,575 @@ namespace IronKingdoms.Combat
             var edgeOrigin = origin + planarDirection * originRadius;
             var edgeClip = GetClipDistanceFromPointWorld(edgeOrigin, planarDirection, maxDistanceWorld - originRadius);
             return originRadius + edgeClip;
+        }
+
+        /// <summary>
+        /// Precise fog clip using actual zone footprint checks in XZ (not collider bounds AABB intervals).
+        /// Clips at first forest contact plus strictest limited-depth distance.
+        /// </summary>
+        public static float GetClipDistanceWorldPrecise(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld)
+        {
+            if (maxDistanceWorld <= 0.001f)
+            {
+                return maxDistanceWorld;
+            }
+
+            EnsureCache();
+            var depthLimitWorld = GetStrictestLimitedDepthWorld();
+            if (depthLimitWorld <= 0.001f)
+            {
+                return maxDistanceWorld;
+            }
+
+            var sampleStep = Mathf.Max(CombatScale.InchesToWorldUnits(0.05f), 0.01f);
+            var firstContactDistance = -1f;
+
+            var distance = 0f;
+            while (distance < maxDistanceWorld - 0.001f && firstContactDistance < 0f)
+            {
+                var nextDistance = Mathf.Min(maxDistanceWorld, distance + sampleStep);
+                var midpoint = distance + (nextDistance - distance) * 0.5f;
+                var samplePoint = origin + planarDirection * midpoint;
+                if (IsInsideLimitedDepthZoneForClip(samplePoint))
+                {
+                    firstContactDistance = midpoint;
+                    break;
+                }
+
+                distance = nextDistance;
+            }
+
+            if (firstContactDistance < 0f)
+            {
+                return maxDistanceWorld;
+            }
+
+            // Keep fog reveal depth into forest invariant with observer distance:
+            // always allow exactly depthLimit from first forest contact.
+            return Mathf.Min(maxDistanceWorld, firstContactDistance + depthLimitWorld);
+        }
+
+        /// <summary>
+        /// For fog rays: from the first forest contact on this ray, look exactly
+        /// <paramref name="depthLimitWorld"/> deeper. If that test point is still in forest,
+        /// clip there; otherwise do not clip this ray for forest.
+        /// </summary>
+        public static float GetFirstContactDepthClipDistanceWorld(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld,
+            float depthLimitWorld)
+        {
+            if (maxDistanceWorld <= 0.001f || depthLimitWorld <= 0.001f)
+            {
+                return maxDistanceWorld;
+            }
+
+            EnsureCache();
+            if (CachedZones.Count == 0)
+            {
+                return maxDistanceWorld;
+            }
+
+            // Per-ray only: each direction decides independently whether LOS starts in forest.
+            // No global inside/outside eye state — edge-straddling units stay consistent.
+            var rayStartsInsideForest = RayStartsInsideForest(origin, planarDirection);
+            return ComputeFirstContactDepthClipCandidate(
+                origin,
+                planarDirection,
+                maxDistanceWorld,
+                depthLimitWorld,
+                rayStartsInsideForest);
+        }
+
+        /// <summary>
+        /// True when this ray leaves the eye from inside forest (origin inside, or the ray
+        /// immediately enters forest). Used instead of a global observer inside/outside flag.
+        /// </summary>
+        private static bool RayStartsInsideForest(Vector3 origin, Vector3 planarDirection)
+        {
+            origin.y = 0f;
+            if (IsInsideAnyLimitedDepthZone(origin))
+            {
+                return true;
+            }
+
+            var step = CombatScale.InchesToWorldUnits(0.05f);
+            return IsInsideAnyLimitedDepthZone(origin + planarDirection * step);
+        }
+
+        /// <summary>
+        /// Smoothed variant of first-contact depth clipping to reduce single-ray boundary notches.
+        /// Samples neighboring angular directions and returns a conservative median clip distance.
+        /// </summary>
+        public static float GetFirstContactDepthClipDistanceWorldSmoothed(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld,
+            float depthLimitWorld)
+        {
+            var baseClip = GetFirstContactDepthClipDistanceWorld(origin, planarDirection, maxDistanceWorld, depthLimitWorld);
+            if (maxDistanceWorld <= 0.001f || depthLimitWorld <= 0.001f)
+            {
+                return baseClip;
+            }
+
+            var dir = new Vector2(planarDirection.x, planarDirection.z);
+            if (dir.sqrMagnitude <= 1e-8f)
+            {
+                return baseClip;
+            }
+
+            dir.Normalize();
+            var angle = Mathf.Atan2(dir.y, dir.x);
+            var halfStep = (Mathf.PI * 2f) / AngularSmoothingSamples * 0.5f;
+
+            var leftAngle = angle - halfStep;
+            var rightAngle = angle + halfStep;
+            var leftDir = new Vector3(Mathf.Cos(leftAngle), 0f, Mathf.Sin(leftAngle));
+            var rightDir = new Vector3(Mathf.Cos(rightAngle), 0f, Mathf.Sin(rightAngle));
+
+            var leftClip = GetFirstContactDepthClipDistanceWorld(origin, leftDir, maxDistanceWorld, depthLimitWorld);
+            var rightClip = GetFirstContactDepthClipDistanceWorld(origin, rightDir, maxDistanceWorld, depthLimitWorld);
+
+            // Median-of-three preserves boundary location while removing isolated dips/spikes.
+            return Median3(baseClip, leftClip, rightClip);
+        }
+
+        private static float Median3(float a, float b, float c)
+        {
+            if (a > b)
+            {
+                (a, b) = (b, a);
+            }
+
+            if (b > c)
+            {
+                (b, c) = (c, b);
+            }
+
+            if (a > b)
+            {
+                (a, b) = (b, a);
+            }
+
+            return b;
+        }
+
+        /// <summary>
+        /// Debug helper for first-contact+depth rule. Returns detailed intermediate values.
+        /// </summary>
+        public static float GetFirstContactDepthClipDebugWorld(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld,
+            float depthLimitWorld,
+            out float firstContactDistance,
+            out float candidateDistance,
+            out bool candidateInsideForest)
+        {
+            origin.y = 0f;
+            EnsureCache();
+            if (CachedZones.Count == 0 || maxDistanceWorld <= 0.001f || depthLimitWorld <= 0.001f)
+            {
+                firstContactDistance = -1f;
+                candidateDistance = maxDistanceWorld;
+                candidateInsideForest = false;
+                return maxDistanceWorld;
+            }
+
+            // Contact search mirrors primary path (inside-start shortcut enabled).
+            firstContactDistance = -1f;
+            if (IsInsideAnyLimitedDepthZoneFast(origin) && IsInsideAnyLimitedDepthZone(origin))
+            {
+                firstContactDistance = 0f;
+            }
+            else
+            {
+                var coarseStep = Mathf.Max(CombatScale.InchesToWorldUnits(0.25f), 0.05f);
+                var distance = 0f;
+                var previousDistance = 0f;
+                while (distance < maxDistanceWorld - 0.001f)
+                {
+                    var nextDistance = Mathf.Min(maxDistanceWorld, distance + coarseStep);
+                    var midpoint = distance + (nextDistance - distance) * 0.5f;
+                    var samplePoint = origin + planarDirection * midpoint;
+                    if (IsInsideAnyLimitedDepthZoneFast(samplePoint) && IsInsideAnyLimitedDepthZone(samplePoint))
+                    {
+                        firstContactDistance = RefineFirstContactDistance(origin, planarDirection, previousDistance, nextDistance);
+                        break;
+                    }
+
+                    previousDistance = distance;
+                    distance = nextDistance;
+                }
+            }
+
+            if (firstContactDistance < 0f)
+            {
+                candidateDistance = maxDistanceWorld;
+                candidateInsideForest = false;
+                return maxDistanceWorld;
+            }
+
+            candidateDistance = Mathf.Min(maxDistanceWorld, firstContactDistance + depthLimitWorld);
+            var clipPoint = origin + planarDirection * candidateDistance;
+            candidateInsideForest = IsInsideAnyLimitedDepthZoneFast(clipPoint) && IsInsideAnyLimitedDepthZone(clipPoint);
+            if (candidateInsideForest && candidateDistance < maxDistanceWorld - 0.001f)
+            {
+                var verificationMargin = CombatScale.InchesToWorldUnits(ClipVerificationMarginInches);
+                var verifyDistance = Mathf.Min(maxDistanceWorld, candidateDistance + verificationMargin);
+                var verifyPoint = origin + planarDirection * verifyDistance;
+                candidateInsideForest = IsInsideAnyLimitedDepthZoneFast(verifyPoint) && IsInsideAnyLimitedDepthZone(verifyPoint);
+            }
+
+            return candidateInsideForest ? candidateDistance : maxDistanceWorld;
+        }
+
+        private static float ComputeFirstContactDepthClipCandidate(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld,
+            float depthLimitWorld,
+            bool allowInsideStartShortcut)
+        {
+            origin.y = 0f;
+            var firstContactDistance = -1f;
+            if (allowInsideStartShortcut)
+            {
+                firstContactDistance = 0f;
+
+                // Inside-start rays are the main source of jagged clipped/open notches.
+                // Use true exit distance along this ray, then blend through the threshold
+                // instead of a single-point candidate test.
+                var exitDistance = FindFirstOutsideDistanceFromInside(origin, planarDirection, maxDistanceWorld);
+                if (exitDistance < 0f)
+                {
+                    // Never exits forest within max range -> hard clip at depth limit.
+                    return Mathf.Min(maxDistanceWorld, depthLimitWorld);
+                }
+
+                if (exitDistance <= depthLimitWorld)
+                {
+                    return maxDistanceWorld;
+                }
+
+                return Mathf.Min(maxDistanceWorld, depthLimitWorld);
+            }
+            else
+            {
+                var coarseStep = Mathf.Max(CombatScale.InchesToWorldUnits(0.25f), 0.05f);
+                var distance = 0f;
+                var previousDistance = 0f;
+                while (distance < maxDistanceWorld - 0.001f)
+                {
+                    var nextDistance = Mathf.Min(maxDistanceWorld, distance + coarseStep);
+                    var midpoint = distance + (nextDistance - distance) * 0.5f;
+                    var samplePoint = origin + planarDirection * midpoint;
+                    if (IsInsideLimitedDepthZoneForClip(samplePoint))
+                    {
+                        firstContactDistance = RefineFirstContactDistance(origin, planarDirection, previousDistance, nextDistance);
+                        break;
+                    }
+
+                    previousDistance = distance;
+                    distance = nextDistance;
+                }
+            }
+
+            if (firstContactDistance < 0f)
+            {
+                return maxDistanceWorld;
+            }
+
+            var clipDistance = Mathf.Min(maxDistanceWorld, firstContactDistance + depthLimitWorld);
+
+            // Doc rule (outside -> forest): if LOS enters forest, it may never
+            // see past the far edge even for thin forests. So for outside-start rays,
+            // clamp to whichever comes first: (contact + depth) or first forest exit.
+            var firstContactPoint = origin + planarDirection * firstContactDistance;
+            var startInsideEpsilon = CombatScale.InchesToWorldUnits(0.02f);
+            var insideStart = origin + planarDirection * Mathf.Min(maxDistanceWorld, firstContactDistance + startInsideEpsilon);
+            if (!(IsInsideAnyLimitedDepthZoneFast(insideStart) && IsInsideAnyLimitedDepthZone(insideStart)))
+            {
+                insideStart = firstContactPoint;
+            }
+
+            var remainingFromContact = Mathf.Max(0f, maxDistanceWorld - firstContactDistance);
+            var exitFromContact = FindFirstOutsideDistanceFromInside(
+                insideStart,
+                planarDirection,
+                remainingFromContact);
+            if (exitFromContact >= 0f)
+            {
+                var absoluteExitDistance = Mathf.Clamp(firstContactDistance + exitFromContact, 0f, maxDistanceWorld);
+                clipDistance = Mathf.Min(clipDistance, absoluteExitDistance);
+            }
+
+            if (clipDistance >= maxDistanceWorld - 0.001f)
+            {
+                return maxDistanceWorld;
+            }
+
+            var clipPoint = origin + planarDirection * clipDistance;
+            var candidateInside = IsInsideCandidateNeighborhood(clipPoint, planarDirection);
+            if (!candidateInside && exitFromContact < 0f)
+            {
+                return maxDistanceWorld;
+            }
+
+            if (clipDistance < maxDistanceWorld - 0.001f)
+            {
+                var verificationMargin = CombatScale.InchesToWorldUnits(ClipVerificationMarginInches);
+                var verifyDistance = Mathf.Min(maxDistanceWorld, clipDistance + verificationMargin);
+                var verifyPoint = origin + planarDirection * verifyDistance;
+                var verifyInside = IsInsideCandidateNeighborhood(verifyPoint, planarDirection);
+                if (!verifyInside && exitFromContact < 0f)
+                {
+                    return maxDistanceWorld;
+                }
+            }
+
+            return clipDistance;
+        }
+
+        private static float FindFirstOutsideDistanceFromInside(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld)
+        {
+            var coarseStep = Mathf.Max(CombatScale.InchesToWorldUnits(0.25f), 0.05f);
+            var insideDistance = 0f;
+            var distance = 0f;
+            while (distance < maxDistanceWorld - 0.001f)
+            {
+                var nextDistance = Mathf.Min(maxDistanceWorld, distance + coarseStep);
+                var midpoint = distance + (nextDistance - distance) * 0.5f;
+                var samplePoint = origin + planarDirection * midpoint;
+                var inside = IsInsideAnyLimitedDepthZoneFast(samplePoint) && IsInsideAnyLimitedDepthZone(samplePoint);
+                if (!inside)
+                {
+                    return RefineBoundaryDistance(origin, planarDirection, insideDistance, nextDistance, findInsideToOutside: true);
+                }
+
+                insideDistance = nextDistance;
+                distance = nextDistance;
+            }
+
+            return -1f;
+        }
+
+        private static float RefineBoundaryDistance(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float lowDistance,
+            float highDistance,
+            bool findInsideToOutside)
+        {
+            var low = Mathf.Max(0f, lowDistance);
+            var high = Mathf.Max(low, highDistance);
+            for (var i = 0; i < 5; i++)
+            {
+                var mid = (low + high) * 0.5f;
+                var sample = origin + planarDirection * mid;
+                var inside = IsInsideAnyLimitedDepthZoneFast(sample) && IsInsideAnyLimitedDepthZone(sample);
+                if (findInsideToOutside)
+                {
+                    if (inside)
+                    {
+                        low = mid;
+                    }
+                    else
+                    {
+                        high = mid;
+                    }
+                }
+                else
+                {
+                    if (inside)
+                    {
+                        high = mid;
+                    }
+                    else
+                    {
+                        low = mid;
+                    }
+                }
+            }
+
+            return high;
+        }
+
+        private static float RefineFirstContactDistance(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float minDistance,
+            float maxDistance)
+        {
+            origin.y = 0f;
+            var low = Mathf.Max(0f, minDistance);
+            var high = Mathf.Max(low, maxDistance);
+
+            for (var i = 0; i < 5; i++)
+            {
+                var mid = (low + high) * 0.5f;
+                var sample = origin + planarDirection * mid;
+                var inside = IsInsideAnyLimitedDepthZoneFast(sample) && IsInsideAnyLimitedDepthZone(sample);
+                if (inside)
+                {
+                    high = mid;
+                }
+                else
+                {
+                    low = mid;
+                }
+            }
+
+            return high;
+        }
+
+        /// <summary>
+        /// Stabilizes the clipped/open transition near forest boundaries by sampling
+        /// a tiny neighborhood around the candidate point, instead of a single point.
+        /// This prevents one-ray notches caused by tiny containment jitter.
+        /// </summary>
+        private static bool IsInsideCandidateNeighborhood(Vector3 point, Vector3 planarDirection)
+        {
+            if (IsInsideAnyLimitedDepthZoneFast(point) && IsInsideAnyLimitedDepthZone(point))
+            {
+                return true;
+            }
+
+            var radius = CombatScale.InchesToWorldUnits(CandidateSmoothingRadiusInches);
+            if (radius <= 0.0001f)
+            {
+                return false;
+            }
+
+            var perpendicular = new Vector3(-planarDirection.z, 0f, planarDirection.x);
+            if (perpendicular.sqrMagnitude <= 1e-8f)
+            {
+                return false;
+            }
+
+            perpendicular.Normalize();
+            var hits = 0;
+            var sampleCount = 0;
+
+            // Offsets biased across the boundary normal to smooth jagged transitions.
+            var offsets = new[] { -1f, -0.5f, 0.5f, 1f };
+            for (var i = 0; i < offsets.Length; i++)
+            {
+                var samplePoint = point + perpendicular * (offsets[i] * radius);
+                sampleCount++;
+                if (IsInsideAnyLimitedDepthZoneFast(samplePoint) && IsInsideAnyLimitedDepthZone(samplePoint))
+                {
+                    hits++;
+                }
+            }
+
+            // Majority vote over neighborhood samples.
+            return hits * 2 >= sampleCount;
+        }
+
+        private static bool IsInsideLimitedDepthZoneForClip(Vector3 worldPoint)
+        {
+            EnsureCache();
+            if (CachedZones.Count > 0)
+            {
+                return IsInsideAnyLimitedDepthZoneFast(worldPoint);
+            }
+
+            return IsInsideAnyLimitedDepthZone(worldPoint);
+        }
+
+        private static bool IsInsideAnyLimitedDepthZone(Vector3 worldPoint)
+        {
+            var activeZones = CombatZone.ActiveZones;
+            for (var i = 0; i < activeZones.Count; i++)
+            {
+                var zone = activeZones[i];
+                var feature = zone?.TerrainFeature;
+                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                {
+                    continue;
+                }
+
+                if (zone.ContainsPoint(worldPoint))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsInsideAnyLimitedDepthZoneFast(Vector3 worldPoint)
+        {
+            var x = worldPoint.x;
+            var z = worldPoint.z;
+            for (var i = 0; i < CachedZones.Count; i++)
+            {
+                var zone = CachedZones[i];
+                if (x >= zone.MinX && x <= zone.MaxX && z >= zone.MinZ && z <= zone.MaxZ)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Approximate planar distance from a point to nearest limited-depth zone boundary.
+        /// If the point is inside a zone, this is distance to exit.
+        /// If outside, this is distance to first entry.
+        /// </summary>
+        public static float GetApproxDistanceToLimitedDepthBoundaryWorld(Vector3 worldPoint, float maxProbeWorld = 0f)
+        {
+            EnsureCache();
+            if (CachedZones.Count == 0)
+            {
+                return float.PositiveInfinity;
+            }
+
+            var probeLimit = maxProbeWorld > 0.001f
+                ? maxProbeWorld
+                : CombatScale.InchesToWorldUnits(24f);
+            var step = Mathf.Max(CombatScale.InchesToWorldUnits(0.1f), 0.02f);
+            var isInside = IsInsideAnyLimitedDepthZoneFast(worldPoint) && IsInsideAnyLimitedDepthZone(worldPoint);
+
+            var best = probeLimit;
+            const int radialSamples = 24;
+            for (var i = 0; i < radialSamples; i++)
+            {
+                var angle = (Mathf.PI * 2f * i) / radialSamples;
+                var direction = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+                var distance = 0f;
+                while (distance < probeLimit - 0.001f)
+                {
+                    var next = Mathf.Min(probeLimit, distance + step);
+                    var midpoint = distance + (next - distance) * 0.5f;
+                    var samplePoint = worldPoint + direction * midpoint;
+                    var sampleInside = IsInsideAnyLimitedDepthZoneFast(samplePoint) && IsInsideAnyLimitedDepthZone(samplePoint);
+                    if (sampleInside != isInside)
+                    {
+                        if (midpoint < best)
+                        {
+                            best = midpoint;
+                        }
+
+                        break;
+                    }
+
+                    distance = next;
+                }
+            }
+
+            return best;
         }
 
         private static float GetCumulativeForestDepthFromPointWorld(
