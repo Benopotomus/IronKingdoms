@@ -5,12 +5,12 @@ using UnityEngine.Serialization;
 namespace IronKingdoms.Combat
 {
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(Collider))]
     public class CombatZone : MonoBehaviour
     {
         private static readonly List<CombatZone> ActiveZoneRegistry = new();
         private const float PointContainmentThresholdSqr = 0.0001f;
         private const int UnitContainmentSampleCount = 8;
+        private const int SphereFootprintCornerCount = 16;
 
         [SerializeField] private CombatTerrainFeatureDefinition terrainFeature;
         [FormerlySerializedAs("zoneType")]
@@ -43,18 +43,15 @@ namespace IronKingdoms.Combat
 
         private void Awake()
         {
-            zoneCollider = GetComponent<Collider>();
-            if (zoneCollider != null)
-            {
-                zoneCollider.isTrigger = true;
-            }
-
+            ResolveCollider();
             EnsureLegacyTerrainFeatureResolved();
         }
 
         private void OnEnable()
         {
+            zoneCollider = null;
             EnsureRegistered();
+            CombatForestFogClipper.InvalidateCache();
         }
 
         /// <summary>
@@ -73,6 +70,39 @@ namespace IronKingdoms.Combat
         private void OnDisable()
         {
             ActiveZoneRegistry.Remove(this);
+            CombatForestFogClipper.InvalidateCache();
+        }
+
+        /// <summary>
+        /// Footprint outline on the XZ tabletop for debug and analytic helpers.
+        /// Supports oriented boxes, spheres, and falls back to bounds for other colliders.
+        /// </summary>
+        public void CollectFootprintCorners(List<Vector3> corners)
+        {
+            ResolveCollider();
+            if (zoneCollider == null || !zoneCollider.enabled)
+            {
+                return;
+            }
+
+            var tabletopY = zoneCollider.bounds.center.y;
+            if (zoneCollider is BoxCollider box)
+            {
+                AppendOrientedBoxFootprintCorners(box, tabletopY, corners);
+                return;
+            }
+
+            if (zoneCollider is SphereCollider sphere)
+            {
+                AppendSphereFootprintCorners(sphere, tabletopY, corners);
+                return;
+            }
+
+            var bounds = zoneCollider.bounds;
+            corners.Add(new Vector3(bounds.min.x, tabletopY, bounds.min.z));
+            corners.Add(new Vector3(bounds.max.x, tabletopY, bounds.min.z));
+            corners.Add(new Vector3(bounds.max.x, tabletopY, bounds.max.z));
+            corners.Add(new Vector3(bounds.min.x, tabletopY, bounds.max.z));
         }
 
         public bool ContainsPoint(Vector3 worldPoint)
@@ -82,6 +112,7 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
+            ResolveCollider();
             if (zoneCollider == null || !zoneCollider.enabled)
             {
                 return false;
@@ -134,6 +165,7 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
+            ResolveCollider();
             if (zoneCollider == null || !zoneCollider.enabled)
             {
                 return false;
@@ -143,6 +175,68 @@ namespace IronKingdoms.Combat
             var dx = closestPoint.x - center.x;
             var dz = closestPoint.z - center.z;
             return dx * dx + dz * dz <= radius * radius;
+        }
+
+        public bool TryGetFootprintCollider(out Collider collider)
+        {
+            ResolveCollider();
+            collider = zoneCollider;
+            return collider != null && collider.enabled;
+        }
+
+        private void ResolveCollider()
+        {
+            if (zoneCollider != null)
+            {
+                zoneCollider.isTrigger = true;
+                return;
+            }
+
+            zoneCollider = GetComponent<Collider>();
+            if (zoneCollider == null)
+            {
+                zoneCollider = GetComponentInChildren<Collider>(true);
+            }
+
+            if (zoneCollider != null)
+            {
+                zoneCollider.isTrigger = true;
+            }
+        }
+
+        private static void AppendOrientedBoxFootprintCorners(BoxCollider box, float tabletopY, List<Vector3> corners)
+        {
+            var t = box.transform;
+            var half = box.size * 0.5f;
+            var center = box.center;
+            var localCorners = new[]
+            {
+                center + new Vector3(-half.x, 0f, -half.z),
+                center + new Vector3(half.x, 0f, -half.z),
+                center + new Vector3(half.x, 0f, half.z),
+                center + new Vector3(-half.x, 0f, half.z)
+            };
+
+            for (var i = 0; i < localCorners.Length; i++)
+            {
+                var world = t.TransformPoint(localCorners[i]);
+                world.y = tabletopY;
+                corners.Add(world);
+            }
+        }
+
+        private static void AppendSphereFootprintCorners(SphereCollider sphere, float tabletopY, List<Vector3> corners)
+        {
+            var t = sphere.transform;
+            var center = t.TransformPoint(sphere.center);
+            center.y = tabletopY;
+            var scale = t.lossyScale;
+            var radius = sphere.radius * Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.z));
+            for (var i = 0; i < SphereFootprintCornerCount; i++)
+            {
+                var angle = (Mathf.PI * 2f * i) / SphereFootprintCornerCount;
+                corners.Add(center + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
+            }
         }
 
         private void EnsureLegacyTerrainFeatureResolved()
@@ -169,6 +263,7 @@ namespace IronKingdoms.Combat
 #if UNITY_EDITOR
         private void OnValidate()
         {
+            ResolveCollider();
             if (terrainFeature == null && legacyZoneType != CombatZoneType.None)
             {
                 EnsureLegacyTerrainFeatureResolved();

@@ -22,6 +22,7 @@ namespace IronKingdoms.Combat
 
         private struct ClipZone
         {
+            public CombatZone Zone;
             public float MinX;
             public float MaxX;
             public float MinZ;
@@ -53,18 +54,7 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var collider = zone.GetComponent<Collider>();
-                if (collider == null || !collider.enabled)
-                {
-                    continue;
-                }
-
-                var bounds = collider.bounds;
-                var y = bounds.center.y;
-                corners.Add(new Vector3(bounds.min.x, y, bounds.min.z));
-                corners.Add(new Vector3(bounds.max.x, y, bounds.min.z));
-                corners.Add(new Vector3(bounds.max.x, y, bounds.max.z));
-                corners.Add(new Vector3(bounds.min.x, y, bounds.max.z));
+                zone.CollectFootprintCorners(corners);
             }
         }
 
@@ -212,6 +202,7 @@ namespace IronKingdoms.Combat
                 var bounds = collider.bounds;
                 CachedZones.Add(new ClipZone
                 {
+                    Zone = zone,
                     MinX = bounds.min.x,
                     MaxX = bounds.max.x,
                     MinZ = bounds.min.z,
@@ -340,15 +331,13 @@ namespace IronKingdoms.Combat
                 return maxDistanceWorld;
             }
 
-            // Per-ray only: each direction decides independently whether LOS starts in forest.
-            // No global inside/outside eye state — edge-straddling units stay consistent.
-            var rayStartsInsideForest = RayStartsInsideForest(origin, planarDirection);
+            // Walk forest segments along the ray so separate zones (e.g. square vs
+            // circular) each contribute clips even when the eye is inside another forest.
             return ComputeFirstContactDepthClipCandidate(
                 origin,
                 planarDirection,
                 maxDistanceWorld,
-                depthLimitWorld,
-                rayStartsInsideForest);
+                depthLimitWorld);
         }
 
         /// <summary>
@@ -447,9 +436,9 @@ namespace IronKingdoms.Combat
                 return maxDistanceWorld;
             }
 
-            // Contact search mirrors primary path (inside-start shortcut enabled).
+            // Contact search mirrors primary path.
             firstContactDistance = -1f;
-            if (IsInsideAnyLimitedDepthZoneFast(origin) && IsInsideAnyLimitedDepthZone(origin))
+            if (IsInsideAnyLimitedDepthZone(origin))
             {
                 firstContactDistance = 0f;
             }
@@ -499,82 +488,118 @@ namespace IronKingdoms.Combat
             Vector3 origin,
             Vector3 planarDirection,
             float maxDistanceWorld,
-            float depthLimitWorld,
-            bool allowInsideStartShortcut)
+            float depthLimitWorld)
         {
             origin.y = 0f;
-            var firstContactDistance = -1f;
-            if (allowInsideStartShortcut)
+            var cursor = 0f;
+            const float advanceEpsilon = 0.001f;
+            var thinForestEpsilon = CombatScale.InchesToWorldUnits(0.05f);
+
+            while (cursor < maxDistanceWorld - advanceEpsilon)
             {
-                firstContactDistance = 0f;
-
-                // Inside-start rays are the main source of jagged clipped/open notches.
-                // Use true exit distance along this ray, then blend through the threshold
-                // instead of a single-point candidate test.
-                var exitDistance = FindFirstOutsideDistanceFromInside(origin, planarDirection, maxDistanceWorld);
-                if (exitDistance < 0f)
-                {
-                    // Never exits forest within max range -> hard clip at depth limit.
-                    return Mathf.Min(maxDistanceWorld, depthLimitWorld);
-                }
-
-                if (exitDistance <= depthLimitWorld)
+                var entryDistance = FindNextForestEntryDistance(
+                    origin,
+                    planarDirection,
+                    cursor,
+                    maxDistanceWorld);
+                if (entryDistance < 0f)
                 {
                     return maxDistanceWorld;
                 }
 
-                return Mathf.Min(maxDistanceWorld, depthLimitWorld);
-            }
-            else
-            {
-                var coarseStep = Mathf.Max(CombatScale.InchesToWorldUnits(0.25f), 0.05f);
-                var distance = 0f;
-                var previousDistance = 0f;
-                while (distance < maxDistanceWorld - 0.001f)
+                var remainingFromEntry = maxDistanceWorld - entryDistance;
+                var startInsideEpsilon = CombatScale.InchesToWorldUnits(0.02f);
+                var probeStart = origin + planarDirection * Mathf.Min(
+                    maxDistanceWorld,
+                    entryDistance + startInsideEpsilon);
+                if (!(IsInsideAnyLimitedDepthZoneFast(probeStart) && IsInsideAnyLimitedDepthZone(probeStart)))
                 {
-                    var nextDistance = Mathf.Min(maxDistanceWorld, distance + coarseStep);
-                    var midpoint = distance + (nextDistance - distance) * 0.5f;
-                    var samplePoint = origin + planarDirection * midpoint;
-                    if (IsInsideLimitedDepthZoneForClip(samplePoint))
-                    {
-                        firstContactDistance = RefineFirstContactDistance(origin, planarDirection, previousDistance, nextDistance);
-                        break;
-                    }
-
-                    previousDistance = distance;
-                    distance = nextDistance;
+                    probeStart = origin + planarDirection * entryDistance;
                 }
+
+                probeStart.y = 0f;
+                var exitFromEntry = FindFirstOutsideDistanceFromInside(
+                    probeStart,
+                    planarDirection,
+                    remainingFromEntry);
+
+                if (exitFromEntry < 0f)
+                {
+                    var surroundedClip = Mathf.Min(maxDistanceWorld, entryDistance + depthLimitWorld);
+                    return TryFinalizeClipDistance(
+                        origin,
+                        planarDirection,
+                        surroundedClip,
+                        maxDistanceWorld,
+                        exitFromContact: -1f);
+                }
+
+                if (exitFromEntry <= depthLimitWorld + thinForestEpsilon)
+                {
+                    cursor = entryDistance + exitFromEntry + advanceEpsilon;
+                    continue;
+                }
+
+                var clipDistance = Mathf.Min(maxDistanceWorld, entryDistance + depthLimitWorld);
+                var absoluteExit = entryDistance + exitFromEntry;
+                clipDistance = Mathf.Min(clipDistance, absoluteExit);
+
+                return TryFinalizeClipDistance(
+                    origin,
+                    planarDirection,
+                    clipDistance,
+                    maxDistanceWorld,
+                    exitFromEntry);
             }
 
-            if (firstContactDistance < 0f)
+            return maxDistanceWorld;
+        }
+
+        private static float FindNextForestEntryDistance(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float searchStart,
+            float maxDistanceWorld)
+        {
+            origin.y = 0f;
+            if (searchStart <= 0.001f && IsInsideLimitedDepthZoneForClip(origin))
             {
-                return maxDistanceWorld;
+                return 0f;
             }
 
-            var clipDistance = Mathf.Min(maxDistanceWorld, firstContactDistance + depthLimitWorld);
-
-            // Doc rule (outside -> forest): if LOS enters forest, it may never
-            // see past the far edge even for thin forests. So for outside-start rays,
-            // clamp to whichever comes first: (contact + depth) or first forest exit.
-            var firstContactPoint = origin + planarDirection * firstContactDistance;
-            var startInsideEpsilon = CombatScale.InchesToWorldUnits(0.02f);
-            var insideStart = origin + planarDirection * Mathf.Min(maxDistanceWorld, firstContactDistance + startInsideEpsilon);
-            if (!(IsInsideAnyLimitedDepthZoneFast(insideStart) && IsInsideAnyLimitedDepthZone(insideStart)))
+            var sampleAtStart = origin + planarDirection * searchStart;
+            if (IsInsideLimitedDepthZoneForClip(sampleAtStart))
             {
-                insideStart = firstContactPoint;
+                return searchStart;
             }
 
-            var remainingFromContact = Mathf.Max(0f, maxDistanceWorld - firstContactDistance);
-            var exitFromContact = FindFirstOutsideDistanceFromInside(
-                insideStart,
-                planarDirection,
-                remainingFromContact);
-            if (exitFromContact >= 0f)
+            var coarseStep = Mathf.Max(CombatScale.InchesToWorldUnits(0.25f), 0.05f);
+            var distance = Mathf.Max(0f, searchStart);
+            var previousDistance = distance;
+            while (distance < maxDistanceWorld - 0.001f)
             {
-                var absoluteExitDistance = Mathf.Clamp(firstContactDistance + exitFromContact, 0f, maxDistanceWorld);
-                clipDistance = Mathf.Min(clipDistance, absoluteExitDistance);
+                var nextDistance = Mathf.Min(maxDistanceWorld, distance + coarseStep);
+                var midpoint = distance + (nextDistance - distance) * 0.5f;
+                var samplePoint = origin + planarDirection * midpoint;
+                if (IsInsideLimitedDepthZoneForClip(samplePoint))
+                {
+                    return RefineFirstContactDistance(origin, planarDirection, previousDistance, nextDistance);
+                }
+
+                previousDistance = distance;
+                distance = nextDistance;
             }
 
+            return -1f;
+        }
+
+        private static float TryFinalizeClipDistance(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float clipDistance,
+            float maxDistanceWorld,
+            float exitFromContact)
+        {
             if (clipDistance >= maxDistanceWorld - 0.001f)
             {
                 return maxDistanceWorld;
@@ -780,7 +805,12 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < CachedZones.Count; i++)
             {
                 var zone = CachedZones[i];
-                if (x >= zone.MinX && x <= zone.MaxX && z >= zone.MinZ && z <= zone.MaxZ)
+                if (x < zone.MinX || x > zone.MaxX || z < zone.MinZ || z > zone.MaxZ)
+                {
+                    continue;
+                }
+
+                if (zone.Zone == null || zone.Zone.ContainsPoint(worldPoint))
                 {
                     return true;
                 }

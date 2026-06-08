@@ -29,7 +29,6 @@ namespace IronKingdoms.Combat
 
         private readonly List<float> clipScratch = new();
         private readonly List<bool> limitedScratch = new();
-        private readonly List<bool> insideForestScratch = new();
         private readonly List<Vector3> lastSamplePointsWorld = new();
         private readonly List<OccluderSegmentEntry> segmentPool = new();
         private readonly List<Vector3> vertexScratch = new();
@@ -215,10 +214,9 @@ namespace IronKingdoms.Combat
 
             var groundY = eyeLocal.y;
             var angleStep = (Mathf.PI * 2f) / segmentCount;
-            var anyInsideForestClip = false;
+            var anyLimitedClip = false;
             clipScratch.Clear();
             limitedScratch.Clear();
-            insideForestScratch.Clear();
             lastSamplePointsWorld.Clear();
 
             for (var i = 0; i < segmentCount; i++)
@@ -234,20 +232,16 @@ namespace IronKingdoms.Combat
                 clipScratch.Add(clipDistance);
                 var isLimited = clipDistance < viewRadius - 0.01f;
                 limitedScratch.Add(isLimited);
+                anyLimitedClip |= isLimited;
 
                 var sampleWorld = eyeWorld + (dir * clipDistance);
-                var insideForest = isLimited
-                    && CombatForestFogClipper.IsInsideLimitedDepthForest(sampleWorld, 0.05f);
-                insideForestScratch.Add(insideForest);
-                anyInsideForestClip |= insideForest;
-
-                if (insideForest)
+                if (isLimited)
                 {
                     lastSamplePointsWorld.Add(sampleWorld);
                 }
             }
 
-            if (!anyInsideForestClip)
+            if (!anyLimitedClip)
             {
                 return false;
             }
@@ -257,11 +251,6 @@ namespace IronKingdoms.Combat
             {
                 var next = (i + 1) % segmentCount;
                 if (!limitedScratch[i] || !limitedScratch[next])
-                {
-                    continue;
-                }
-
-                if (!insideForestScratch[i] && !insideForestScratch[next])
                 {
                     continue;
                 }
@@ -301,11 +290,11 @@ namespace IronKingdoms.Combat
                 var previousDir = new Vector3(Mathf.Cos(previousAngle), 0f, Mathf.Sin(previousAngle));
                 var nextDir = new Vector3(Mathf.Cos(nextAngle), 0f, Mathf.Sin(nextAngle));
                 var outward = dir;
-                if (!limitedScratch[previous] || !insideForestScratch[previous])
+                if (!limitedScratch[previous])
                 {
                     outward = ((dir + nextDir) * 0.5f).normalized;
                 }
-                else if (!limitedScratch[next] || !insideForestScratch[next])
+                else if (!limitedScratch[next])
                 {
                     outward = ((dir + previousDir) * 0.5f).normalized;
                 }
@@ -345,16 +334,14 @@ namespace IronKingdoms.Combat
 
         private bool IsForestBoundarySample(int index)
         {
-            if (!insideForestScratch[index] || !limitedScratch[index])
+            if (!limitedScratch[index])
             {
                 return false;
             }
 
             var previous = (index - 1 + segmentCount) % segmentCount;
             var next = (index + 1) % segmentCount;
-            var previousOpen = !limitedScratch[previous] || !insideForestScratch[previous];
-            var nextOpen = !limitedScratch[next] || !insideForestScratch[next];
-            return previousOpen || nextOpen;
+            return !limitedScratch[previous] || !limitedScratch[next];
         }
 
         private int PlaceCornerCapMesh(
