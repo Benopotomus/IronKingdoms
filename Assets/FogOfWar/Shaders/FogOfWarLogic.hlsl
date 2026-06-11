@@ -359,11 +359,11 @@ void LoopRevealerHardFog(RevealerInfoStruct revealerInfo, RevealerDataStruct rev
         
         if (inCone)
         {
-            float DistToSegmentEnd = currentCone.length;
+            bool cutShortCurr = currentCone.length <= totalRevealerRadius;
+            float DistToSegmentEnd = currentCone.length + (cutShortCurr ? _extraRadius : 0);
 
             //if (previousCone.cutShort && currentCone.cutShort)
             bool cutShortPrev = previousCone.length <= totalRevealerRadius;
-            bool cutShortCurr = currentCone.length <= totalRevealerRadius;
             if (cutShortPrev && cutShortCurr)
             {
                 float2 start = previousCone.segmentDirection * previousCone.length;
@@ -610,7 +610,8 @@ void LoopRevealerSoftFog(RevealerInfoStruct revealerInfo, RevealerDataStruct rev
             //float lerpVal = 1-saturate(-signedDeltaAngle / segmentAngle);
             //float DistToSegmentEnd = lerp(previousCone.length, currentCone.length, lerpVal);
             float currConeLength = min(totalRevealerRadius, currentCone.length);
-            float DistToSegmentEnd = currConeLength;
+            bool cutShortCurr = currentCone.length <= totalRevealerRadius;
+            float DistToSegmentEnd = currConeLength + (cutShortCurr ? _extraRadius : 0);
             //float segmentSoftenDistance = _fadeOutDistance;
 
             float innerEdgeMultiplier = 1;
@@ -643,7 +644,6 @@ void LoopRevealerSoftFog(RevealerInfoStruct revealerInfo, RevealerDataStruct rev
             float RadialEdgeSoftening = 1;
             //if ((previousCone.cutShort && currentCone.cutShort))  //draw straight line thru points instead of drawing arc
             bool cutShortPrev = previousCone.length <= totalRevealerRadius;
-            bool cutShortCurr = currentCone.length <= totalRevealerRadius;
             if ((cutShortPrev && cutShortCurr))  //draw straight line thru points instead of drawing arc
             {
                 float prevConeLength = min(totalRevealerRadius, previousCone.length);
