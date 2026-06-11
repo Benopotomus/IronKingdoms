@@ -11,7 +11,7 @@ namespace IronKingdoms.Combat
     public class CombatFogOfWarRevealer3D : FogOfWarRevealer3D
     {
         [Header("Forest Debug")]
-        [SerializeField] private bool drawForestClipDebug = true;
+        [SerializeField] private bool drawForestClipDebug = false;
         [SerializeField] private bool drawForestClipInGameView = true;
         [SerializeField] private Color debugClipRayColor = new(0.1f, 1f, 0.2f, 1f);
         [SerializeField] private Color debugBridgeRayColor = new(1f, 0.85f, 0.1f, 1f);

@@ -16,6 +16,7 @@ namespace IronKingdoms.Combat
         private const int ForestLimitedAngularScanSteps = 96;
 
         private readonly HashSet<int> bridgedRayIndices = new();
+        private readonly List<float> forestClipDistances = new();
 
         public HashSet<int> BridgedRayIndices => bridgedRayIndices;
 
@@ -35,9 +36,11 @@ namespace IronKingdoms.Combat
 
             var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
             var projectedEye = projection.Project((float3)eyeWorld);
+            var eyeStartedInsideForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld);
+            EnsureClipDistanceCount(stepCount, maxRadius);
 
-            ApplyForestClipToFirstIteration(firstIteration, stepCount, eyeWorld, maxRadius, depthWorld, projectedEye, projection);
-            FillForestMissBridges(firstIteration, stepCount, eyeWorld, maxRadius, depthWorld, projectedEye, projection);
+            ApplyForestClipToFirstIteration(firstIteration, stepCount, eyeWorld, maxRadius, depthWorld, eyeStartedInsideForest, projectedEye, projection, forestClipDistances);
+            FillForestMissBridges(firstIteration, stepCount, maxRadius, projectedEye, projection, forestClipDistances);
         }
 
         public void ForceContourConditions(
@@ -48,9 +51,8 @@ namespace IronKingdoms.Combat
             float maxRadius,
             FogOfWarRevealer3D.PlaneProjection projection)
         {
-            var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
             ForceForestContourViewPoints(firstIteration, firstIterationConditions, stepCount, maxRadius);
-            ForceForestAdjacentOpenContourPoints(firstIteration, firstIterationConditions, stepCount, eyeWorld, maxRadius, depthWorld, projection);
+            ForceForestAdjacentOpenContourPoints(firstIteration, firstIterationConditions, stepCount, maxRadius, forestClipDistances);
         }
 
         private static void ApplyForestClipToFirstIteration(
@@ -59,8 +61,10 @@ namespace IronKingdoms.Combat
             Vector3 eyeWorld,
             float maxRadius,
             float depthWorld,
+            bool eyeStartedInsideForest,
             float2 projectedEye,
-            FogOfWarRevealer3D.PlaneProjection projection)
+            FogOfWarRevealer3D.PlaneProjection projection,
+            List<float> clipDistances)
         {
             for (var i = 0; i < stepCount; i++)
             {
@@ -73,7 +77,9 @@ namespace IronKingdoms.Combat
                     eyeWorld,
                     dir3,
                     maxRadius,
-                    depthWorld);
+                    depthWorld,
+                    eyeStartedInsideForest);
+                clipDistances[i] = forestClip;
 
                 var physicsHit = firstIteration.Hits[i];
                 var physicsDistance = physicsHit ? firstIteration.Distances[i] : maxRadius;
@@ -106,11 +112,10 @@ namespace IronKingdoms.Combat
         private void FillForestMissBridges(
             RaycastRevealer.SightIteration firstIteration,
             int stepCount,
-            Vector3 eyeWorld,
             float maxRadius,
-            float depthWorld,
             float2 projectedEye,
-            FogOfWarRevealer3D.PlaneProjection projection)
+            FogOfWarRevealer3D.PlaneProjection projection,
+            List<float> clipDistances)
         {
             for (var i = 0; i < stepCount; i++)
             {
@@ -119,16 +124,12 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                if (!TryGetRayDirections(firstIteration, i, projection, out var dir2, out var dir3))
+                if (!TryGetRayDirections(firstIteration, i, projection, out var dir2, out _))
                 {
                     continue;
                 }
 
-                var forestClip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
-                    eyeWorld,
-                    dir3,
-                    maxRadius,
-                    depthWorld);
+                var forestClip = clipDistances[i];
                 if (forestClip >= maxRadius - 0.01f)
                 {
                     continue;
@@ -180,10 +181,8 @@ namespace IronKingdoms.Combat
             RaycastRevealer.SightIteration firstIteration,
             NativeArray<bool> firstIterationConditions,
             int stepCount,
-            Vector3 eyeWorld,
             float maxRadius,
-            float depthWorld,
-            FogOfWarRevealer3D.PlaneProjection projection)
+            List<float> clipDistances)
         {
             for (var i = 0; i < stepCount; i++)
             {
@@ -192,16 +191,7 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                if (!TryGetRayDirections(firstIteration, i, projection, out _, out var dir3))
-                {
-                    continue;
-                }
-
-                var forestClip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
-                    eyeWorld,
-                    dir3,
-                    maxRadius,
-                    depthWorld);
+                var forestClip = i < clipDistances.Count ? clipDistances[i] : maxRadius;
                 if (forestClip < maxRadius - 0.01f)
                 {
                     continue;
@@ -238,6 +228,15 @@ namespace IronKingdoms.Combat
             }
 
             return false;
+        }
+
+        private void EnsureClipDistanceCount(int count, float defaultDistance)
+        {
+            forestClipDistances.Clear();
+            for (var i = 0; i < count; i++)
+            {
+                forestClipDistances.Add(defaultDistance);
+            }
         }
 
         private static bool TryGetRayDirections(

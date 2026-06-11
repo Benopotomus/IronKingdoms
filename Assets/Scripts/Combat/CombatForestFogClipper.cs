@@ -320,6 +320,22 @@ namespace IronKingdoms.Combat
             float maxDistanceWorld,
             float depthLimitWorld)
         {
+            EnsureCache();
+            return GetFirstContactDepthClipDistanceWorld(
+                origin,
+                planarDirection,
+                maxDistanceWorld,
+                depthLimitWorld,
+                IsInsideLimitedDepthZoneForClip(origin));
+        }
+
+        public static float GetFirstContactDepthClipDistanceWorld(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld,
+            float depthLimitWorld,
+            bool rayStartedInsideForest)
+        {
             if (maxDistanceWorld <= 0.001f || depthLimitWorld <= 0.001f)
             {
                 return maxDistanceWorld;
@@ -337,7 +353,8 @@ namespace IronKingdoms.Combat
                 origin,
                 planarDirection,
                 maxDistanceWorld,
-                depthLimitWorld);
+                depthLimitWorld,
+                rayStartedInsideForest);
         }
 
         /// <summary>
@@ -488,13 +505,23 @@ namespace IronKingdoms.Combat
             Vector3 origin,
             Vector3 planarDirection,
             float maxDistanceWorld,
-            float depthLimitWorld)
+            float depthLimitWorld,
+            bool rayStartedInsideForest)
         {
             origin.y = 0f;
-            var rayStartedInsideForest = IsInsideLimitedDepthZoneForClip(origin);
             var cursor = 0f;
             const float advanceEpsilon = 0.001f;
             var thinForestEpsilon = CombatScale.InchesToWorldUnits(0.05f);
+
+            if (rayStartedInsideForest)
+            {
+                var depthClip = Mathf.Min(maxDistanceWorld, depthLimitWorld);
+                var depthPoint = origin + planarDirection * depthClip;
+                if (IsInsideCandidateNeighborhood(depthPoint, planarDirection))
+                {
+                    return depthClip;
+                }
+            }
 
             while (cursor < maxDistanceWorld - advanceEpsilon)
             {
@@ -516,6 +543,21 @@ namespace IronKingdoms.Combat
                 if (!(IsInsideAnyLimitedDepthZoneFast(probeStart) && IsInsideAnyLimitedDepthZone(probeStart)))
                 {
                     probeStart = origin + planarDirection * entryDistance;
+                }
+
+                if (!rayStartedInsideForest)
+                {
+                    var outsideDepthClip = Mathf.Min(maxDistanceWorld, entryDistance + depthLimitWorld);
+                    var outsideDepthPoint = origin + planarDirection * outsideDepthClip;
+                    if (IsInsideCandidateNeighborhood(outsideDepthPoint, planarDirection))
+                    {
+                        return TryFinalizeClipDistance(
+                            origin,
+                            planarDirection,
+                            outsideDepthClip,
+                            maxDistanceWorld,
+                            exitFromContact: -1f);
+                    }
                 }
 
                 probeStart.y = 0f;
@@ -586,6 +628,119 @@ namespace IronKingdoms.Combat
                 return searchStart;
             }
 
+            var aabbEntry = FindNextForestEntryDistanceFromCachedAabbs(
+                origin,
+                planarDirection,
+                searchStart,
+                maxDistanceWorld);
+            if (aabbEntry >= 0f)
+            {
+                return aabbEntry;
+            }
+
+            return -1f;
+        }
+
+        private static float FindNextForestEntryDistanceFromCachedAabbs(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float searchStart,
+            float maxDistanceWorld)
+        {
+            if (CachedZones.Count == 0)
+            {
+                return FindNextForestEntryDistanceByStepping(origin, planarDirection, searchStart, maxDistanceWorld);
+            }
+
+            var bestEntry = -1f;
+            var originX = origin.x;
+            var originZ = origin.z;
+            var directionX = planarDirection.x;
+            var directionZ = planarDirection.z;
+
+            for (var i = 0; i < CachedZones.Count; i++)
+            {
+                if (!TryGetRayAabbInterval(
+                        originX,
+                        originZ,
+                        directionX,
+                        directionZ,
+                        maxDistanceWorld,
+                        CachedZones[i],
+                        out var enter,
+                        out var exit))
+                {
+                    continue;
+                }
+
+                if (exit <= searchStart || (bestEntry >= 0f && enter >= bestEntry))
+                {
+                    continue;
+                }
+
+                var candidateStart = Mathf.Max(searchStart, enter);
+                if (TryFindForestEntryInRange(
+                        origin,
+                        planarDirection,
+                        candidateStart,
+                        Mathf.Min(exit, bestEntry >= 0f ? bestEntry : maxDistanceWorld),
+                        out var entry)
+                    && (bestEntry < 0f || entry < bestEntry))
+                {
+                    bestEntry = entry;
+                }
+            }
+
+            return bestEntry;
+        }
+
+        private static bool TryFindForestEntryInRange(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float rangeStart,
+            float rangeEnd,
+            out float entryDistance)
+        {
+            entryDistance = -1f;
+            if (rangeEnd <= rangeStart + 0.001f)
+            {
+                return false;
+            }
+
+            var sampleAtStart = origin + planarDirection * rangeStart;
+            if (IsInsideLimitedDepthZoneForClip(sampleAtStart))
+            {
+                entryDistance = rangeStart;
+                return true;
+            }
+
+            var coarseStep = Mathf.Max(CombatScale.InchesToWorldUnits(0.25f), 0.05f);
+            var distance = rangeStart;
+            var previousDistance = distance;
+            while (distance < rangeEnd - 0.001f)
+            {
+                var nextDistance = Mathf.Min(rangeEnd, distance + coarseStep);
+                var midpoint = distance + (nextDistance - distance) * 0.5f;
+                var samplePoint = origin + planarDirection * midpoint;
+                if (IsInsideLimitedDepthZoneForClip(samplePoint))
+                {
+                    entryDistance = RefineFirstContactDistance(origin, planarDirection, previousDistance, nextDistance);
+                    return true;
+                }
+
+                previousDistance = distance;
+                distance = nextDistance;
+            }
+
+            return false;
+        }
+
+        private static float FindNextForestEntryDistanceByStepping(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float searchStart,
+            float maxDistanceWorld)
+        {
             var coarseStep = Mathf.Max(CombatScale.InchesToWorldUnits(0.25f), 0.05f);
             var distance = Mathf.Max(0f, searchStart);
             var previousDistance = distance;
