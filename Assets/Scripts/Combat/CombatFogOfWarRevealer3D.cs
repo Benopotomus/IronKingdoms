@@ -86,7 +86,6 @@ namespace IronKingdoms.Combat
 
             forestPostProcessor.Apply(
                 FirstIteration,
-                FirstIterationConditions,
                 FirstIterationStepCount,
                 eyeWorld,
                 TotalRevealerRadius,
@@ -94,6 +93,13 @@ namespace IronKingdoms.Combat
 
             // Re-run the stock first-iteration conditions after forest has tightened ray distances.
             FirstIterationPointsAndConditionsJob.Run(FirstIterationStepCount);
+            forestPostProcessor.ForceContourConditions(
+                FirstIteration,
+                FirstIterationConditions,
+                FirstIterationStepCount,
+                eyeWorld,
+                TotalRevealerRadius,
+                Projection);
 
             if (!drawForestClipDebug)
             {

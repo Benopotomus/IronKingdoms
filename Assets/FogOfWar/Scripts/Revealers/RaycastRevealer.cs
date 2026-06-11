@@ -536,7 +536,11 @@ namespace FOW
         void CalculateRevealerInitialValues()
         {
             SetCachedForward();
-            FirstRayAngle = ((-GetEyeRotation() + 360 + 90) % 360) - halfViewAngle;
+            // A full-circle revealer has no facing direction. Keeping its ray fan in world-space
+            // prevents distant wall silhouettes from orbiting/bouncing as the unit rotates.
+            FirstRayAngle = CircleIsComplete
+                ? 90 - halfViewAngle
+                : ((-GetEyeRotation() + 360 + 90) % 360) - halfViewAngle;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

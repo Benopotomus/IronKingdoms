@@ -310,9 +310,9 @@ namespace IronKingdoms.Combat
         }
 
         /// <summary>
-        /// For fog rays: from the first forest contact on this ray, look exactly
-        /// <paramref name="depthLimitWorld"/> deeper. If that test point is still in forest,
-        /// clip there; otherwise do not clip this ray for forest.
+        /// For fog rays: from the first forest contact on this ray, reveal up to
+        /// <paramref name="depthLimitWorld"/> deeper. Rays that begin outside forest clip before
+        /// they leave that forest span, so thin forests do not reveal open ground behind them.
         /// </summary>
         public static float GetFirstContactDepthClipDistanceWorld(
             Vector3 origin,
@@ -491,6 +491,7 @@ namespace IronKingdoms.Combat
             float depthLimitWorld)
         {
             origin.y = 0f;
+            var rayStartedInsideForest = IsInsideLimitedDepthZoneForClip(origin);
             var cursor = 0f;
             const float advanceEpsilon = 0.001f;
             var thinForestEpsilon = CombatScale.InchesToWorldUnits(0.05f);
@@ -534,6 +535,19 @@ namespace IronKingdoms.Combat
                         exitFromContact: -1f);
                 }
 
+                var absoluteExit = entryDistance + exitFromEntry;
+                if (!rayStartedInsideForest)
+                {
+                    var outsideEntryClip = Mathf.Min(maxDistanceWorld, entryDistance + depthLimitWorld);
+                    outsideEntryClip = Mathf.Min(outsideEntryClip, absoluteExit);
+                    return TryFinalizeClipDistance(
+                        origin,
+                        planarDirection,
+                        outsideEntryClip,
+                        maxDistanceWorld,
+                        exitFromEntry);
+                }
+
                 if (exitFromEntry <= depthLimitWorld + thinForestEpsilon)
                 {
                     cursor = entryDistance + exitFromEntry + advanceEpsilon;
@@ -541,7 +555,6 @@ namespace IronKingdoms.Combat
                 }
 
                 var clipDistance = Mathf.Min(maxDistanceWorld, entryDistance + depthLimitWorld);
-                var absoluteExit = entryDistance + exitFromEntry;
                 clipDistance = Mathf.Min(clipDistance, absoluteExit);
 
                 return TryFinalizeClipDistance(

@@ -162,6 +162,33 @@ namespace IronKingdoms.Combat.Tests
         }
 
         [Test]
+        public void OutsideThinForest_ClipsAtForestExitInsteadOfRevealingBeyondIt()
+        {
+            var depthWorld = CombatScale.InchesToWorldUnits(3f);
+            var approachWorld = CombatScale.InchesToWorldUnits(10f);
+            var thinForestWidthWorld = CombatScale.InchesToWorldUnits(1f);
+            var maxDistance = CombatScale.InchesToWorldUnits(30f);
+
+            var collider = zoneObject.GetComponent<BoxCollider>();
+            collider.size = new Vector3(thinForestWidthWorld, 2f, CombatScale.InchesToWorldUnits(8f));
+            collider.center = new Vector3(0f, 1f, 0f);
+            Physics.SyncTransforms();
+            CombatForestFogClipper.InvalidateCache();
+            EnsureCacheMethod.Invoke(null, null);
+
+            var origin = new Vector3((-thinForestWidthWorld * 0.5f) - approachWorld, 0f, 0f);
+            var direction = Vector3.right;
+
+            var clip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                origin,
+                direction,
+                maxDistance,
+                depthWorld);
+
+            Assert.That(clip, Is.EqualTo(approachWorld + thinForestWidthWorld).Within(CombatScale.InchesToWorldUnits(0.25f)));
+        }
+
+        [Test]
         public void InsideBoxForest_StillClipsAtSeparateCircularForest()
         {
             zoneObject.SetActive(false);

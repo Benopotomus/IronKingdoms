@@ -26,7 +26,6 @@ namespace IronKingdoms.Combat
 
         public void Apply(
             RaycastRevealer.SightIteration firstIteration,
-            NativeArray<bool> firstIterationConditions,
             int stepCount,
             Vector3 eyeWorld,
             float maxRadius,
@@ -39,6 +38,17 @@ namespace IronKingdoms.Combat
 
             ApplyForestClipToFirstIteration(firstIteration, stepCount, eyeWorld, maxRadius, depthWorld, projectedEye, projection);
             FillForestMissBridges(firstIteration, stepCount, eyeWorld, maxRadius, depthWorld, projectedEye, projection);
+        }
+
+        public void ForceContourConditions(
+            RaycastRevealer.SightIteration firstIteration,
+            NativeArray<bool> firstIterationConditions,
+            int stepCount,
+            Vector3 eyeWorld,
+            float maxRadius,
+            FogOfWarRevealer3D.PlaneProjection projection)
+        {
+            var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
             ForceForestContourViewPoints(firstIteration, firstIterationConditions, stepCount, maxRadius);
             ForceForestAdjacentOpenContourPoints(firstIteration, firstIterationConditions, stepCount, eyeWorld, maxRadius, depthWorld, projection);
         }

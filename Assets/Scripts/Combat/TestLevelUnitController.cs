@@ -296,6 +296,7 @@ namespace IronKingdoms.Combat
             fogOfWarWorld.RevealerFadeOut = false;
             fogOfWarWorld.InitialFogExplorationValue = 0f;
             fogOfWarWorld.MaxFogRegrowAmount = fogExploredShroudVisibility;
+            fogOfWarWorld.MaxPossibleSegmentsPerRevealer = 1000;
             fogOfWarWorld.UseConstantBlur = false;
             fogOfWarWorld.FogType = debugUseCrispFogRendering
                 ? FogOfWarWorld.FogOfWarType.Hard
@@ -843,10 +844,10 @@ namespace IronKingdoms.Combat
             revealer.StartRevealerAsStatic = false;
             revealer.UseOcclusion = true;
             // Forest depth is enforced by analytic clip in CombatFogOfWarRevealer3D phase 2.
-            revealer.AddCorners = false;
+            revealer.AddCorners = true;
             revealer.ResolveEdge = false;
             revealer.OcclusionQuality = RaycastRevealer.RaycastRevealerOcclusionQualityPreset.HighResolution;
-            revealer.RaycastResolution = 0.5f;
+            revealer.RaycastResolution = 1f;
             // Extra edge refinement rays are tuned for hard collider silhouettes and can
             // distort depth-capped forest circles into wedges/half-arcs.
             revealer.NumExtraIterations = 0;
