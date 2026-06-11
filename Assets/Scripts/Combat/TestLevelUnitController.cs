@@ -104,6 +104,7 @@ namespace IronKingdoms.Combat
         [SerializeField] private Vector2 fogWorldBoundsSize = new Vector2(24f, 24f);
         [SerializeField, Range(0.05f, 1f)] private float fogExploredShroudVisibility = 0.35f;
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
+        [SerializeField, Min(0f)] private float fogSightExtraAmount = 0.2f;
         [SerializeField, Min(1f)] private float fogVisibilityUpdateRateWhileMoving = 24f;
         [SerializeField] private bool debugUseCrispFogRendering = true;
         [SerializeField] private bool autoSpawnOnStart = true;
@@ -287,7 +288,7 @@ namespace IronKingdoms.Combat
             fogOfWarWorld.HidersUseFogTexture = false;
             var previousMaxSegments = fogOfWarWorld.MaxPossibleSegmentsPerRevealer;
             fogOfWarWorld.MaxPossibleSegmentsPerRevealer = Mathf.Max(previousMaxSegments, 512);
-            fogOfWarWorld.SightExtraAmount = 0f;
+            fogOfWarWorld.SightExtraAmount = fogSightExtraAmount;
             fogOfWarWorld.PixelateFog = false;
             fogOfWarWorld.RoundRevealerPosition = false;
 
