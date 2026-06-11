@@ -104,6 +104,7 @@ namespace IronKingdoms.Combat
         [SerializeField] private Vector2 fogWorldBoundsSize = new Vector2(24f, 24f);
         [SerializeField, Range(0.05f, 1f)] private float fogExploredShroudVisibility = 0.35f;
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
+        [SerializeField, Min(1f)] private float fogVisibilityUpdateRateWhileMoving = 24f;
         [SerializeField] private bool debugUseCrispFogRendering = true;
         [SerializeField] private bool autoSpawnOnStart = true;
         private MatchArmySpawner matchArmySpawner;
@@ -124,6 +125,7 @@ namespace IronKingdoms.Combat
         private bool enemyIssuedMoveForActiveUnit;
         private bool enemyResolvedActionForActiveUnit;
         private RuntimeUnit hoveredEnemyUnit;
+        private float nextFogVisibilityUpdateTime;
 
         private struct FloatingDamageEntry
         {
@@ -198,7 +200,7 @@ namespace IronKingdoms.Combat
             TickFloatingDamage(Time.deltaTime);
             UpdateMovementVisualizer();
             UpdateWeaponRangeRing();
-            UpdateFogOfWarVisibility();
+            UpdateFogOfWarVisibilityIfNeeded();
             UpdateHoveredEnemy();
         }
 
@@ -3096,6 +3098,48 @@ namespace IronKingdoms.Combat
                 var enemy = enemyRuntimeUnits[i];
                 ApplyUnitVisibility(enemy, CanPlayerSeeUnit(enemy));
             }
+        }
+
+        private void UpdateFogOfWarVisibilityIfNeeded()
+        {
+            if (!ShouldUpdateFogOfWarVisibilityThisFrame())
+            {
+                return;
+            }
+
+            UpdateFogOfWarVisibility();
+        }
+
+        private bool ShouldUpdateFogOfWarVisibilityThisFrame()
+        {
+            if (!IsAnyUnitMoving())
+            {
+                nextFogVisibilityUpdateTime = 0f;
+                return true;
+            }
+
+            var updateInterval = 1f / Mathf.Max(1f, fogVisibilityUpdateRateWhileMoving);
+            var currentTime = Time.time;
+            if (currentTime < nextFogVisibilityUpdateTime)
+            {
+                return false;
+            }
+
+            nextFogVisibilityUpdateTime = currentTime + updateInterval;
+            return true;
+        }
+
+        private bool IsAnyUnitMoving()
+        {
+            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            {
+                if (allRuntimeUnits[i].IsAlive && allRuntimeUnits[i].MoveTarget.HasValue)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private bool CanPlayerSeeUnit(RuntimeUnit target)
