@@ -104,8 +104,8 @@ namespace IronKingdoms.Combat
         [SerializeField] private Vector2 fogWorldBoundsSize = new Vector2(24f, 24f);
         [SerializeField, Range(0.05f, 1f)] private float fogExploredShroudVisibility = 0.35f;
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
-        [SerializeField, Min(0f)] private float fogSightExtraAmount = 0.2f;
-        [SerializeField, Min(1f)] private float fogVisibilityUpdateRateWhileMoving = 24f;
+        [SerializeField, Tooltip("Expands reveal slightly past occluder hits so nearby wall front faces stay visible in texture-sampled fog."), Min(0f)] private float fogSightExtraAmount = 0.2f;
+        [SerializeField, Tooltip("Fog visibility refreshes per second while any unit is moving."), Min(1f)] private float fogVisibilityUpdateRateWhileMoving = 24f;
         [SerializeField] private bool debugUseCrispFogRendering = true;
         [SerializeField] private bool autoSpawnOnStart = true;
         private MatchArmySpawner matchArmySpawner;
