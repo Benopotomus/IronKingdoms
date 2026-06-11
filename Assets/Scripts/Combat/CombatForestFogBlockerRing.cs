@@ -206,11 +206,7 @@ namespace IronKingdoms.Combat
 
             lastEyeWorld = eyeWorld;
 
-            var depthWorld = CombatForestFogClipper.GetStrictestLimitedDepthWorld();
-            if (depthWorld <= 0.001f)
-            {
-                depthWorld = CombatScale.InchesToWorldUnits(3f);
-            }
+            var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
 
             var groundY = eyeLocal.y;
             var angleStep = (Mathf.PI * 2f) / segmentCount;
