@@ -1650,7 +1650,7 @@ namespace IronKingdoms.Combat
             if (waypoints.Count >= 2)
             {
                 unit.PathWaypoints = waypoints;
-                unit.PathWaypointIndex = 0;
+                unit.PathWaypointIndex = 1;
                 var firstTarget = waypoints[1];
                 firstTarget = GetGroundedPositionKeepingXZ(unit, firstTarget);
                 unit.MoveTarget = firstTarget;
