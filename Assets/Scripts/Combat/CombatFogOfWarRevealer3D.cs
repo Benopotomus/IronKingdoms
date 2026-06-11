@@ -126,6 +126,10 @@ namespace IronKingdoms.Combat
 
         private void ClearForestDebug()
         {
+            // Reset any stale forest-hit flags from a prior frame when forest is now inactive.
+            for (int i = 0; i < FirstIterationStepCount; i++)
+                FirstIteration.IsForestHit[i] = false;
+
             forestDebugContour.Clear();
             if (drawForestClipDebug)
             {

@@ -359,15 +359,18 @@ void LoopRevealerHardFog(RevealerInfoStruct revealerInfo, RevealerDataStruct rev
         
         if (inCone)
         {
-            bool cutShortCurr = currentCone.length <= totalRevealerRadius;
-            float DistToSegmentEnd = currentCone.length + (cutShortCurr ? _extraRadius : 0);
+            // Negative length encodes a forest-clipped hit; abs() recovers the true distance.
+            // Only positive cut-short lengths (wall hits) receive the _extraRadius expansion.
+            bool cutShortCurr = currentCone.length >= 0 && currentCone.length <= totalRevealerRadius;
+            float absCurrLen = abs(currentCone.length);
+            float DistToSegmentEnd = absCurrLen + (cutShortCurr ? _extraRadius : 0);
 
             //if (previousCone.cutShort && currentCone.cutShort)
-            bool cutShortPrev = previousCone.length <= totalRevealerRadius;
+            bool cutShortPrev = previousCone.length >= 0 && previousCone.length <= totalRevealerRadius;
             if (cutShortPrev && cutShortCurr)
             {
-                float prevConeLength = min(totalRevealerRadius, previousCone.length);
-                float currConeLength = min(totalRevealerRadius, currentCone.length);
+                float prevConeLength = min(totalRevealerRadius, abs(previousCone.length));
+                float currConeLength = min(totalRevealerRadius, absCurrLen);
                 float2 start = previousCone.segmentDirection * prevConeLength;
                 float2 end = currentCone.segmentDirection * currConeLength;
                 float distSq = dot(end - start, end - start);
@@ -611,8 +614,10 @@ void LoopRevealerSoftFog(RevealerInfoStruct revealerInfo, RevealerDataStruct rev
 
             //float lerpVal = 1-saturate(-signedDeltaAngle / segmentAngle);
             //float DistToSegmentEnd = lerp(previousCone.length, currentCone.length, lerpVal);
-            float currConeLength = min(totalRevealerRadius, currentCone.length);
-            bool cutShortCurr = currentCone.length <= totalRevealerRadius;
+            // Negative length encodes a forest-clipped hit; abs() recovers the true distance.
+            // Only positive cut-short lengths (wall hits) receive the _extraRadius expansion.
+            float currConeLength = min(totalRevealerRadius, abs(currentCone.length));
+            bool cutShortCurr = currentCone.length >= 0 && currentCone.length <= totalRevealerRadius;
             float DistToSegmentEnd = currConeLength + (cutShortCurr ? _extraRadius : 0);
             //float segmentSoftenDistance = _fadeOutDistance;
 
@@ -645,10 +650,10 @@ void LoopRevealerSoftFog(RevealerInfoStruct revealerInfo, RevealerDataStruct rev
 
             float RadialEdgeSoftening = 1;
             //if ((previousCone.cutShort && currentCone.cutShort))  //draw straight line thru points instead of drawing arc
-            bool cutShortPrev = previousCone.length <= totalRevealerRadius;
+            bool cutShortPrev = previousCone.length >= 0 && previousCone.length <= totalRevealerRadius;
             if ((cutShortPrev && cutShortCurr))  //draw straight line thru points instead of drawing arc
             {
-                float prevConeLength = min(totalRevealerRadius, previousCone.length);
+                float prevConeLength = min(totalRevealerRadius, abs(previousCone.length));
 
                 float2 start = previousCone.segmentDirection * prevConeLength;
                 float2 end = currentCone.segmentDirection * currConeLength;

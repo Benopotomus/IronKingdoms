@@ -164,6 +164,12 @@ namespace FOW
             public float Radius;
             public float Angle;
             public bool DidHit;
+            /// <summary>
+            /// True when this segment was clipped by a forest zone rather than a hard wall.
+            /// Forest-hit segments are encoded as negative lengths in the GPU buffer so the
+            /// shader can skip the wall-face _extraRadius expansion for them.
+            /// </summary>
+            public bool IsForestHit;
 
             public SightSegment(float rad, float ang, bool hit, float2 point, float2 dir)
             {
@@ -172,6 +178,7 @@ namespace FOW
                 DidHit = hit;
                 Point = point;
                 Direction = dir;
+                IsForestHit = false;
             }
         }
 
@@ -223,6 +230,8 @@ namespace FOW
             public NativeArray<float2> Points;
             public NativeArray<float2> Directions;
             public NativeArray<float2> Normals;
+            /// <summary>Forest-zone clip flags, parallel to the other arrays.</summary>
+            public NativeArray<bool> IsForestHit;
 
             public NativeArray<float2> NextPoints;
 
@@ -235,6 +244,7 @@ namespace FOW
                 Points = new NativeArray<float2>(NumSteps, Allocator.Persistent);
                 Directions = new NativeArray<float2>(NumSteps, Allocator.Persistent);
                 Normals = new NativeArray<float2>(NumSteps, Allocator.Persistent);
+                IsForestHit = new NativeArray<bool>(NumSteps, Allocator.Persistent);
                 NextPoints = new NativeArray<float2>(NumSteps, Allocator.Persistent);
             }
             public void DisposeStruct()
@@ -245,6 +255,7 @@ namespace FOW
                 Points.Dispose();
                 Directions.Dispose();
                 Normals.Dispose();
+                IsForestHit.Dispose();
                 NextPoints.Dispose();
             }
         }
@@ -443,7 +454,7 @@ namespace FOW
 #if UNITY_EDITOR
         private int numOverFlow;
 #endif
-        protected void AddViewPoint(bool hit, float distance, float angle, float step, float2 normal, float2 point, float2 dir)
+        protected void AddViewPoint(bool hit, float distance, float angle, float step, float2 normal, float2 point, float2 dir, bool isForestHit = false)
         {
             //#if UNITY_EDITOR
             //            Profiler.BeginSample("Add View Point");
@@ -466,6 +477,7 @@ namespace FOW
             vp.Angle = angle;
             vp.Point = point;
             vp.Direction = dir;
+            vp.IsForestHit = isForestHit;
 
             EdgeAngles[idx] = -step;
             EdgeNormals[idx] = normal;
@@ -475,7 +487,7 @@ namespace FOW
             //#endif
         }
 
-        void SetData()
+        protected virtual void SetData()
         {
 #if UNITY_EDITOR
             if (DebugMode)
@@ -510,7 +522,12 @@ namespace FOW
                     ref SightSegment segment = ref ViewPoints[i];
                     //Angles[i] = segment.Angle;
                     OutputDirections[i] = segment.Direction;
-                    OutputDistances[i] = segment.Radius + math.select(1f, 0f, segment.DidHit);
+                    // Forest-hit segments are encoded as negative distances so the fog shader can
+                    // identify them and skip the wall-face _extraRadius expansion.
+                    if (segment.DidHit && segment.IsForestHit)
+                        OutputDistances[i] = -segment.Radius;
+                    else
+                        OutputDistances[i] = segment.Radius + math.select(1f, 0f, segment.DidHit);
                 }
             }
 
@@ -632,7 +649,7 @@ namespace FOW
             if (ProfileRevealers) CompletePhaseOneMarker.End();
             if (ProfileRevealers) SortingMarker.Begin();
 #endif
-            AddViewPoint(FirstIteration.Hits[0], FirstIteration.Distances[0], FirstIteration.RayAngles[0], 0, FirstIteration.Normals[0], FirstIteration.Points[0], FirstIteration.Directions[0]);
+            AddViewPoint(FirstIteration.Hits[0], FirstIteration.Distances[0], FirstIteration.RayAngles[0], 0, FirstIteration.Normals[0], FirstIteration.Points[0], FirstIteration.Directions[0], FirstIteration.IsForestHit[0]);
 
             //AddViewPoint(new ViewCastInfo(InitialPoints[0].hit, InitialPoints[0].point, InitialPoints[0].distance, InitialPoints[0].angle, Normals[0], InitialPoints[0].direction));
             //Debug.Log(Points[0]);
@@ -657,7 +674,7 @@ namespace FOW
 
 
             int lastIndex = FirstIterationStepCount - 1;
-            AddViewPoint(FirstIteration.Hits[lastIndex], FirstIteration.Distances[lastIndex], FirstIteration.RayAngles[lastIndex], 0, FirstIteration.Normals[lastIndex], FirstIteration.Points[lastIndex], FirstIteration.Directions[lastIndex]);
+            AddViewPoint(FirstIteration.Hits[lastIndex], FirstIteration.Distances[lastIndex], FirstIteration.RayAngles[lastIndex], 0, FirstIteration.Normals[lastIndex], FirstIteration.Points[lastIndex], FirstIteration.Directions[lastIndex], FirstIteration.IsForestHit[lastIndex]);
 
 #if UNITY_EDITOR
             if (ProfileRevealers) EdgeDetectionMarker.Begin();
@@ -723,6 +740,7 @@ namespace FOW
             var normals = iteration.Normals;
             var rayAngles = iteration.RayAngles;
             var dirs = iteration.Directions;
+            var forestHits = iteration.IsForestHit;
 
             bool isLastIteration = iterationNumber == NumExtraIterations;
 
@@ -769,7 +787,7 @@ namespace FOW
                     addViewPoint = FirstIterationConditions[i];
 
                     if (!addViewPoint && (rayAngles[i] + FirstIterationAngleStep) - lastAddedRayAngle >= MaxSegmentDeltaAngle) //segments > 180 degrees fail in the fog shader
-                        AddViewPoint(hits[i], distances[i], rayAngles[i], angleStep, normals[i], points[i], dirs[i]);
+                        AddViewPoint(hits[i], distances[i], rayAngles[i], angleStep, normals[i], points[i], dirs[i], forestHits[i]);
                 }
 
 
@@ -784,8 +802,8 @@ namespace FOW
                 {
                     //bool isFirstPointOfFirstIteration = isFirstIteration && i == 1;
                     //if (!isFirstPointOfFirstIteration) //this ONLY prevents the first element from being added twice... perhaps could be optimized lol.. edit: not even needed?
-                    AddViewPoint(hits[prevIdx], distances[prevIdx], rayAngles[prevIdx], -angleStep, normals[prevIdx], points[prevIdx], dirs[prevIdx]);
-                    AddViewPoint(hits[i], distances[i], rayAngles[i], angleStep, normals[i], points[i], dirs[i]);
+                    AddViewPoint(hits[prevIdx], distances[prevIdx], rayAngles[prevIdx], -angleStep, normals[prevIdx], points[prevIdx], dirs[prevIdx], forestHits[prevIdx]);
+                    AddViewPoint(hits[i], distances[i], rayAngles[i], angleStep, normals[i], points[i], dirs[i], forestHits[i]);
                 }
                 else
                 {
@@ -824,6 +842,7 @@ namespace FOW
             iter.Points[0] = PreviousIteration.Points[PrevIterStartIndex];
             iter.Directions[0] = PreviousIteration.Directions[PrevIterStartIndex];
             iter.Normals[0] = PreviousIteration.Normals[PrevIterStartIndex];
+            iter.IsForestHit[0] = PreviousIteration.IsForestHit[PrevIterStartIndex];
 
             //float stepRad = math.radians(angleStep);
             //float sStep, cStep; math.sincos(stepRad, out sStep, out cStep);
@@ -853,6 +872,7 @@ namespace FOW
                 iter.Points[i] = currentRay.point;
                 iter.Directions[i] = currentRay.direction;
                 iter.Normals[i] = currentRay.normal;
+                iter.IsForestHit[i] = false; // sub-iteration raycasts always hit walls, never forest
 
                 FogMath2D.PredictNextPoint(iter.Points[i], iter.Normals[i], iter.Directions[i], iter.Distances[i], sStep, cStep, out res);
                 iter.NextPoints[i] = res;
@@ -866,6 +886,7 @@ namespace FOW
             iter.Points[rayCountMinusOne] = PreviousIteration.Points[lastIdx];
             iter.Directions[rayCountMinusOne] = PreviousIteration.Directions[lastIdx];
             iter.Normals[rayCountMinusOne] = PreviousIteration.Normals[lastIdx];
+            iter.IsForestHit[rayCountMinusOne] = PreviousIteration.IsForestHit[lastIdx];
             iter.NextPoints[rayCountMinusOne] = PreviousIteration.NextPoints[lastIdx];
 
 #if UNITY_EDITOR

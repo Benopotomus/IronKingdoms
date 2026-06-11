@@ -89,6 +89,7 @@ namespace IronKingdoms.Combat
                     firstIteration.Distances[i] = maxRadius;
                     firstIteration.Points[i] = projectedEye + (dir2 * maxRadius);
                     firstIteration.Normals[i] = -dir2;
+                    firstIteration.IsForestHit[i] = false;
                     continue;
                 }
 
@@ -96,6 +97,7 @@ namespace IronKingdoms.Combat
                 firstIteration.Hits[i] = true;
                 firstIteration.Distances[i] = finalDistance;
                 firstIteration.Points[i] = projectedEye + (dir2 * finalDistance);
+                firstIteration.IsForestHit[i] = forestIsTighter || !physicsHit;
                 if (forestIsTighter || !physicsHit)
                 {
                     firstIteration.Normals[i] = -dir2;
@@ -155,6 +157,7 @@ namespace IronKingdoms.Combat
             firstIteration.Distances[index] = bridgeDistance;
             firstIteration.Points[index] = projectedEye + (direction * bridgeDistance);
             firstIteration.Normals[index] = -direction;
+            firstIteration.IsForestHit[index] = true;
             bridgedRayIndices.Add(index);
         }
 
