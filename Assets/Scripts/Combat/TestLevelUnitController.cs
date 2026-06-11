@@ -106,7 +106,6 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
         [SerializeField] private bool debugUseCrispFogRendering = true;
         [SerializeField] private bool autoSpawnOnStart = true;
-        [SerializeField] private bool useDirectMovementPaths = true;
         private MatchArmySpawner matchArmySpawner;
 
         private readonly List<RuntimeUnit> playerRuntimeUnits = new();
@@ -473,16 +472,7 @@ namespace IronKingdoms.Combat
 
             // Charge: straight line on the XZ plane, snapped to the nearest valid nav point along that ray.
             var horizontalDist = new Vector2(previewPathTo.x - hoverPos.x, previewPathTo.z - hoverPos.z).magnitude;
-            if (ShouldUseDirectMovementPaths())
-            {
-                previewPathTo = hoverPos;
-                previewPath ??= new List<Vector3>(2);
-                if (!TryBuildDirectMovementPath(selectedUnit, hoverPos, previewPath, out _))
-                {
-                    previewPath.Clear();
-                }
-            }
-            else if (selectedMovementOption == MovementStepOption.Charge)
+            if (selectedMovementOption == MovementStepOption.Charge)
             {
                 previewPathTo = hoverPos;
                 previewPath ??= new List<Vector3>(2);
@@ -945,29 +935,6 @@ namespace IronKingdoms.Combat
 
         private void UpdateUnitNavmeshCutActivation(RuntimeUnit pathingUnit = null)
         {
-            if (ShouldUseDirectMovementPaths())
-            {
-                var anyChanged = false;
-                for (var i = 0; i < allRuntimeUnits.Count; i++)
-                {
-                    var navmeshCut = allRuntimeUnits[i]?.NavmeshCut;
-                    if (navmeshCut == null || !navmeshCut.enabled)
-                    {
-                        continue;
-                    }
-
-                    navmeshCut.enabled = false;
-                    anyChanged = true;
-                }
-
-                if (anyChanged)
-                {
-                    NavPathBuilder.MarkNavmeshDirty();
-                }
-
-                return;
-            }
-
             var pathingRadius = pathingUnit != null ? GetUnitCollisionRadius(pathingUnit) : 0f;
             var pathingGraphMask = GetPathGraphMask(pathingUnit);
             var navmeshCutChanged = false;
@@ -1229,9 +1196,7 @@ namespace IronKingdoms.Combat
 
             if (selectedMovementOption == MovementStepOption.Charge)
             {
-                if (ShouldUseDirectMovementPaths()
-                    ? TryBuildDirectMovementPath(selectedUnit, destination, chargePathScratch, out _)
-                    : TryResolveChargePath(selectedUnit, destination, chargePathScratch, out _))
+                if (TryResolveChargePath(selectedUnit, destination, chargePathScratch, out _))
                 {
                     selectedUnit.HasChargedThisTurn = true;
                     IssueMoveOrderFromPath(selectedUnit, chargePathScratch, movementBudget);
@@ -1407,7 +1372,7 @@ namespace IronKingdoms.Combat
                     {
                         unit.PathWaypointIndex = nextIndex;
                         var nextWaypoint = waypoints[nextIndex];
-                        nextWaypoint = GroundMovementWaypoint(unit, nextWaypoint);
+                        nextWaypoint = GetGroundedNavmeshPositionForUnit(unit, nextWaypoint);
                         unit.MoveTarget = nextWaypoint;
                         continue;
                     }
@@ -1644,23 +1609,6 @@ namespace IronKingdoms.Combat
             }
 
             var current = GetPawnFeetPosition(unit);
-            if (ShouldUseDirectMovementPaths())
-            {
-                var directPath = new List<Vector3>(2);
-                if (TryBuildDirectMovementPath(unit, destination, directPath, out _))
-                {
-                    IssueMoveOrderFromPath(unit, directPath, remaining);
-                }
-                else
-                {
-                    unit.MoveTarget = null;
-                    unit.PathWaypoints = null;
-                    unit.ActiveMovementStep = MovementStepOption.None;
-                }
-
-                return;
-            }
-
             var graphMask = GetPathGraphMask(unit);
 
             // Use NavPathBuilder to get a funnel-smoothed path, then clamp to budget.
@@ -1704,7 +1652,7 @@ namespace IronKingdoms.Combat
                 unit.PathWaypoints = waypoints;
                 unit.PathWaypointIndex = 0;
                 var firstTarget = waypoints[1];
-                firstTarget = GroundMovementWaypoint(unit, firstTarget);
+                firstTarget = GetGroundedNavmeshPositionForUnit(unit, firstTarget);
                 unit.MoveTarget = firstTarget;
             }
         }
@@ -1899,13 +1847,6 @@ namespace IronKingdoms.Combat
             return groundedPosition;
         }
 
-        private Vector3 GroundMovementWaypoint(RuntimeUnit unit, Vector3 waypoint)
-        {
-            return ShouldUseDirectMovementPaths()
-                ? GetGroundedPositionKeepingXZ(unit, waypoint)
-                : GetGroundedNavmeshPositionForUnit(unit, waypoint);
-        }
-
         private void SnapUnitToNavmesh(RuntimeUnit unit)
         {
             if (unit?.Pawn == null)
@@ -1939,19 +1880,6 @@ namespace IronKingdoms.Combat
             path.Add(end);
         }
 
-        private bool TryBuildDirectMovementPath(RuntimeUnit unit, Vector3 destination, List<Vector3> path, out Vector3 resolvedDestination)
-        {
-            resolvedDestination = destination;
-            if (unit == null || path == null)
-            {
-                return false;
-            }
-
-            resolvedDestination = GetGroundedPositionKeepingXZ(unit, destination);
-            BuildStraightLinePathFromUnit(unit, resolvedDestination, path);
-            return true;
-        }
-
         /// <summary>
         /// Projects the click onto a straight charge line, snaps to the nearest walkable nav point
         /// along that ray, and clamps to the farthest valid straight segment on the navmesh.
@@ -1975,18 +1903,8 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
-            BuildStraightLinePathFromUnit(unit, resolvedDestination, path);
+            BuildStraightLineChargePath(from, resolvedDestination, path);
             return true;
-        }
-
-        private void BuildStraightLinePathFromUnit(RuntimeUnit unit, Vector3 destination, List<Vector3> path)
-        {
-            BuildStraightLineChargePath(GetPawnFeetPosition(unit), destination, path);
-        }
-
-        private bool ShouldUseDirectMovementPaths()
-        {
-            return useDirectMovementPaths;
         }
 
         private List<Vector3> ClampPathToMovementBudget(RuntimeUnit unit, IReadOnlyList<Vector3> waypoints, float budget, float unitRadius = 0f)
