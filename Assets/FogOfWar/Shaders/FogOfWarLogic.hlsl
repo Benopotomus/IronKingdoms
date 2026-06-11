@@ -366,15 +366,17 @@ void LoopRevealerHardFog(RevealerInfoStruct revealerInfo, RevealerDataStruct rev
             bool cutShortPrev = previousCone.length <= totalRevealerRadius;
             if (cutShortPrev && cutShortCurr)
             {
-                float2 start = previousCone.segmentDirection * previousCone.length;
-                float2 end = currentCone.segmentDirection * currentCone.length;
+                float prevConeLength = min(totalRevealerRadius, previousCone.length);
+                float currConeLength = min(totalRevealerRadius, currentCone.length);
+                float2 start = previousCone.segmentDirection * prevConeLength;
+                float2 end = currentCone.segmentDirection * currConeLength;
                 float distSq = dot(end - start, end - start);
 
                 const float reqDistSq = 0.0225; // 0.15^2
                 if (distSq > reqDistSq)
                 {
                     float2 intersection = CalculateIntersectionCramersRule(start, end, relativePosition);
-                    DistToSegmentEnd = length(intersection);
+                    DistToSegmentEnd = min(max(prevConeLength, currConeLength), length(intersection));
                     DistToSegmentEnd += _extraRadius;
 
                     #ifdef FOW_BLEED_ON
