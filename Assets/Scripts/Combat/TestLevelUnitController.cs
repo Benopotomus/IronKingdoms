@@ -1372,7 +1372,7 @@ namespace IronKingdoms.Combat
                     {
                         unit.PathWaypointIndex = nextIndex;
                         var nextWaypoint = waypoints[nextIndex];
-                        nextWaypoint = GetGroundedNavmeshPositionForUnit(unit, nextWaypoint);
+                        nextWaypoint = GetGroundedPositionKeepingXZ(unit, nextWaypoint);
                         unit.MoveTarget = nextWaypoint;
                         continue;
                     }
@@ -1650,9 +1650,9 @@ namespace IronKingdoms.Combat
             if (waypoints.Count >= 2)
             {
                 unit.PathWaypoints = waypoints;
-                unit.PathWaypointIndex = 0;
+                unit.PathWaypointIndex = 1;
                 var firstTarget = waypoints[1];
-                firstTarget = GetGroundedNavmeshPositionForUnit(unit, firstTarget);
+                firstTarget = GetGroundedPositionKeepingXZ(unit, firstTarget);
                 unit.MoveTarget = firstTarget;
             }
         }
