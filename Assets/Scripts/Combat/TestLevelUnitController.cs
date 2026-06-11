@@ -1338,11 +1338,9 @@ namespace IronKingdoms.Combat
                     }
 
                     var nextPosition = Vector3.MoveTowards(currentPosition, targetPosition, allowedStep);
-                    // Keep units grounded on terrain without forcing XZ onto navmesh every frame.
+                    // Keep units grounded on terrain without forcing XZ onto navmesh every frame,
+                    // so they do not stall when their path runs close to walls or other units.
                     nextPosition = GetGroundedPositionKeepingXZ(unit, nextPosition);
-                    // Safety guard: if movement drifts off navmesh, snap back to the nearest
-                    // walkable point so units cannot leave the nav surface.
-                    nextPosition = ConstrainPositionToNavmesh(unit, nextPosition);
                     var movedDistance = Vector3.Distance(currentPosition, nextPosition);
                     if (movedDistance <= 0.0001f)
                     {
@@ -1847,13 +1845,6 @@ namespace IronKingdoms.Combat
             var groundedPosition = worldPosition;
             groundedPosition.y = GetGroundedNavmeshPositionForUnit(unit, worldPosition).y;
             return groundedPosition;
-        }
-
-        private Vector3 ConstrainPositionToNavmesh(RuntimeUnit unit, Vector3 worldPosition)
-        {
-            var navPosition = GetGroundedNavmeshPositionForUnit(unit, worldPosition);
-            var horizontalDelta = new Vector2(worldPosition.x - navPosition.x, worldPosition.z - navPosition.z).magnitude;
-            return horizontalDelta > NavmeshContainmentTolerance ? navPosition : worldPosition;
         }
 
         private void SnapUnitToNavmesh(RuntimeUnit unit)
