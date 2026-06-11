@@ -363,7 +363,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playerUnits:
   - {fileID: 11400000, guid: 8f9a5accf4a74616bc654e0c49d8b8dd, type: 2}
-  - {fileID: 11400000, guid: 8f9a5accf4a74616bc654e0c49d8b8dd, type: 2}
   enemyUnits:
   - {fileID: 11400000, guid: 6b3caac2bc2545b4848213f8c8697915, type: 2}
   - {fileID: 11400000, guid: f73f36ca77fd470a94d62f4d8302b6bf, type: 2}
@@ -379,7 +378,6 @@ MonoBehaviour:
   fogWorldBoundsSize: {x: 24, y: 24}
   fogExploredShroudVisibility: 0.35
   fogVisionEdgeSoftenDistance: 0.75
-  debugUseCrispFogRendering: 1
   autoSpawnOnStart: 1
 --- !u!114 &300004
 MonoBehaviour:

@@ -22,11 +22,15 @@ namespace IronKingdoms.Combat
 
         private CombatForestFogBlockerRing blockerRing;
         private bool ignoresForestForLineOfSight;
+        private float baseRadiusWorld;
 
         public void ConfigureForUnit(UnitTypeDefinition definition)
         {
             ignoresForestForLineOfSight = definition != null
                 && CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(definition, null);
+            baseRadiusWorld = definition != null
+                ? Mathf.Max(0f, definition.Stats.modelSize.BaseDiameterWorldUnits() * 0.5f)
+                : 0f;
 
             EnsureBlockerRing();
             blockerRing.ConfigureForUnit(definition);
@@ -83,13 +87,15 @@ namespace IronKingdoms.Combat
         private void ApplyForestClipBeforeStockSorting()
         {
             var eyeWorld = (Vector3)GetEyePosition();
+            var baseIntersectsForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, baseRadiusWorld);
 
             forestPostProcessor.Apply(
                 FirstIteration,
                 FirstIterationStepCount,
                 eyeWorld,
                 TotalRevealerRadius,
-                Projection);
+                Projection,
+                baseIntersectsForest);
 
             // Re-run the stock first-iteration conditions after forest has tightened ray distances.
             FirstIterationPointsAndConditionsJob.Run(FirstIterationStepCount);
@@ -99,7 +105,8 @@ namespace IronKingdoms.Combat
                 FirstIterationStepCount,
                 eyeWorld,
                 TotalRevealerRadius,
-                Projection);
+                Projection,
+                baseIntersectsForest);
 
             if (!drawForestClipDebug)
             {
