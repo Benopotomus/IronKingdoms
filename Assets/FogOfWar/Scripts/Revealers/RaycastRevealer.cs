@@ -872,7 +872,7 @@ namespace FOW
                 iter.Points[i] = currentRay.point;
                 iter.Directions[i] = currentRay.direction;
                 iter.Normals[i] = currentRay.normal;
-                iter.IsForestHit[i] = false; // sub-iteration raycasts always hit walls, never forest
+                iter.IsForestHit[i] = false; // new raycast against physics colliders; forest depth is handled analytically at first-iteration level only
 
                 FogMath2D.PredictNextPoint(iter.Points[i], iter.Normals[i], iter.Directions[i], iter.Distances[i], sStep, cStep, out res);
                 iter.NextPoints[i] = res;
