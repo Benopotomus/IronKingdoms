@@ -106,7 +106,7 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
         [SerializeField] private bool debugUseCrispFogRendering = true;
         [SerializeField] private bool autoSpawnOnStart = true;
-        [SerializeField] private bool ignoreUnitAndWallCollisionsWhileMoving = true;
+        [SerializeField] private bool useDirectMovementPaths = true;
         private MatchArmySpawner matchArmySpawner;
 
         private readonly List<RuntimeUnit> playerRuntimeUnits = new();
@@ -473,7 +473,7 @@ namespace IronKingdoms.Combat
 
             // Charge: straight line on the XZ plane, snapped to the nearest valid nav point along that ray.
             var horizontalDist = new Vector2(previewPathTo.x - hoverPos.x, previewPathTo.z - hoverPos.z).magnitude;
-            if (ShouldIgnoreMovementCollisionsWhileMoving())
+            if (ShouldUseDirectMovementPaths())
             {
                 previewPathTo = hoverPos;
                 previewPath ??= new List<Vector3>(2);
@@ -945,7 +945,7 @@ namespace IronKingdoms.Combat
 
         private void UpdateUnitNavmeshCutActivation(RuntimeUnit pathingUnit = null)
         {
-            if (ShouldIgnoreMovementCollisionsWhileMoving())
+            if (ShouldUseDirectMovementPaths())
             {
                 var anyChanged = false;
                 for (var i = 0; i < allRuntimeUnits.Count; i++)
@@ -1229,7 +1229,7 @@ namespace IronKingdoms.Combat
 
             if (selectedMovementOption == MovementStepOption.Charge)
             {
-                if (ShouldIgnoreMovementCollisionsWhileMoving()
+                if (ShouldUseDirectMovementPaths()
                     ? TryBuildDirectMovementPath(selectedUnit, destination, chargePathScratch, out _)
                     : TryResolveChargePath(selectedUnit, destination, chargePathScratch, out _))
                 {
@@ -1644,7 +1644,7 @@ namespace IronKingdoms.Combat
             }
 
             var current = GetPawnFeetPosition(unit);
-            if (ShouldIgnoreMovementCollisionsWhileMoving())
+            if (ShouldUseDirectMovementPaths())
             {
                 var directPath = new List<Vector3>(2);
                 if (TryBuildDirectMovementPath(unit, destination, directPath, out _))
@@ -1901,7 +1901,7 @@ namespace IronKingdoms.Combat
 
         private Vector3 GroundMovementWaypoint(RuntimeUnit unit, Vector3 waypoint)
         {
-            return ShouldIgnoreMovementCollisionsWhileMoving()
+            return ShouldUseDirectMovementPaths()
                 ? GetGroundedPositionKeepingXZ(unit, waypoint)
                 : GetGroundedNavmeshPositionForUnit(unit, waypoint);
         }
@@ -1947,9 +1947,8 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
-            var from = GetPawnFeetPosition(unit);
             resolvedDestination = GetGroundedPositionKeepingXZ(unit, destination);
-            BuildStraightLineChargePath(from, resolvedDestination, path);
+            BuildStraightLinePathFromUnit(unit, resolvedDestination, path);
             return true;
         }
 
@@ -1976,13 +1975,18 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
-            BuildStraightLineChargePath(from, resolvedDestination, path);
+            BuildStraightLinePathFromUnit(unit, resolvedDestination, path);
             return true;
         }
 
-        private bool ShouldIgnoreMovementCollisionsWhileMoving()
+        private void BuildStraightLinePathFromUnit(RuntimeUnit unit, Vector3 destination, List<Vector3> path)
         {
-            return ignoreUnitAndWallCollisionsWhileMoving;
+            BuildStraightLineChargePath(GetPawnFeetPosition(unit), destination, path);
+        }
+
+        private bool ShouldUseDirectMovementPaths()
+        {
+            return useDirectMovementPaths;
         }
 
         private List<Vector3> ClampPathToMovementBudget(RuntimeUnit unit, IReadOnlyList<Vector3> waypoints, float budget, float unitRadius = 0f)
