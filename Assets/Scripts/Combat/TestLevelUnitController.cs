@@ -125,7 +125,7 @@ namespace IronKingdoms.Combat
         private bool enemyIssuedMoveForActiveUnit;
         private bool enemyResolvedActionForActiveUnit;
         private RuntimeUnit hoveredEnemyUnit;
-        private float nextFogVisibilityUpdateTime;
+        private float nextFogVisibilityUpdateTime = float.NegativeInfinity;
 
         private struct FloatingDamageEntry
         {
@@ -3114,7 +3114,7 @@ namespace IronKingdoms.Combat
         {
             if (!IsAnyUnitMoving())
             {
-                nextFogVisibilityUpdateTime = 0f;
+                nextFogVisibilityUpdateTime = float.NegativeInfinity;
                 return true;
             }
 
