@@ -3161,10 +3161,16 @@ namespace IronKingdoms.Combat
                 }
                 else
                 {
-                    System.Array.Clear(losCacheValid, 0, losCacheValid.Length);
+                    System.Array.Clear(losCacheValid, 0, cacheSize);
                 }
 
                 losCachedVersion = losDirtyVersion;
+            }
+
+            // Guard against stale indices that could exceed the used cache region.
+            if (key >= cacheSize)
+            {
+                return HasLineOfSight(observer, target);
             }
 
             if (losCacheValid[key])

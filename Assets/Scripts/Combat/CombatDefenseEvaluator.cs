@@ -240,10 +240,6 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < count; i++)
             {
                 var wallCollider = WallCoverOverlapBuffer[i];
-                if (wallCollider == null)
-                {
-                    continue;
-                }
 
                 if (!IsColliderWithinProximityOfDisc(wallCollider, defenderCenter, defenderRadius, proximityWorld))
                 {
@@ -272,8 +268,8 @@ namespace IronKingdoms.Combat
             var closest = col.ClosestPoint(discCenter);
             var dx = closest.x - discCenter.x;
             var dz = closest.z - discCenter.z;
-            var planarDist = Mathf.Sqrt(dx * dx + dz * dz);
-            return planarDist <= discRadius + proximityWorld;
+            var threshold = discRadius + proximityWorld;
+            return dx * dx + dz * dz <= threshold * threshold;
         }
 
         /// <summary>
@@ -306,7 +302,7 @@ namespace IronKingdoms.Combat
 
                 // Collider.Raycast tests against this specific collider only, bypassing
                 // physics scene boundaries and avoiding broad-phase overhead.
-                if (wallCollider.Raycast(new Ray(attackerOrigin, dir / dist), out _, dist))
+                if (wallCollider.Raycast(new Ray(attackerOrigin, dir.normalized), out _, dist))
                 {
                     return true;
                 }
