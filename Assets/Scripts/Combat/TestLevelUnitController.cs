@@ -3629,12 +3629,18 @@ namespace IronKingdoms.Combat
             {
                 var modifier = modifiers[i];
                 var category = modifier.Definition.Category;
-                var color = category == CombatDefenseModifierCategory.Cover
-                    ? new Color(0.3f, 0.7f, 1f)
-                    : new Color(0.5f, 1f, 0.4f);
+                var attackerIgnoresConcealment = selectedUnit?.Definition?.Stats != null
+                    && selectedUnit.Definition.Stats.IgnoresConcealmentAndStealth();
+                var ignored = category == CombatDefenseModifierCategory.Concealment && attackerIgnoresConcealment;
+                var color = ignored
+                    ? new Color(0.6f, 0.6f, 0.6f)
+                    : category == CombatDefenseModifierCategory.Cover
+                        ? new Color(0.3f, 0.7f, 1f)
+                        : new Color(0.5f, 1f, 0.4f);
                 coverPopupStyle.normal.textColor = color;
                 var categoryLabel = category == CombatDefenseModifierCategory.Cover ? "Cover" : "Concealment";
-                var label = $"[{categoryLabel}] {modifier.SourceLabel} +{modifier.Definition.DefenseBonus}";
+                var ignoredSuffix = ignored ? " (ignored)" : string.Empty;
+                var label = $"[{categoryLabel}] {modifier.SourceLabel} +{modifier.Definition.DefenseBonus}{ignoredSuffix}";
                 var rect = new Rect(guiX, guiY + i * lineHeight, popupWidth, lineHeight);
                 GUI.Label(new Rect(rect.x + 1f, rect.y + 1f, rect.width, rect.height), label, coverPopupShadowStyle);
                 GUI.Label(rect, label, coverPopupStyle);
