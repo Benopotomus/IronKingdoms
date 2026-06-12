@@ -38,17 +38,13 @@ namespace IronKingdoms.Combat
                 return baseDefense + abilityBonus;
             }
 
-            if (AttackerIgnoresConcealment(attackerStats))
-            {
-                return baseDefense + abilityBonus;
-            }
-
             var modifiers = CollectActiveDefenseModifiers(defenderDefinition, defenderPawn);
             if (modifiers.Count == 0)
             {
                 return baseDefense + abilityBonus;
             }
 
+            var attackerIgnoresConcealment = AttackerIgnoresConcealment(attackerStats);
             var bestConcealmentOrCoverBonus = 0;
             var otherBonus = 0;
             for (var i = 0; i < modifiers.Count; i++)
@@ -59,8 +55,15 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                if (modifier.Category == CombatDefenseModifierCategory.Concealment
-                    || modifier.Category == CombatDefenseModifierCategory.Cover)
+                if (modifier.Category == CombatDefenseModifierCategory.Concealment)
+                {
+                    // Eyeless Sight ignores concealment and Stealth, but NOT cover (Mk4 rules).
+                    if (!attackerIgnoresConcealment)
+                    {
+                        bestConcealmentOrCoverBonus = Mathf.Max(bestConcealmentOrCoverBonus, modifier.DefenseBonus);
+                    }
+                }
+                else if (modifier.Category == CombatDefenseModifierCategory.Cover)
                 {
                     bestConcealmentOrCoverBonus = Mathf.Max(bestConcealmentOrCoverBonus, modifier.DefenseBonus);
                 }

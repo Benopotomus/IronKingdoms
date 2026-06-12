@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   modifierId: Cover
   displayName: Cover
-  description: +4 DEF vs ranged and arcane attacks.
+  description: +4 DEF vs ranged and arcane attacks for models within 1" of a cover-granting feature (walls, boulders, buildings).
   category: 2
   application: 1
   defenseBonus: 4

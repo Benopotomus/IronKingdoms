@@ -95,7 +95,7 @@ namespace IronKingdoms.Editor
                 cover,
                 "Cover",
                 "Cover",
-                "+4 DEF vs ranged and arcane attacks.",
+                "+4 DEF vs ranged and arcane attacks for models within 1\" of a cover-granting feature (walls, boulders, buildings).",
                 CombatDefenseModifierCategory.Cover,
                 CombatDefenseModifierApplication.UnitWithinOneInchOfFeature,
                 4);
@@ -137,9 +137,23 @@ namespace IronKingdoms.Editor
                 passThroughDepthInches: 3f,
                 hugeTargetsIgnoreLimit: true);
 
+            var wall = GetOrCreateAsset<CombatTerrainFeatureDefinition>($"{TerrainFolder}/Wall.asset");
+            SetTerrainFeature(
+                wall,
+                "Wall",
+                "Wall",
+                "Models within 1\" gain cover (+4 DEF vs ranged and arcane attacks).",
+                isRoughTerrain: false,
+                movementSpeedMultiplier: 1f,
+                defenseModifier: cover,
+                lineOfSightMode: CombatTerrainLineOfSightMode.None,
+                passThroughDepthInches: 0f,
+                hugeTargetsIgnoreLimit: false);
+
             EditorUtility.SetDirty(roughTerrain);
             EditorUtility.SetDirty(forest);
-            return new[] { roughTerrain, forest };
+            EditorUtility.SetDirty(wall);
+            return new[] { roughTerrain, forest, wall };
         }
 
         private static CombatAbilityDefinition[] SyncAbilities()
