@@ -145,6 +145,8 @@ namespace IronKingdoms.Combat
         private Vector2 selectedUnitPanelScrollPosition;
         private GUIStyle floatingDamageStyle;
         private GUIStyle floatingDamageShadowStyle;
+        private GUIStyle coverPopupStyle;
+        private GUIStyle coverPopupShadowStyle;
         private GameObject destinationMarkerObject;
         private Material visualizerMaterial;
         private RuntimeUnit lastClickedPlayerUnit;
@@ -3206,6 +3208,7 @@ namespace IronKingdoms.Combat
         {
             cameraManager?.DrawGui();
             DrawFloatingDamageNumbers();
+            DrawTargetCoverPopup();
             DrawCombatLog();
 
             GUILayout.BeginArea(new Rect(RosterAreaX, RosterAreaY, RosterAreaWidth, RosterAreaHeight), "Player-Controlled Units", GUI.skin.window);
@@ -3572,6 +3575,70 @@ namespace IronKingdoms.Combat
                 && selectedUnit != null && selectedUnit.IsAlive
                 && activeTurnSide == TurnSide.Player;
             return showHitChance ? HoverPanelHeight + HoverPanelAttackExtraHeight : HoverPanelHeight;
+        }
+
+        private void DrawTargetCoverPopup()
+        {
+            if (currentPlayerMode != UnitActionMode.Attack || hoveredEnemyUnit == null || !hoveredEnemyUnit.IsAlive)
+            {
+                return;
+            }
+
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
+            if (activeCamera == null)
+            {
+                return;
+            }
+
+            var modifiers = CombatDefenseEvaluator.CollectActiveDefenseModifiers(hoveredEnemyUnit.Definition, hoveredEnemyUnit.Pawn);
+            if (modifiers.Count == 0)
+            {
+                return;
+            }
+
+            var modelSize = hoveredEnemyUnit.Definition.Stats.modelSize;
+            var topHeight = modelSize.VolumeHeightWorldUnits();
+            var worldPos = hoveredEnemyUnit.Pawn.transform.position + Vector3.up * (topHeight + 0.15f);
+            var screenPos = activeCamera.WorldToScreenPoint(worldPos);
+            if (screenPos.z <= 0f)
+            {
+                return;
+            }
+
+            if (coverPopupStyle == null)
+            {
+                coverPopupStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = 12,
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter
+                };
+                coverPopupShadowStyle = new GUIStyle(coverPopupStyle)
+                {
+                    normal = { textColor = new Color(0f, 0f, 0f, 0.65f) }
+                };
+            }
+
+            const float popupWidth = 180f;
+            const float lineHeight = 20f;
+            var popupHeight = modifiers.Count * lineHeight;
+            var guiX = screenPos.x - popupWidth * 0.5f;
+            var guiY = Screen.height - screenPos.y - popupHeight;
+
+            for (var i = 0; i < modifiers.Count; i++)
+            {
+                var modifier = modifiers[i];
+                var category = modifier.Definition.Category;
+                var color = category == CombatDefenseModifierCategory.Cover
+                    ? new Color(0.3f, 0.7f, 1f)
+                    : new Color(0.5f, 1f, 0.4f);
+                coverPopupStyle.normal.textColor = color;
+                var categoryLabel = category == CombatDefenseModifierCategory.Cover ? "Cover" : "Concealment";
+                var label = $"[{categoryLabel}] {modifier.SourceLabel} +{modifier.Definition.DefenseBonus}";
+                var rect = new Rect(guiX, guiY + i * lineHeight, popupWidth, lineHeight);
+                GUI.Label(new Rect(rect.x + 1f, rect.y + 1f, rect.width, rect.height), label, coverPopupShadowStyle);
+                GUI.Label(rect, label, coverPopupStyle);
+            }
         }
 
         private void DrawHoveredEnemyHealth()
