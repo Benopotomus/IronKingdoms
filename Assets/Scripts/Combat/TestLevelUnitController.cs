@@ -166,6 +166,14 @@ namespace IronKingdoms.Combat
         private float lastPathPreviewTime;
         private readonly List<Vector3> chargePathScratch = new(2);
 
+        // Line-of-sight result cache ------------------------------------------------------------
+        // Avoids repeated Physics.Raycast calls every frame for fog visibility. The cache is keyed
+        // by [observerIndex * unitCount + targetIndex] and invalidated whenever any unit moves.
+        private bool[] losCacheValid;
+        private bool[] losCacheResult;
+        private int losDirtyVersion;
+        private int losCachedVersion = -1;
+
         private void Awake()
         {
             EnsureCameraManagerAssigned();
@@ -733,6 +741,7 @@ namespace IronKingdoms.Combat
             ClearSpawnedUnits();
             SpawnArmy(playerUnits, playerSpawnAnchor, playerRuntimeUnits, true, new Color(0.2f, 0.5f, 1f));
             SpawnArmy(enemyUnits, enemySpawnAnchor, enemyRuntimeUnits, false, new Color(1f, 0.3f, 0.3f));
+            losDirtyVersion++;
             StartPlayerTurn();
             UpdateFogOfWarVisibility();
         }
@@ -1353,6 +1362,7 @@ namespace IronKingdoms.Combat
                     }
 
                     unit.Pawn.transform.position = nextPosition;
+                    losDirtyVersion++;
                     var movementCost = CalculateMovementCostForSegmentInInches(unit, currentPosition, nextPosition, unitRadius);
                     unit.RemainingMovementThisTurn = Mathf.Max(0f, unit.RemainingMovementThisTurn - movementCost);
 
@@ -2493,6 +2503,7 @@ namespace IronKingdoms.Combat
             if (!defender.IsAlive)
             {
                 defender.Pawn.SetActive(false);
+                losDirtyVersion++;
                 AddCombatLogEntry($"{defender.Definition.DisplayName} defeated!");
                 if (ReferenceEquals(defender, selectedUnit))
                 {
@@ -2583,7 +2594,8 @@ namespace IronKingdoms.Combat
                 defender.Definition,
                 defender.Pawn,
                 attacker?.Definition?.Stats,
-                weapon);
+                weapon,
+                attacker?.Pawn);
             var hits = 0;
             for (var d1 = 1; d1 <= 6; d1++)
             {
@@ -2611,7 +2623,8 @@ namespace IronKingdoms.Combat
                 defender.Definition,
                 defender.Pawn,
                 attacker?.Definition?.Stats,
-                weapon);
+                weapon,
+                attacker?.Pawn);
         }
 
         private static int GetAttackStatForWeapon(RuntimeUnit attacker, WeaponProfile weapon)
@@ -3109,13 +3122,60 @@ namespace IronKingdoms.Combat
                 var observer = playerRuntimeUnits[i];
                 if (observer.IsAlive
                     && IsWithinObserverVisibilityRange(observer, target)
-                    && HasLineOfSight(observer, target))
+                    && GetCachedHasLineOfSight(observer, target))
                 {
                     return true;
                 }
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Returns the HasLineOfSight result for an (observer, target) pair, reusing the cached
+        /// value when no unit has moved since it was computed.  The cache is invalidated by
+        /// <see cref="losDirtyVersion"/> which is incremented every time a pawn position changes.
+        /// </summary>
+        private bool GetCachedHasLineOfSight(RuntimeUnit observer, RuntimeUnit target)
+        {
+            var unitCount = allRuntimeUnits.Count;
+            var observerIdx = allRuntimeUnits.IndexOf(observer);
+            var targetIdx = allRuntimeUnits.IndexOf(target);
+
+            // Fall back to uncached when indices aren't found (e.g. during spawn transitions).
+            if (observerIdx < 0 || targetIdx < 0)
+            {
+                return HasLineOfSight(observer, target);
+            }
+
+            var key = observerIdx * unitCount + targetIdx;
+            var cacheSize = unitCount * unitCount;
+
+            // Rebuild or clear the arrays when the dirty version advances or sizes don't match.
+            if (losCachedVersion != losDirtyVersion)
+            {
+                if (losCacheValid == null || losCacheValid.Length < cacheSize)
+                {
+                    losCacheValid = new bool[cacheSize];
+                    losCacheResult = new bool[cacheSize];
+                }
+                else
+                {
+                    System.Array.Clear(losCacheValid, 0, losCacheValid.Length);
+                }
+
+                losCachedVersion = losDirtyVersion;
+            }
+
+            if (losCacheValid[key])
+            {
+                return losCacheResult[key];
+            }
+
+            var result = HasLineOfSight(observer, target);
+            losCacheValid[key] = true;
+            losCacheResult[key] = result;
+            return result;
         }
 
         private static void ApplyUnitVisibility(RuntimeUnit unit, bool isVisible)
@@ -3590,7 +3650,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var modifiers = CombatDefenseEvaluator.CollectActiveDefenseModifiers(hoveredEnemyUnit.Definition, hoveredEnemyUnit.Pawn);
+            var modifiers = CombatDefenseEvaluator.CollectActiveDefenseModifiers(hoveredEnemyUnit.Definition, hoveredEnemyUnit.Pawn, selectedUnit?.Pawn);
             if (modifiers.Count == 0)
             {
                 return;
