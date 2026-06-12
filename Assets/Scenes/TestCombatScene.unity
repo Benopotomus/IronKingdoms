@@ -373,7 +373,7 @@ MonoBehaviour:
   cameraManager: {fileID: 2052885983}
   navPathBuilder: {fileID: 400002}
   fogOfWarWorld: {fileID: 0}
-  definitionCatalog: {fileID: 0}
+  definitionCatalog: {fileID: 11400000, guid: b1c2d3e4f5a6478990abcdef01000007, type: 2}
   fogWorldBoundsCenter: {x: 0, y: 0}
   fogWorldBoundsSize: {x: 24, y: 24}
   fogExploredShroudVisibility: 0.35
