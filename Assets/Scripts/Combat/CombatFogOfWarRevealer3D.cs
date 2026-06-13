@@ -8,8 +8,13 @@ namespace IronKingdoms.Combat
     /// Combat unit revealer that lets stock FOW calculate wall/occluder hits first, then applies
     /// combat forest pass-through depth to those phase-1 ray samples before stock contour sorting.
     /// </summary>
+    [DefaultExecutionOrder(-150)]
     public class CombatFogOfWarRevealer3D : FogOfWarRevealer3D
     {
+        private const float StationaryEyeDistanceWorld = 0.02f;
+        private const float StationaryEyeDistanceWorldSq = StationaryEyeDistanceWorld * StationaryEyeDistanceWorld;
+        private const float StationaryYawDegrees = 0.5f;
+
         [Header("Forest Debug")]
         [SerializeField] private bool drawForestClipDebug = false;
         [SerializeField] private bool drawForestClipInGameView = true;
@@ -23,6 +28,9 @@ namespace IronKingdoms.Combat
         private CombatForestFogBlockerRing blockerRing;
         private bool ignoresForestForLineOfSight;
         private float baseRadiusWorld;
+        private Vector3 lastCalculatedEyeWorld;
+        private float lastCalculatedEyeYaw;
+        private bool hasCalculatedLineOfSightPose;
 
         public void ConfigureForUnit(UnitTypeDefinition definition)
         {
@@ -34,6 +42,17 @@ namespace IronKingdoms.Combat
 
             EnsureBlockerRing();
             blockerRing.ConfigureForUnit(definition);
+            InvalidateLineOfSightPose();
+        }
+
+        private void Update()
+        {
+            if (!IsRegistered || !Application.isPlaying)
+            {
+                return;
+            }
+
+            UpdateStationaryState();
         }
 
         public override void LineOfSightPhase1()
@@ -60,11 +79,55 @@ namespace IronKingdoms.Combat
             }
 
             base.LineOfSightPhase2();
+            CaptureLineOfSightPose();
 
             if (drawForestClipDebug && drawForestClipInGameView && forestDebugContour.HasContour)
             {
                 forestDebugContour.DrawRuntimeLines(debugClipRayColor, debugBridgeRayColor, debugContourColor);
             }
+        }
+
+        private void UpdateStationaryState()
+        {
+            if (!hasCalculatedLineOfSightPose)
+            {
+                return;
+            }
+
+            if (HasMovedSinceLastLineOfSightCalculation())
+            {
+                if (CurrentlyStaticRevealer)
+                {
+                    SetRevealerAsStatic(false);
+                }
+
+                return;
+            }
+
+            if (!CurrentlyStaticRevealer)
+            {
+                SetRevealerAsStatic(true);
+            }
+        }
+
+        private bool HasMovedSinceLastLineOfSightCalculation()
+        {
+            var eyeWorld = (Vector3)GetEyePosition();
+            var eyeYaw = transform.eulerAngles.y;
+            return (eyeWorld - lastCalculatedEyeWorld).sqrMagnitude > StationaryEyeDistanceWorldSq
+                || Mathf.Abs(Mathf.DeltaAngle(eyeYaw, lastCalculatedEyeYaw)) > StationaryYawDegrees;
+        }
+
+        private void CaptureLineOfSightPose()
+        {
+            lastCalculatedEyeWorld = (Vector3)GetEyePosition();
+            lastCalculatedEyeYaw = transform.eulerAngles.y;
+            hasCalculatedLineOfSightPose = true;
+        }
+
+        private void InvalidateLineOfSightPose()
+        {
+            hasCalculatedLineOfSightPose = false;
         }
 
         private void CompletePhaseOneBeforeForestClip()

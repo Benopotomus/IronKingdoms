@@ -82,6 +82,7 @@ namespace IronKingdoms.Combat
         [SerializeField] private Vector2 fogWorldBoundsSize = new Vector2(24f, 24f);
         [SerializeField, Range(0.05f, 1f)] private float fogExploredShroudVisibility = 0.35f;
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
+        [SerializeField, Min(1)] private int maxFogRevealersPerFrame = 12;
         [SerializeField] private bool debugUseCrispFogRendering = true;
         [SerializeField] private bool autoSpawnOnStart = true;
         private MatchArmySpawner matchArmySpawner;

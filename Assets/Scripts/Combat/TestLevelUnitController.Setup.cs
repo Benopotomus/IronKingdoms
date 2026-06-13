@@ -87,9 +87,12 @@ namespace IronKingdoms.Combat
 
             fogOfWarWorld.GamePlaneOrientation = FogOfWarWorld.GamePlane.XZ;
             fogOfWarWorld.FOWSamplingMode = FogOfWarWorld.FogSampleMode.Texture;
-            fogOfWarWorld.UpdateMethod = FogOfWarWorld.FowUpdateMethod.LateUpdate;
-            fogOfWarWorld.RevealerUpdateMode = FogOfWarWorld.RevealerUpdateMethod.Every_Frame;
-            fogOfWarWorld.HidersUseFogTexture = false;
+            // Start raycast jobs in Update so they can overlap gameplay work; finish in LateUpdate.
+            fogOfWarWorld.UpdateMethod = FogOfWarWorld.FowUpdateMethod.StartInUpdateFinishInLateUpdate;
+            fogOfWarWorld.RevealerUpdateMode = FogOfWarWorld.RevealerUpdateMethod.N_Per_Frame;
+            fogOfWarWorld.MaxNumRevealersPerFrame = maxFogRevealersPerFrame;
+            // Combat samples the fog texture directly; there are no FogOfWarHider components to update per revealer.
+            fogOfWarWorld.HidersUseFogTexture = true;
             var previousMaxSegments = fogOfWarWorld.MaxPossibleSegmentsPerRevealer;
             fogOfWarWorld.MaxPossibleSegmentsPerRevealer = Mathf.Max(previousMaxSegments, 512);
             fogOfWarWorld.SightExtraAmount = 0f;

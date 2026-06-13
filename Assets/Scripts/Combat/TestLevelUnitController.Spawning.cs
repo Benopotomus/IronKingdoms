@@ -135,8 +135,9 @@ namespace IronKingdoms.Combat
             // Forest depth is enforced by analytic clip in CombatFogOfWarRevealer3D phase 2.
             revealer.AddCorners = true;
             revealer.ResolveEdge = false;
-            revealer.OcclusionQuality = RaycastRevealer.RaycastRevealerOcclusionQualityPreset.HighResolution;
-            revealer.RaycastResolution = 1f;
+            revealer.OcclusionQuality = RaycastRevealer.RaycastRevealerOcclusionQualityPreset.Custom;
+            // 0.5 degrees per ray is enough for forest depth clipping and keeps raycast cost manageable.
+            revealer.RaycastResolution = 0.5f;
             // Extra edge refinement rays are tuned for hard collider silhouettes and can
             // distort depth-capped forest circles into wedges/half-arcs.
             revealer.NumExtraIterations = 0;
