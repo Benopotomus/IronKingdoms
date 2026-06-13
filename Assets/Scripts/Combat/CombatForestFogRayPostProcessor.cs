@@ -16,6 +16,8 @@ namespace IronKingdoms.Combat
         private const int ForestLimitedAngularScanSteps = 96;
 
         private readonly HashSet<int> bridgedRayIndices = new();
+        private readonly List<float> forestClipDistances = new();
+        private readonly List<bool> forestLimitedNeighborMask = new();
 
         public HashSet<int> BridgedRayIndices => bridgedRayIndices;
 
@@ -30,15 +32,17 @@ namespace IronKingdoms.Combat
             Vector3 eyeWorld,
             float maxRadius,
             FogOfWarRevealer3D.PlaneProjection projection,
-            bool baseIntersectsForest)
+            bool baseIntersectsForest,
+            bool collectDebugState)
         {
             bridgedRayIndices.Clear();
 
             var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
             var projectedEye = projection.Project((float3)eyeWorld);
+            EnsureClipDistanceCount(stepCount, maxRadius);
 
-            ApplyForestClipToFirstIteration(firstIteration, stepCount, eyeWorld, maxRadius, depthWorld, baseIntersectsForest, projectedEye, projection);
-            FillForestMissBridges(firstIteration, stepCount, eyeWorld, maxRadius, depthWorld, baseIntersectsForest, projectedEye, projection);
+            ApplyForestClipToFirstIteration(firstIteration, stepCount, eyeWorld, maxRadius, depthWorld, baseIntersectsForest, projectedEye, projection, forestClipDistances);
+            FillForestMissBridges(firstIteration, stepCount, maxRadius, projectedEye, projection, forestClipDistances, collectDebugState);
         }
 
         public void ForceContourConditions(
@@ -50,9 +54,15 @@ namespace IronKingdoms.Combat
             FogOfWarRevealer3D.PlaneProjection projection,
             bool baseIntersectsForest)
         {
-            var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
             ForceForestContourViewPoints(firstIteration, firstIterationConditions, stepCount, maxRadius);
-            ForceForestAdjacentOpenContourPoints(firstIteration, firstIterationConditions, stepCount, eyeWorld, maxRadius, depthWorld, baseIntersectsForest, projection);
+            BuildForestLimitedNeighborMask(firstIteration, stepCount, maxRadius);
+            ForceForestAdjacentOpenContourPoints(
+                firstIteration,
+                firstIterationConditions,
+                stepCount,
+                maxRadius,
+                forestClipDistances,
+                forestLimitedNeighborMask);
         }
 
         private static void ApplyForestClipToFirstIteration(
@@ -63,7 +73,8 @@ namespace IronKingdoms.Combat
             float depthWorld,
             bool baseIntersectsForest,
             float2 projectedEye,
-            FogOfWarRevealer3D.PlaneProjection projection)
+            FogOfWarRevealer3D.PlaneProjection projection,
+            List<float> clipDistances)
         {
             for (var i = 0; i < stepCount; i++)
             {
@@ -78,6 +89,7 @@ namespace IronKingdoms.Combat
                     maxRadius,
                     depthWorld,
                     baseIntersectsForest);
+                clipDistances[i] = forestClip;
 
                 var physicsHit = firstIteration.Hits[i];
                 var physicsDistance = physicsHit ? firstIteration.Distances[i] : maxRadius;
@@ -110,12 +122,11 @@ namespace IronKingdoms.Combat
         private void FillForestMissBridges(
             RaycastRevealer.SightIteration firstIteration,
             int stepCount,
-            Vector3 eyeWorld,
             float maxRadius,
-            float depthWorld,
-            bool baseIntersectsForest,
             float2 projectedEye,
-            FogOfWarRevealer3D.PlaneProjection projection)
+            FogOfWarRevealer3D.PlaneProjection projection,
+            List<float> clipDistances,
+            bool collectDebugState)
         {
             for (var i = 0; i < stepCount; i++)
             {
@@ -124,23 +135,18 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                if (!TryGetRayDirections(firstIteration, i, projection, out var dir2, out var dir3))
+                if (!TryGetRayDirections(firstIteration, i, projection, out var dir2, out _))
                 {
                     continue;
                 }
 
-                var forestClip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
-                    eyeWorld,
-                    dir3,
-                    maxRadius,
-                    depthWorld,
-                    baseIntersectsForest);
+                var forestClip = clipDistances[i];
                 if (forestClip >= maxRadius - 0.01f)
                 {
                     continue;
                 }
 
-                BridgeForestRay(firstIteration, i, dir2, forestClip, projectedEye);
+                BridgeForestRay(firstIteration, i, dir2, forestClip, projectedEye, collectDebugState);
             }
         }
 
@@ -149,13 +155,17 @@ namespace IronKingdoms.Combat
             int index,
             float2 direction,
             float bridgeDistance,
-            float2 projectedEye)
+            float2 projectedEye,
+            bool collectDebugState)
         {
             firstIteration.Hits[index] = true;
             firstIteration.Distances[index] = bridgeDistance;
             firstIteration.Points[index] = projectedEye + (direction * bridgeDistance);
             firstIteration.Normals[index] = -direction;
-            bridgedRayIndices.Add(index);
+            if (collectDebugState)
+            {
+                bridgedRayIndices.Add(index);
+            }
         }
 
         /// <summary>
@@ -186,11 +196,9 @@ namespace IronKingdoms.Combat
             RaycastRevealer.SightIteration firstIteration,
             NativeArray<bool> firstIterationConditions,
             int stepCount,
-            Vector3 eyeWorld,
             float maxRadius,
-            float depthWorld,
-            bool baseIntersectsForest,
-            FogOfWarRevealer3D.PlaneProjection projection)
+            List<float> clipDistances,
+            List<bool> forestLimitedNeighborMask)
         {
             for (var i = 0; i < stepCount; i++)
             {
@@ -199,23 +207,13 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                if (!TryGetRayDirections(firstIteration, i, projection, out _, out var dir3))
-                {
-                    continue;
-                }
-
-                var forestClip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
-                    eyeWorld,
-                    dir3,
-                    maxRadius,
-                    depthWorld,
-                    baseIntersectsForest);
+                var forestClip = i < clipDistances.Count ? clipDistances[i] : maxRadius;
                 if (forestClip < maxRadius - 0.01f)
                 {
                     continue;
                 }
 
-                if (!ForestLimitedHitWithinAngularScan(firstIteration, i, maxRadius, stepCount))
+                if (i >= forestLimitedNeighborMask.Count || !forestLimitedNeighborMask[i])
                 {
                     continue;
                 }
@@ -224,28 +222,63 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private static bool ForestLimitedHitWithinAngularScan(
+        private void BuildForestLimitedNeighborMask(
             RaycastRevealer.SightIteration firstIteration,
-            int index,
-            float maxRadius,
-            int count)
+            int stepCount,
+            float maxRadius)
         {
-            for (var d = 1; d <= ForestLimitedAngularScanSteps; d++)
+            EnsureBoolCount(forestLimitedNeighborMask, stepCount, false);
+
+            var distanceFromLimitedHit = ForestLimitedAngularScanSteps + 1;
+            for (var i = 0; i < stepCount; i++)
             {
-                var previous = index - d;
-                if (previous >= 0 && IsForestLimitedHit(firstIteration, previous, maxRadius))
+                if (IsForestLimitedHit(firstIteration, i, maxRadius))
                 {
-                    return true;
+                    distanceFromLimitedHit = 0;
+                }
+                else
+                {
+                    distanceFromLimitedHit++;
                 }
 
-                var next = index + d;
-                if (next < count && IsForestLimitedHit(firstIteration, next, maxRadius))
-                {
-                    return true;
-                }
+                forestLimitedNeighborMask[i] = distanceFromLimitedHit <= ForestLimitedAngularScanSteps;
             }
 
-            return false;
+            distanceFromLimitedHit = ForestLimitedAngularScanSteps + 1;
+            for (var i = stepCount - 1; i >= 0; i--)
+            {
+                if (IsForestLimitedHit(firstIteration, i, maxRadius))
+                {
+                    distanceFromLimitedHit = 0;
+                }
+                else
+                {
+                    distanceFromLimitedHit++;
+                }
+
+                forestLimitedNeighborMask[i] |= distanceFromLimitedHit <= ForestLimitedAngularScanSteps;
+            }
+        }
+
+        private static void EnsureBoolCount(
+            List<bool> values,
+            int count,
+            bool defaultValue)
+        {
+            values.Clear();
+            for (var i = 0; i < count; i++)
+            {
+                values.Add(defaultValue);
+            }
+        }
+
+        private void EnsureClipDistanceCount(int count, float defaultDistance)
+        {
+            forestClipDistances.Clear();
+            for (var i = 0; i < count; i++)
+            {
+                forestClipDistances.Add(defaultDistance);
+            }
         }
 
         private static bool TryGetRayDirections(

@@ -478,7 +478,7 @@ namespace IronKingdoms.Combat
                     var nextDistance = Mathf.Min(maxDistanceWorld, distance + coarseStep);
                     var midpoint = distance + (nextDistance - distance) * 0.5f;
                     var samplePoint = origin + planarDirection * midpoint;
-                    if (IsInsideAnyLimitedDepthZoneFast(samplePoint) && IsInsideAnyLimitedDepthZone(samplePoint))
+                    if (IsInsideLimitedDepthZoneForClip(samplePoint))
                     {
                         firstContactDistance = RefineFirstContactDistance(origin, planarDirection, previousDistance, nextDistance);
                         break;
@@ -498,13 +498,13 @@ namespace IronKingdoms.Combat
 
             candidateDistance = Mathf.Min(maxDistanceWorld, firstContactDistance + depthLimitWorld);
             var clipPoint = origin + planarDirection * candidateDistance;
-            candidateInsideForest = IsInsideAnyLimitedDepthZoneFast(clipPoint) && IsInsideAnyLimitedDepthZone(clipPoint);
+            candidateInsideForest = IsInsideLimitedDepthZoneForClip(clipPoint);
             if (candidateInsideForest && candidateDistance < maxDistanceWorld - 0.001f)
             {
                 var verificationMargin = CombatScale.InchesToWorldUnits(ClipVerificationMarginInches);
                 var verifyDistance = Mathf.Min(maxDistanceWorld, candidateDistance + verificationMargin);
                 var verifyPoint = origin + planarDirection * verifyDistance;
-                candidateInsideForest = IsInsideAnyLimitedDepthZoneFast(verifyPoint) && IsInsideAnyLimitedDepthZone(verifyPoint);
+                candidateInsideForest = IsInsideLimitedDepthZoneForClip(verifyPoint);
             }
 
             return candidateInsideForest ? candidateDistance : maxDistanceWorld;
@@ -555,7 +555,7 @@ namespace IronKingdoms.Combat
                 var probeStart = origin + planarDirection * Mathf.Min(
                     maxDistanceWorld,
                     entryDistance + startInsideEpsilon);
-                if (!(IsInsideAnyLimitedDepthZoneFast(probeStart) && IsInsideAnyLimitedDepthZone(probeStart)))
+                if (!IsInsideLimitedDepthZoneForClip(probeStart))
                 {
                     probeStart = origin + planarDirection * entryDistance;
                 }
@@ -695,7 +695,7 @@ namespace IronKingdoms.Combat
                 var nextDistance = Mathf.Min(maxDistanceWorld, distance + coarseStep);
                 var midpoint = distance + (nextDistance - distance) * 0.5f;
                 var samplePoint = origin + planarDirection * midpoint;
-                var inside = IsInsideAnyLimitedDepthZoneFast(samplePoint) && IsInsideAnyLimitedDepthZone(samplePoint);
+                var inside = IsInsideLimitedDepthZoneForClip(samplePoint);
                 if (!inside)
                 {
                     return RefineBoundaryDistance(origin, planarDirection, insideDistance, nextDistance, findInsideToOutside: true);
@@ -721,7 +721,7 @@ namespace IronKingdoms.Combat
             {
                 var mid = (low + high) * 0.5f;
                 var sample = origin + planarDirection * mid;
-                var inside = IsInsideAnyLimitedDepthZoneFast(sample) && IsInsideAnyLimitedDepthZone(sample);
+                var inside = IsInsideLimitedDepthZoneForClip(sample);
                 if (findInsideToOutside)
                 {
                     if (inside)
@@ -763,7 +763,7 @@ namespace IronKingdoms.Combat
             {
                 var mid = (low + high) * 0.5f;
                 var sample = origin + planarDirection * mid;
-                var inside = IsInsideAnyLimitedDepthZoneFast(sample) && IsInsideAnyLimitedDepthZone(sample);
+                var inside = IsInsideLimitedDepthZoneForClip(sample);
                 if (inside)
                 {
                     high = mid;
@@ -784,7 +784,7 @@ namespace IronKingdoms.Combat
         /// </summary>
         private static bool IsInsideCandidateNeighborhood(Vector3 point, Vector3 planarDirection)
         {
-            if (IsInsideAnyLimitedDepthZoneFast(point) && IsInsideAnyLimitedDepthZone(point))
+            if (IsInsideLimitedDepthZoneForClip(point))
             {
                 return true;
             }
@@ -811,7 +811,7 @@ namespace IronKingdoms.Combat
             {
                 var samplePoint = point + perpendicular * (offsets[i] * radius);
                 sampleCount++;
-                if (IsInsideAnyLimitedDepthZoneFast(samplePoint) && IsInsideAnyLimitedDepthZone(samplePoint))
+                if (IsInsideLimitedDepthZoneForClip(samplePoint))
                 {
                     hits++;
                 }
@@ -891,7 +891,7 @@ namespace IronKingdoms.Combat
                 ? maxProbeWorld
                 : CombatScale.InchesToWorldUnits(24f);
             var step = Mathf.Max(CombatScale.InchesToWorldUnits(0.1f), 0.02f);
-            var isInside = IsInsideAnyLimitedDepthZoneFast(worldPoint) && IsInsideAnyLimitedDepthZone(worldPoint);
+            var isInside = IsInsideLimitedDepthZoneForClip(worldPoint);
 
             var best = probeLimit;
             const int radialSamples = 24;
@@ -905,7 +905,7 @@ namespace IronKingdoms.Combat
                     var next = Mathf.Min(probeLimit, distance + step);
                     var midpoint = distance + (next - distance) * 0.5f;
                     var samplePoint = worldPoint + direction * midpoint;
-                    var sampleInside = IsInsideAnyLimitedDepthZoneFast(samplePoint) && IsInsideAnyLimitedDepthZone(samplePoint);
+                    var sampleInside = IsInsideLimitedDepthZoneForClip(samplePoint);
                     if (sampleInside != isInside)
                     {
                         if (midpoint < best)

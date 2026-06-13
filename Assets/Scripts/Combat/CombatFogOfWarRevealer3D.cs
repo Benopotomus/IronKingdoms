@@ -88,6 +88,7 @@ namespace IronKingdoms.Combat
         {
             var eyeWorld = (Vector3)GetEyePosition();
             var baseIntersectsForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, baseRadiusWorld);
+            var collectDebugState = drawForestClipDebug && drawForestClipInGameView;
 
             forestPostProcessor.Apply(
                 FirstIteration,
@@ -95,7 +96,8 @@ namespace IronKingdoms.Combat
                 eyeWorld,
                 TotalRevealerRadius,
                 Projection,
-                baseIntersectsForest);
+                baseIntersectsForest,
+                collectDebugState);
 
             // Re-run the stock first-iteration conditions after forest has tightened ray distances.
             FirstIterationPointsAndConditionsJob.Run(FirstIterationStepCount);
