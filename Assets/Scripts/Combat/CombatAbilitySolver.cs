@@ -9,35 +9,45 @@ namespace IronKingdoms.Combat
             bool isInRoughTerrain,
             bool isCompletelyInForest,
             bool isPartiallyInForest,
-            CombatTerrainFeatureDefinition forestFeature)
+            CombatTerrainFeatureDefinition forestFeature,
+            bool isCompletelyInCloud,
+            bool isPartiallyInCloud,
+            CombatTerrainFeatureDefinition cloudFeature)
         {
             IsInRoughTerrain = isInRoughTerrain;
             IsCompletelyInForest = isCompletelyInForest;
             IsPartiallyInForest = isPartiallyInForest;
             ForestFeature = forestFeature;
+            IsCompletelyInCloud = isCompletelyInCloud;
+            IsPartiallyInCloud = isPartiallyInCloud;
+            CloudFeature = cloudFeature;
         }
 
         public bool IsInRoughTerrain { get; }
         public bool IsCompletelyInForest { get; }
         public bool IsPartiallyInForest { get; }
         public CombatTerrainFeatureDefinition ForestFeature { get; }
+        public bool IsCompletelyInCloud { get; }
+        public bool IsPartiallyInCloud { get; }
+        public CombatTerrainFeatureDefinition CloudFeature { get; }
 
-        public string ForestStatusLabel
+        public string ForestStatusLabel => GetTerrainStatusLabel(IsCompletelyInForest, IsPartiallyInForest);
+
+        public string CloudStatusLabel => GetTerrainStatusLabel(IsCompletelyInCloud, IsPartiallyInCloud);
+
+        private static string GetTerrainStatusLabel(bool isCompletelyInside, bool isPartiallyInside)
         {
-            get
+            if (isCompletelyInside)
             {
-                if (IsCompletelyInForest)
-                {
-                    return "Completely inside";
-                }
-
-                if (IsPartiallyInForest)
-                {
-                    return "Partially inside";
-                }
-
-                return "Open";
+                return "Completely inside";
             }
+
+            if (isPartiallyInside)
+            {
+                return "Partially inside";
+            }
+
+            return "Open";
         }
     }
 
@@ -61,6 +71,7 @@ namespace IronKingdoms.Combat
     public static class CombatAbilitySolver
     {
         public const string ForestTerrainFeatureId = "Forest";
+        public const string CloudTerrainFeatureId = "Cloud";
 
         public static CombatUnitTerrainState ResolveTerrainState(UnitTypeDefinition unitDefinition, GameObject pawn)
         {
@@ -72,9 +83,12 @@ namespace IronKingdoms.Combat
             var center = pawn.transform.position;
             var radius = GetUnitPlanarRadiusWorld(unitDefinition, pawn);
             var forestFeature = ResolveForestFeature();
+            var cloudFeature = ResolveCloudFeature();
             var isInRoughTerrain = false;
             var isCompletelyInForest = false;
             var isPartiallyInForest = false;
+            var isCompletelyInCloud = false;
+            var isPartiallyInCloud = false;
 
             var activeZones = CombatZone.ActiveZones;
             for (var i = 0; i < activeZones.Count; i++)
@@ -102,9 +116,28 @@ namespace IronKingdoms.Combat
                         isPartiallyInForest = true;
                     }
                 }
+
+                if (cloudFeature != null && feature == cloudFeature)
+                {
+                    if (zone.ContainsUnitCompletely(center, radius))
+                    {
+                        isCompletelyInCloud = true;
+                    }
+                    else if (zone.IntersectsDisc(center, radius))
+                    {
+                        isPartiallyInCloud = true;
+                    }
+                }
             }
 
-            return new CombatUnitTerrainState(isInRoughTerrain, isCompletelyInForest, isPartiallyInForest, forestFeature);
+            return new CombatUnitTerrainState(
+                isInRoughTerrain,
+                isCompletelyInForest,
+                isPartiallyInForest,
+                forestFeature,
+                isCompletelyInCloud,
+                isPartiallyInCloud,
+                cloudFeature);
         }
 
         public static bool IgnoresForestWhenDeterminingLineOfSight(Unit observer)
@@ -347,6 +380,11 @@ namespace IronKingdoms.Combat
         private static CombatTerrainFeatureDefinition ResolveForestFeature()
         {
             return ResolveTerrainFeature(ForestTerrainFeatureId);
+        }
+
+        private static CombatTerrainFeatureDefinition ResolveCloudFeature()
+        {
+            return ResolveTerrainFeature(CloudTerrainFeatureId);
         }
 
         private static CombatTerrainFeatureDefinition ResolveTerrainFeature(string featureId)

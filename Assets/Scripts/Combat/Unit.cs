@@ -1137,6 +1137,11 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
+            if (CombatBlockingTerrainClipper.IsObstructingLineOfSight(observerVolume, targetVolume))
+            {
+                return false;
+            }
+
             var interveningVolumes = new List<CombatLineOfSightVolume>();
             for (var i = 0; i < allUnits.Count; i++)
             {
@@ -1220,6 +1225,7 @@ namespace IronKingdoms.Combat
             var terrainState = CombatAbilitySolver.ResolveTerrainState(unit.Definition, unit.Pawn);
             GUILayout.Label($"Rough Terrain: {(terrainState.IsInRoughTerrain ? "Yes" : "No")}");
             GUILayout.Label($"Forest: {terrainState.ForestStatusLabel}");
+            GUILayout.Label($"Cloud: {terrainState.CloudStatusLabel}");
         }
 
         public static void DrawAbilityDebug(Unit unit)

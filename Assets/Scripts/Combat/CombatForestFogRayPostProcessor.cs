@@ -31,8 +31,10 @@ namespace IronKingdoms.Combat
             int stepCount,
             Vector3 eyeWorld,
             float maxRadius,
+            float originRadiusWorld,
             FogOfWarRevealer3D.PlaneProjection projection,
             bool baseIntersectsForest,
+            bool baseIntersectsCloud,
             bool collectDebugState)
         {
             bridgedRayIndices.Clear();
@@ -41,7 +43,18 @@ namespace IronKingdoms.Combat
             var projectedEye = projection.Project((float3)eyeWorld);
             EnsureClipDistanceCount(stepCount, maxRadius);
 
-            ApplyForestClipToFirstIteration(firstIteration, stepCount, eyeWorld, maxRadius, depthWorld, baseIntersectsForest, projectedEye, projection, forestClipDistances);
+            ApplyForestClipToFirstIteration(
+                firstIteration,
+                stepCount,
+                eyeWorld,
+                maxRadius,
+                originRadiusWorld,
+                depthWorld,
+                baseIntersectsForest,
+                baseIntersectsCloud,
+                projectedEye,
+                projection,
+                forestClipDistances);
             FillForestMissBridges(firstIteration, stepCount, maxRadius, projectedEye, projection, forestClipDistances, collectDebugState);
         }
 
@@ -70,8 +83,10 @@ namespace IronKingdoms.Combat
             int stepCount,
             Vector3 eyeWorld,
             float maxRadius,
+            float originRadiusWorld,
             float depthWorld,
             bool baseIntersectsForest,
+            bool baseIntersectsCloud,
             float2 projectedEye,
             FogOfWarRevealer3D.PlaneProjection projection,
             List<float> clipDistances)
@@ -89,11 +104,18 @@ namespace IronKingdoms.Combat
                     maxRadius,
                     depthWorld,
                     baseIntersectsForest);
-                clipDistances[i] = forestClip;
+                var blockingClip = CombatBlockingTerrainClipper.GetFogClipDistanceWorld(
+                    eyeWorld,
+                    dir3,
+                    maxRadius,
+                    originRadiusWorld,
+                    baseIntersectsCloud);
+                var terrainClip = Mathf.Min(forestClip, blockingClip);
+                clipDistances[i] = terrainClip;
 
                 var physicsHit = firstIteration.Hits[i];
                 var physicsDistance = physicsHit ? firstIteration.Distances[i] : maxRadius;
-                var finalDistance = Mathf.Min(physicsDistance, forestClip);
+                var finalDistance = Mathf.Min(physicsDistance, terrainClip);
 
                 if (finalDistance >= maxRadius - 0.001f)
                 {
@@ -104,7 +126,7 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var forestIsTighter = forestClip < physicsDistance - 0.001f;
+                var forestIsTighter = terrainClip < physicsDistance - 0.001f;
                 firstIteration.Hits[i] = true;
                 firstIteration.Distances[i] = finalDistance;
                 firstIteration.Points[i] = projectedEye + (dir2 * finalDistance);

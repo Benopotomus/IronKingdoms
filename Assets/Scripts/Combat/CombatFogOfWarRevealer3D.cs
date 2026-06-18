@@ -246,7 +246,7 @@ namespace IronKingdoms.Combat
         {
             forestPostProcessor.ClearDebugState();
 
-            if (useOcclusion && ShouldApplyForestClip())
+            if (useOcclusion && ShouldApplyTerrainFeatureClip())
             {
                 CompletePhaseOneBeforeForestClip();
                 ApplyForestClipBeforeStockSorting();
@@ -317,8 +317,14 @@ namespace IronKingdoms.Combat
             FirstIterationPointsAndConditionsJobHandle.Complete();
         }
 
-        private bool ShouldApplyForestClip()
+        private bool ShouldApplyTerrainFeatureClip()
         {
+            CombatBlockingTerrainClipper.EnsureCache();
+            if (CombatBlockingTerrainClipper.HasActiveZones)
+            {
+                return true;
+            }
+
             if (ignoresForestForLineOfSight)
             {
                 return false;
@@ -328,10 +334,16 @@ namespace IronKingdoms.Combat
             return CombatForestFogClipper.HasActiveZones;
         }
 
+        private bool ShouldApplyForestClip()
+        {
+            return ShouldApplyTerrainFeatureClip();
+        }
+
         private void ApplyForestClipBeforeStockSorting()
         {
             var eyeWorld = (Vector3)GetEyePosition();
             var baseIntersectsForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, baseRadiusWorld);
+            var baseIntersectsCloud = CombatBlockingTerrainClipper.IsInsideBlockingTerrain(eyeWorld, baseRadiusWorld);
             var collectDebugState = drawForestClipDebug && drawForestClipInGameView;
 
             forestPostProcessor.Apply(
@@ -339,8 +351,10 @@ namespace IronKingdoms.Combat
                 FirstIterationStepCount,
                 eyeWorld,
                 TotalRevealerRadius,
+                baseRadiusWorld,
                 Projection,
                 baseIntersectsForest,
+                baseIntersectsCloud,
                 collectDebugState);
 
             // Re-run the stock first-iteration conditions after forest has tightened ray distances.

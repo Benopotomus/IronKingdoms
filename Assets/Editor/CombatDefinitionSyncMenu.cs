@@ -150,10 +150,24 @@ namespace IronKingdoms.Editor
                 passThroughDepthInches: 0f,
                 hugeTargetsIgnoreLimit: false);
 
+            var cloud = GetOrCreateAsset<CombatTerrainFeatureDefinition>($"{TerrainFolder}/Cloud.asset");
+            SetTerrainFeature(
+                cloud,
+                "Cloud",
+                "Cloud",
+                "Models completely inside gain concealment. Clouds block line of sight when they intervene between models, but models completely inside the same cloud can see each other. Fog reveal may pass into clouds up to 3\". Clouds do not affect movement.",
+                isRoughTerrain: false,
+                movementSpeedMultiplier: 1f,
+                defenseModifier: concealment,
+                lineOfSightMode: CombatTerrainLineOfSightMode.BlocksCompletely,
+                passThroughDepthInches: 3f,
+                hugeTargetsIgnoreLimit: false);
+
             EditorUtility.SetDirty(roughTerrain);
             EditorUtility.SetDirty(forest);
             EditorUtility.SetDirty(wall);
-            return new[] { roughTerrain, forest, wall };
+            EditorUtility.SetDirty(cloud);
+            return new[] { roughTerrain, forest, wall, cloud };
         }
 
         private static CombatAbilityDefinition[] SyncAbilities()

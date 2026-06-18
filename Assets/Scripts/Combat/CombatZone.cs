@@ -52,6 +52,7 @@ namespace IronKingdoms.Combat
             zoneCollider = null;
             EnsureRegistered();
             CombatForestFogClipper.InvalidateCache();
+            CombatBlockingTerrainClipper.InvalidateCache();
         }
 
         /// <summary>
@@ -71,6 +72,45 @@ namespace IronKingdoms.Combat
         {
             ActiveZoneRegistry.Remove(this);
             CombatForestFogClipper.InvalidateCache();
+            CombatBlockingTerrainClipper.InvalidateCache();
+        }
+
+        /// <summary>
+        /// True when a horizontal segment on the tabletop crosses this zone footprint.
+        /// </summary>
+        public bool IntersectsPlanarSegment(Vector3 start, Vector3 end)
+        {
+            if (!isActiveAndEnabled)
+            {
+                return false;
+            }
+
+            ResolveCollider();
+            if (zoneCollider == null || !zoneCollider.enabled)
+            {
+                return false;
+            }
+
+            if (zoneCollider is SphereCollider sphere)
+            {
+                var t = sphere.transform;
+                var center = t.TransformPoint(sphere.center);
+                var scale = t.lossyScale;
+                var radius = sphere.radius * Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.z));
+                return CombatLineOfSight.SegmentIntersectsCircle(start, end, center, radius);
+            }
+
+            const int segmentSampleCount = 8;
+            for (var i = 0; i <= segmentSampleCount; i++)
+            {
+                var t = i / (float)segmentSampleCount;
+                if (ContainsPoint(Vector3.Lerp(start, end, t)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -256,6 +296,7 @@ namespace IronKingdoms.Combat
             {
                 CombatZoneType.RoughTerrain => catalog.FindTerrainFeature("RoughTerrain"),
                 CombatZoneType.Forest => catalog.FindTerrainFeature("Forest"),
+                CombatZoneType.Cloud => catalog.FindTerrainFeature("Cloud"),
                 _ => null
             };
         }

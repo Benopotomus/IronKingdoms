@@ -4,6 +4,7 @@ namespace IronKingdoms.Combat
     {
         None,
         RoughTerrain,
-        Forest
+        Forest,
+        Cloud
     }
 }
