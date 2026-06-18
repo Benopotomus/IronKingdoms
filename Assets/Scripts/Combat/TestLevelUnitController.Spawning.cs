@@ -10,14 +10,65 @@ namespace IronKingdoms.Combat
         [ContextMenu("Spawn Units")]
         public void SpawnUnits()
         {
+            CombatMatchSetup.RunMatchPhasesImmediate(this);
+        }
+
+        /// <summary>Stage: create movement/attack line renderers used during the match.</summary>
+        public void PrepareMatchVisualizers()
+        {
             BuildVisualizers();
+        }
+
+        /// <summary>Stage: clear prior pawns and spawn both armies at configured anchors.</summary>
+        public void SpawnArmies()
+        {
             ClearSpawnedUnits();
             SpawnArmy(playerUnits, playerSpawnAnchor, playerRuntimeUnits, true, new Color(0.2f, 0.5f, 1f));
             SpawnArmy(enemyUnits, enemySpawnAnchor, enemyRuntimeUnits, false, new Color(1f, 0.3f, 0.3f));
             losDirtyVersion++;
-            StartPlayerTurn();
-            UpdateFogOfWarVisibility();
         }
+
+        /// <summary>Stage: sync fog revealers and model visibility after all units exist.</summary>
+        public void InitializeMatchVisibility()
+        {
+            RefreshAllPlayerFogVisionRules();
+            MarkPlayerFogRevealerActivationDirty();
+            UpdateUnitNavmeshCutActivation(GetPathingUnitForNavmeshClearance());
+        }
+
+        private void RefreshAllPlayerFogVisionRules()
+        {
+            for (var i = 0; i < playerRuntimeUnits.Count; i++)
+            {
+                var unit = playerRuntimeUnits[i];
+                var revealer = GetFogRevealer(unit);
+                revealer?.ApplyVisionRulesFromUnit(unit);
+            }
+        }
+
+        /// <summary>Stage: activate the first player turn once armies and visibility are ready.</summary>
+        public void BeginMatch()
+        {
+            StartPlayerTurn();
+            MarkPlayerFogRevealerActivationDirty();
+            ForceSyncPlayerFogRevealerActivation();
+        }
+
+        private void ForceSyncPlayerFogRevealerActivation()
+        {
+            var fow = FogOfWarWorld.instance;
+            if (fow != null && fow.IsInPhasedUpdate)
+            {
+                return;
+            }
+
+            if (SyncPlayerFogRevealerActivation())
+            {
+                UpdateFogOfWarVisibility();
+            }
+        }
+
+        public bool IsMatchReady => CombatMatchSetup.CurrentPhase == CombatMatchSetupPhase.Ready;
 
         public void SetSpawnAnchors(Transform playerAnchor, Transform enemyAnchor)
         {
@@ -35,7 +86,7 @@ namespace IronKingdoms.Combat
             autoSpawnOnStart = false;
         }
 
-        private void SpawnArmy(List<UnitTypeDefinition> units, Transform anchor, List<RuntimeUnit> destination, bool isPlayerControlled, Color color)
+        private void SpawnArmy(List<UnitTypeDefinition> units, Transform anchor, List<Unit> destination, bool isPlayerControlled, Color color)
         {
             if (units == null)
             {
@@ -76,15 +127,29 @@ namespace IronKingdoms.Combat
                 }
 
                 ConfigureUnitNavmeshCut(pawn, pawnCollider, pawnScale);
-                if (isPlayerControlled)
+
+                var unitPawn = pawn.GetComponent<UnitPawn>();
+                if (unitPawn == null)
                 {
-                    ConfigurePlayerFogRevealer(pawn, pawnCollider, unitDefinition);
+                    unitPawn = pawn.AddComponent<UnitPawn>();
                 }
 
-                var runtimeUnit = new RuntimeUnit(unitDefinition, isPlayerControlled, pawn);
-                SnapUnitToNavmesh(runtimeUnit);
-                destination.Add(runtimeUnit);
-                allRuntimeUnits.Add(runtimeUnit);
+                var unit = unitPawn.Bind(unitDefinition, isPlayerControlled);
+                if (unit == null)
+                {
+                    Destroy(pawn);
+                    continue;
+                }
+
+                if (isPlayerControlled)
+                {
+                    ConfigurePlayerFogRevealer(pawn, pawnCollider, unit);
+                }
+
+                unit.VisionRulesChanged += HandleUnitVisionRulesChanged;
+                unit.SnapToNavmesh(navPathBuilder);
+                destination.Add(unit);
+                allRuntimeUnits.Add(unit);
             }
         }
 
@@ -111,12 +176,16 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private void ConfigurePlayerFogRevealer(GameObject pawn, CapsuleCollider pawnCollider, UnitTypeDefinition unitDefinition)
+        private void ConfigurePlayerFogRevealer(GameObject pawn, CapsuleCollider pawnCollider, Unit unit)
         {
-            if (pawn == null || unitDefinition == null)
+            if (pawn == null || unit?.Definition == null)
             {
                 return;
             }
+
+            var unitDefinition = unit.Definition;
+            var unitPawn = pawn.GetComponent<UnitPawn>();
+            unitPawn?.ApplyAdditionalLoadoutTo(unit);
 
             CombatMapSceneProvider.MoveToMapScene(pawn);
 
@@ -129,7 +198,7 @@ namespace IronKingdoms.Combat
             {
                 revealer = pawn.AddComponent<CombatFogOfWarRevealer3D>();
             }
-            revealer.ConfigureForUnit(unitDefinition);
+
             revealer.StartRevealerAsStatic = false;
             revealer.UseOcclusion = true;
             // Forest depth is enforced by analytic clip in CombatFogOfWarRevealer3D phase 2.
@@ -149,6 +218,7 @@ namespace IronKingdoms.Combat
             revealer.EyeOffset = pawnCollider != null ? pawnCollider.height * 0.5f : 0f;
 
             pawn.SetActive(wasActive);
+            revealer.ApplyVisionRulesFromUnit(unit);
         }
 
         private static void ConfigurePawnForModelSize(GameObject pawn, ModelSize modelSize)
@@ -247,6 +317,7 @@ namespace IronKingdoms.Combat
             col.radius = pawnScale.x * 0.5f;
             col.height = pawnScale.y * 2f;
 
+            root.AddComponent<UnitPawn>();
             return root;
         }
 
@@ -254,16 +325,31 @@ namespace IronKingdoms.Combat
         {
             for (var i = 0; i < allRuntimeUnits.Count; i++)
             {
-                var runtimeUnit = allRuntimeUnits[i];
-                if (runtimeUnit.Pawn != null)
+                var unit = allRuntimeUnits[i];
+                unit.VisionRulesChanged -= HandleUnitVisionRulesChanged;
+                if (unit.Pawn != null)
                 {
-                    Destroy(runtimeUnit.Pawn);
+                    var unitPawn = unit.Pawn.GetComponent<UnitPawn>();
+                    unitPawn?.ClearRuntimeUnit();
+                    Destroy(unit.Pawn);
                 }
             }
 
             playerRuntimeUnits.Clear();
             enemyRuntimeUnits.Clear();
             allRuntimeUnits.Clear();
+        }
+
+        private void HandleUnitVisionRulesChanged(Unit unit)
+        {
+            losDirtyVersion++;
+            if (unit != null && unit.IsPlayerControlled)
+            {
+                unit.RefreshFogRevealerConfiguration();
+                MarkPlayerFogRevealerActivationDirty();
+            }
+
+            UpdateFogOfWarVisibility();
         }
     }
 }

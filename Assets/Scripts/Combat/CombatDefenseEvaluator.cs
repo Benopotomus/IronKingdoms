@@ -27,9 +27,8 @@ namespace IronKingdoms.Combat
         public static int GetEffectiveDefense(
             UnitTypeDefinition defenderDefinition,
             GameObject defenderPawn,
-            CombatStats attackerStats,
+            Unit attacker,
             WeaponProfile weapon,
-            GameObject attackerPawn = null,
             bool isSprayAttack = false)
         {
             if (defenderDefinition?.Stats == null)
@@ -39,20 +38,26 @@ namespace IronKingdoms.Combat
 
             var stats = defenderDefinition.Stats;
             var baseDefense = stats.defense;
-            var abilityBonus = CombatAbilitySolver.GetAbilityDefenseBonus(defenderDefinition, defenderPawn, weapon);
+            var abilityBonus = CombatAbilitySolver.GetAbilityDefenseBonus(
+                defenderDefinition,
+                defenderPawn,
+                weapon);
 
             if (!CanReceiveTerrainDefenseBonuses(stats.modelSize))
             {
                 return baseDefense + abilityBonus;
             }
 
-            var modifiers = CollectActiveDefenseModifiers(defenderDefinition, defenderPawn, attackerPawn);
+            var modifiers = CollectActiveDefenseModifiers(
+                defenderDefinition,
+                defenderPawn,
+                attacker?.Pawn);
             if (modifiers.Count == 0)
             {
                 return baseDefense + abilityBonus;
             }
 
-            var attackerIgnoresConcealment = AttackerIgnoresConcealment(attackerStats);
+            var attackerIgnoresConcealment = AttackerIgnoresConcealment(attacker);
             var bestConcealmentOrCoverBonus = 0;
             var otherBonus = 0;
             for (var i = 0; i < modifiers.Count; i++)
@@ -190,9 +195,9 @@ namespace IronKingdoms.Combat
             return !modelSize.IsExtraLargeOrHuge();
         }
 
-        private static bool AttackerIgnoresConcealment(CombatStats attackerStats)
+        private static bool AttackerIgnoresConcealment(Unit attacker)
         {
-            return attackerStats != null && attackerStats.IgnoresConcealmentAndStealth();
+            return attacker != null && attacker.IgnoresConcealmentAndStealth();
         }
 
         private static float GetUnitPlanarRadiusWorld(UnitTypeDefinition unitDefinition, GameObject pawn)

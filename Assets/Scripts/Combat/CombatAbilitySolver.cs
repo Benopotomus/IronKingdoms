@@ -107,30 +107,66 @@ namespace IronKingdoms.Combat
             return new CombatUnitTerrainState(isInRoughTerrain, isCompletelyInForest, isPartiallyInForest, forestFeature);
         }
 
+        public static bool IgnoresForestWhenDeterminingLineOfSight(Unit observer)
+        {
+            if (observer?.Definition?.Stats == null)
+            {
+                return false;
+            }
+
+            if (observer.IgnoresForestLineOfSightLimits())
+            {
+                return true;
+            }
+
+            observer.Definition.Stats.EnsureAbilityDefaults();
+            if (AnyAbilityIgnoresForest(observer.Definition.Stats.abilities))
+            {
+                return true;
+            }
+
+            return AnyAbilityIgnoresForest(observer.RuntimeAbilities);
+        }
+
         public static bool IgnoresForestWhenDeterminingLineOfSight(UnitTypeDefinition observerDefinition, GameObject observerPawn)
         {
+            if (observerPawn != null && UnitPawn.TryGetRuntimeUnit(observerPawn, out var unit))
+            {
+                return IgnoresForestWhenDeterminingLineOfSight(unit);
+            }
+
             if (observerDefinition?.Stats == null)
             {
                 return false;
             }
 
             var stats = observerDefinition.Stats;
+            stats.EnsureAdvantageDefaults();
             stats.EnsureAbilityDefaults();
             if (stats.IgnoresForestLineOfSightLimits())
             {
                 return true;
             }
 
-            for (var i = 0; i < stats.abilities.Count; i++)
+            return AnyAbilityIgnoresForest(stats.abilities);
+        }
+
+        public static int GetAbilityDefenseBonus(
+            Unit defender,
+            WeaponProfile weapon)
+        {
+            if (defender?.Definition?.Stats == null || defender.Pawn == null || weapon == null)
             {
-                var ability = stats.abilities[i];
-                if (ability != null && ability.IgnoresForestForLineOfSight)
-                {
-                    return true;
-                }
+                return 0;
             }
 
-            return false;
+            defender.Definition.Stats.EnsureAbilityDefaults();
+            var terrainState = ResolveTerrainState(defender.Definition, defender.Pawn);
+            var bonus = 0;
+
+            AccumulateAbilityDefenseBonus(defender.Definition.Stats.abilities, weapon, terrainState, ref bonus);
+            AccumulateAbilityDefenseBonus(defender.RuntimeAbilities, weapon, terrainState, ref bonus);
+            return bonus;
         }
 
         public static int GetAbilityDefenseBonus(
@@ -138,6 +174,11 @@ namespace IronKingdoms.Combat
             GameObject defenderPawn,
             WeaponProfile weapon)
         {
+            if (defenderPawn != null && UnitPawn.TryGetRuntimeUnit(defenderPawn, out var defender))
+            {
+                return GetAbilityDefenseBonus(defender, weapon);
+            }
+
             if (defenderDefinition?.Stats == null || defenderPawn == null || weapon == null)
             {
                 return 0;
@@ -146,10 +187,19 @@ namespace IronKingdoms.Combat
             defenderDefinition.Stats.EnsureAbilityDefaults();
             var terrainState = ResolveTerrainState(defenderDefinition, defenderPawn);
             var bonus = 0;
+            AccumulateAbilityDefenseBonus(defenderDefinition.Stats.abilities, weapon, terrainState, ref bonus);
+            return bonus;
+        }
 
-            for (var i = 0; i < defenderDefinition.Stats.abilities.Count; i++)
+        private static void AccumulateAbilityDefenseBonus(
+            IReadOnlyList<CombatAbilityDefinition> abilities,
+            WeaponProfile weapon,
+            CombatUnitTerrainState terrainState,
+            ref int bonus)
+        {
+            for (var i = 0; i < abilities.Count; i++)
             {
-                var ability = defenderDefinition.Stats.abilities[i];
+                var ability = abilities[i];
                 if (ability == null || !IsAbilityTerrainRequirementMet(ability, terrainState))
                 {
                     continue;
@@ -164,14 +214,35 @@ namespace IronKingdoms.Combat
                     bonus += ability.RangedDefenseBonusWhileCompletelyInside;
                 }
             }
+        }
 
-            return bonus;
+        public static List<CombatActiveAbilityPassive> DescribeAbilityPassives(Unit unit)
+        {
+            if (unit?.Definition?.Stats == null)
+            {
+                return new List<CombatActiveAbilityPassive>();
+            }
+
+            unit.Definition.Stats.EnsureAbilityDefaults();
+            var terrainState = unit.Pawn != null
+                ? ResolveTerrainState(unit.Definition, unit.Pawn)
+                : default;
+            var results = new List<CombatActiveAbilityPassive>();
+            AppendAbilityPassives(unit.Definition.Stats.abilities, terrainState, results);
+            AppendAbilityPassives(unit.RuntimeAbilities, terrainState, results);
+            return results;
         }
 
         public static List<CombatActiveAbilityPassive> DescribeAbilityPassives(
             UnitTypeDefinition unitDefinition,
             GameObject pawn)
         {
+            if (pawn != null && UnitPawn.TryGetRuntimeUnit(pawn, out var unit)
+                && unit.Definition == unitDefinition)
+            {
+                return DescribeAbilityPassives(unit);
+            }
+
             var results = new List<CombatActiveAbilityPassive>();
             if (unitDefinition?.Stats == null)
             {
@@ -180,10 +251,18 @@ namespace IronKingdoms.Combat
 
             unitDefinition.Stats.EnsureAbilityDefaults();
             var terrainState = pawn != null ? ResolveTerrainState(unitDefinition, pawn) : default;
+            AppendAbilityPassives(unitDefinition.Stats.abilities, terrainState, results);
+            return results;
+        }
 
-            for (var i = 0; i < unitDefinition.Stats.abilities.Count; i++)
+        private static void AppendAbilityPassives(
+            IReadOnlyList<CombatAbilityDefinition> abilities,
+            CombatUnitTerrainState terrainState,
+            List<CombatActiveAbilityPassive> results)
+        {
+            for (var i = 0; i < abilities.Count; i++)
             {
-                var ability = unitDefinition.Stats.abilities[i];
+                var ability = abilities[i];
                 if (ability == null)
                 {
                     continue;
@@ -215,8 +294,25 @@ namespace IronKingdoms.Combat
                         inForest));
                 }
             }
+        }
 
-            return results;
+        private static bool AnyAbilityIgnoresForest(IReadOnlyList<CombatAbilityDefinition> abilities)
+        {
+            if (abilities == null)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < abilities.Count; i++)
+            {
+                var ability = abilities[i];
+                if (ability != null && ability.IgnoresForestForLineOfSight)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsAbilityTerrainRequirementMet(

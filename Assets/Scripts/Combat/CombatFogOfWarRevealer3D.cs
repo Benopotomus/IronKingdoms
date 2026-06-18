@@ -8,7 +8,7 @@ namespace IronKingdoms.Combat
     /// Combat unit revealer that lets stock FOW calculate wall/occluder hits first, then applies
     /// combat forest pass-through depth to those phase-1 ray samples before stock contour sorting.
     /// </summary>
-    [DefaultExecutionOrder(-150)]
+    [DefaultExecutionOrder(50)]
     public class CombatFogOfWarRevealer3D : FogOfWarRevealer3D
     {
         private const float StationaryEyeDistanceWorld = 0.02f;
@@ -31,28 +31,206 @@ namespace IronKingdoms.Combat
         private Vector3 lastCalculatedEyeWorld;
         private float lastCalculatedEyeYaw;
         private bool hasCalculatedLineOfSightPose;
+        private bool pendingLineOfSightRecalculation;
+        private bool wantsLocalFogContribution = true;
 
-        public void ConfigureForUnit(UnitTypeDefinition definition)
+        public bool ShouldContributeToLocalFog => wantsLocalFogContribution;
+
+        public bool IsContributingToFog => wantsLocalFogContribution && IsRegistered;
+
+        public bool IgnoresForestLineOfSightLimits => ignoresForestForLineOfSight;
+
+        public bool MatchesUnitVisionRules(Unit unit)
         {
-            ignoresForestForLineOfSight = definition != null
-                && CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(definition, null);
-            baseRadiusWorld = definition != null
-                ? Mathf.Max(0f, definition.Stats.modelSize.BaseDiameterWorldUnits() * 0.5f)
-                : 0f;
+            if (unit?.Definition?.Stats == null)
+            {
+                return unit == null;
+            }
 
-            EnsureBlockerRing();
-            blockerRing.ConfigureForUnit(definition);
-            InvalidateLineOfSightPose();
+            return ignoresForestForLineOfSight
+                == CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(unit);
         }
 
-        private void Update()
+        public bool IsContributionStateSatisfied()
         {
-            if (!IsRegistered || !Application.isPlaying)
+            return wantsLocalFogContribution == IsRegistered;
+        }
+
+        public void ConfigureForUnit(Unit unit)
+        {
+            if (unit?.Definition?.Stats == null)
+            {
+                ClearConfiguration();
+                return;
+            }
+
+            var nextIgnoresForest = CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(unit);
+            var forestRulesChanged = ignoresForestForLineOfSight != nextIgnoresForest;
+            ignoresForestForLineOfSight = nextIgnoresForest;
+            baseRadiusWorld = Mathf.Max(0f, unit.Definition.Stats.modelSize.BaseDiameterWorldUnits() * 0.5f);
+
+            EnsureBlockerRing();
+            blockerRing.ConfigureForUnit(unit);
+            InvalidateLineOfSightPose();
+
+            if (Application.isPlaying && forestRulesChanged)
+            {
+                RequestLineOfSightRecalculation();
+            }
+        }
+
+        /// <summary>
+        /// Controls whether this unit is registered with FogOfWarWorld. The component stays
+        /// enabled; non-contributing revealers are deregistered only.
+        /// </summary>
+        public void SetLocalFogContribution(bool active)
+        {
+            if (wantsLocalFogContribution == active && IsContributionStateSatisfied())
             {
                 return;
             }
 
-            UpdateStationaryState();
+            wantsLocalFogContribution = active;
+            if (!active)
+            {
+                pendingLineOfSightRecalculation = false;
+            }
+
+            ApplyLocalFogContributionState();
+
+            if (active)
+            {
+                TryProcessPendingLineOfSightRecalculation();
+            }
+        }
+
+        private void OnEnable()
+        {
+            if (!wantsLocalFogContribution && IsRegistered)
+            {
+                DeregisterRevealer();
+            }
+        }
+
+        private void ApplyLocalFogContributionState()
+        {
+            FogOfWarWorld.PendingRevealerRegister.Remove(this);
+
+            if (!wantsLocalFogContribution)
+            {
+                if (IsRegistered)
+                {
+                    DeregisterRevealer();
+                }
+
+                return;
+            }
+
+            if (IsRegistered)
+            {
+                return;
+            }
+
+            var fow = FogOfWarWorld.instance;
+            if (fow == null)
+            {
+                return;
+            }
+
+            if (fow.IsInPhasedUpdate)
+            {
+                if (!FogOfWarWorld.PendingRevealerRegister.Contains(this))
+                {
+                    FogOfWarWorld.PendingRevealerRegister.Add(this);
+                }
+
+                return;
+            }
+
+            RegisterRevealer();
+        }
+
+        /// <summary>
+        /// Re-reads forest/ability vision rules from a live unit and schedules a safe FOW refresh.
+        /// </summary>
+        public void ApplyVisionRulesFromUnit(Unit unit)
+        {
+            ConfigureForUnit(unit);
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+
+            RequestLineOfSightRecalculation();
+            TryProcessPendingLineOfSightRecalculation();
+        }
+
+        /// <summary>
+        /// Marks this revealer dynamic and recalculates on the next safe frame boundary.
+        /// Avoid calling ManualCalculateLineOfSight during FOW phased updates or revealer enable.
+        /// </summary>
+        public void RequestLineOfSightRecalculation()
+        {
+            SetRevealerAsStatic(false);
+            InvalidateLineOfSightPose();
+            pendingLineOfSightRecalculation = true;
+        }
+
+        public void ForceImmediateLineOfSightRecalculation()
+        {
+            RequestLineOfSightRecalculation();
+        }
+
+        private void LateUpdate()
+        {
+            if (IsRegistered && Application.isPlaying)
+            {
+                UpdateStationaryState();
+            }
+
+            TryProcessPendingLineOfSightRecalculation();
+        }
+
+        private void TryProcessPendingLineOfSightRecalculation()
+        {
+            if (!pendingLineOfSightRecalculation || !isActiveAndEnabled || !IsRegistered)
+            {
+                return;
+            }
+
+            var fow = FogOfWarWorld.instance;
+            if (fow == null || fow.IsInPhasedUpdate)
+            {
+                return;
+            }
+
+            pendingLineOfSightRecalculation = false;
+            ManualCalculateLineOfSight();
+        }
+
+        public void ConfigureForUnit(UnitTypeDefinition definition)
+        {
+            if (definition?.Stats == null)
+            {
+                ClearConfiguration();
+                return;
+            }
+
+            ignoresForestForLineOfSight = CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(definition, null);
+            baseRadiusWorld = Mathf.Max(0f, definition.Stats.modelSize.BaseDiameterWorldUnits() * 0.5f);
+
+            EnsureBlockerRing();
+            blockerRing.ConfigureForUnitDefinition(definition);
+            InvalidateLineOfSightPose();
+        }
+
+        private void ClearConfiguration()
+        {
+            ignoresForestForLineOfSight = false;
+            baseRadiusWorld = 0f;
+            EnsureBlockerRing();
+            blockerRing.ConfigureForUnitDefinition(null);
+            InvalidateLineOfSightPose();
         }
 
         public override void LineOfSightPhase1()
@@ -106,6 +284,9 @@ namespace IronKingdoms.Combat
 
             if (!CurrentlyStaticRevealer)
             {
+                // Must run after FogOfWarWorld Phase2 (StartInUpdateFinishInLateUpdate). Marking static
+                // between Phase1 and Phase2 skips Phase2 and leaves native job handles in flight.
+                CompletePhaseOneBeforeForestClip();
                 SetRevealerAsStatic(true);
             }
         }
@@ -221,6 +402,11 @@ namespace IronKingdoms.Combat
         private void Awake()
         {
             EnsureBlockerRing();
+        }
+
+        private void OnDisable()
+        {
+            pendingLineOfSightRecalculation = false;
         }
 
         private void EnsureBlockerRing()

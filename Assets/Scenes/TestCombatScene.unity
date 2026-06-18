@@ -308,11 +308,10 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 300001}
-  - component: {fileID: 300002}
   - component: {fileID: 300003}
   - component: {fileID: 300004}
   m_Layer: 0
-  m_Name: CombatFlowBootstrap
+  m_Name: CombatBootstrap
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -333,22 +332,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &300002
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 300000}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7b9012eb0f51466bad84d14c0e059a01, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  scenario: {fileID: 11400000, guid: c9d53ff4998e45d6b2575bdce68b48cb, type: 2}
-  autoRunOnStart: 0
-  logToConsole: 1
-  lastReportPreview: 
 --- !u!114 &300003
 MonoBehaviour:
   m_ObjectHideFlags: 0

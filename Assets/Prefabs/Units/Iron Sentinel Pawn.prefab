@@ -7,6 +7,7 @@ GameObject:
   m_Component:
   - component: {fileID: 100001}
   - component: {fileID: 100002}
+  - component: {fileID: 400003}
   m_Layer: 0
   m_Name: Iron Sentinel Pawn
   m_TagString: Untagged
@@ -228,3 +229,16 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &400003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 100000}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7c8d9e0f1a2b3c4d5e6f70819203a4bc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  unitDefinition: {fileID: 11400000, guid: d5e6f7081829304a5b6c7d8e9f0a1b2c, type: 2}

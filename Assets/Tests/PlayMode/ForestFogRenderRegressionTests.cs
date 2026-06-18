@@ -171,7 +171,7 @@ namespace IronKingdoms.Combat.PlayModeTests
             revealer.NumExtraIterations = 1;
             revealer.NumExtraRaysOnIteration = 2;
             revealer.ObstacleLayerMask = ~0;
-            revealer.ConfigureForUnit(null);
+            revealer.ConfigureForUnit((UnitTypeDefinition)null);
         }
 
         private static bool[,] CaptureFogMask(FOW.FogOfWarWorld fogWorld, Vector3 revealedPoint, float threshold)

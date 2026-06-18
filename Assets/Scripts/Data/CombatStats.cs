@@ -38,6 +38,24 @@ namespace IronKingdoms.Combat
             return abilities.Contains(ability);
         }
 
+        public bool AddAbility(CombatAbilityDefinition ability)
+        {
+            EnsureAbilityDefaults();
+            if (ability == null || abilities.Contains(ability))
+            {
+                return false;
+            }
+
+            abilities.Add(ability);
+            return true;
+        }
+
+        public bool RemoveAbility(CombatAbilityDefinition ability)
+        {
+            EnsureAbilityDefaults();
+            return ability != null && abilities.Remove(ability);
+        }
+
         public bool HasAdvantage(CombatAdvantageDefinition advantage)
         {
             if (advantage == null)

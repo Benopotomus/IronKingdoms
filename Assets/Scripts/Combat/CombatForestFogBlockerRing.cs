@@ -40,7 +40,13 @@ namespace IronKingdoms.Combat
         private int activeSegmentCount;
         private bool hasValidDebugPose;
 
-        public void ConfigureForUnit(UnitTypeDefinition definition)
+        public void ConfigureForUnit(Unit unit)
+        {
+            ignoresForestForLineOfSight = unit != null
+                && CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(unit);
+        }
+
+        public void ConfigureForUnitDefinition(UnitTypeDefinition definition)
         {
             ignoresForestForLineOfSight = definition != null
                 && CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(definition, null);

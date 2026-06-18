@@ -1,24 +1,23 @@
 using System.Collections;
-using Pathfinding;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Loads a dedicated combat map scene additively, resolves spawn-point markers, then
-    /// hands off to <see cref="TestLevelUnitController"/> to place units.
+    /// Loads a dedicated combat map scene additively, then runs the staged
+    /// <see cref="CombatMatchSetup"/> sequence to spawn units and begin the match.
     ///
     /// The A* navmesh (RecastGraph) must be baked and saved inside CombatMapScene in the
     /// Unity editor. Use <b>Iron Kingdoms → Tools → Combat Navmesh → Scan Combat Map (High Quality)</b>,
     /// then save the scene. Set "Scan On Startup" to false on the AstarPath component so the
     /// cached graph is used directly at runtime.
-    /// If no scanned data is present, this component performs a one-time runtime scan fallback.
+    /// If no scanned data is present, the setup sequence performs a one-time runtime scan fallback.
     /// </summary>
     public class CombatMapSetup : MonoBehaviour
     {
         [SerializeField] private string combatMapSceneName = "CombatMapScene";
         [SerializeField] private TestLevelUnitController unitController;
+        [SerializeField] private bool logSetupPhases = true;
 
         private void Awake()
         {
@@ -28,119 +27,15 @@ namespace IronKingdoms.Combat
                 targetController.DisableAutoSpawn();
             }
 
-            StartCoroutine(LoadAndSetup(targetController));
+            StartCoroutine(RunSetup(targetController));
         }
 
-        /// <summary>
-        /// Async initialization sequence:
-        /// 1. Waits for the combat map scene to finish loading additively.
-        /// 2. Resolves player and enemy <see cref="CombatSpawnPoint"/> markers from the loaded scene.
-        /// 3. Calls <see cref="TestLevelUnitController.SpawnUnits"/> so units are placed at the
-        ///    correct spawn anchors.  The baked navmesh in CombatMapScene is already active by
-        ///    this point (loaded with the scene).
-        /// </summary>
-        private IEnumerator LoadAndSetup(TestLevelUnitController targetController)
+        private IEnumerator RunSetup(TestLevelUnitController targetController)
         {
-            var mapScene = SceneManager.GetSceneByName(combatMapSceneName);
-            if (!mapScene.IsValid() || !mapScene.isLoaded)
-            {
-                if (string.IsNullOrWhiteSpace(combatMapSceneName))
-                {
-                    Debug.LogWarning("Combat map scene name is not configured.", this);
-                }
-                else
-                {
-                    yield return SceneManager.LoadSceneAsync(combatMapSceneName, LoadSceneMode.Additive);
-                    mapScene = SceneManager.GetSceneByName(combatMapSceneName);
-                }
-            }
-
-            EnsureNavigationReady();
-            CombatMapSceneProvider.RegisterMapScene(mapScene);
-            ApplySpawnAnchors(mapScene, targetController);
-
-            if (targetController != null)
-            {
-                targetController.SpawnUnits();
-            }
+            yield return CombatMatchSetup.RunFromSceneLoad(
+                targetController,
+                combatMapSceneName,
+                logSetupPhases);
         }
-
-        private void EnsureNavigationReady()
-        {
-            if (AstarPath.active == null)
-            {
-                Debug.LogWarning("Combat map loaded without an active AstarPath component; movement will use non-nav fallback positions.", this);
-                return;
-            }
-
-            var graphs = AstarPath.active.data?.graphs;
-            if (graphs == null || graphs.Length == 0)
-            {
-                Debug.LogWarning("AstarPath has no graphs configured after combat map load.", this);
-                return;
-            }
-
-            for (var i = 0; i < graphs.Length; i++)
-            {
-                if (graphs[i] != null && graphs[i].isScanned)
-                {
-                    return;
-                }
-            }
-
-            Debug.LogWarning("Combat map nav graphs are present but not scanned; running AstarPath.Scan() at runtime as fallback.", this);
-            AstarPath.active.Scan();
-        }
-
-        private void ApplySpawnAnchors(Scene mapScene, TestLevelUnitController targetController)
-        {
-            if (targetController == null)
-            {
-                return;
-            }
-
-            Transform playerSpawn = null;
-            Transform enemySpawn = null;
-            if (mapScene.IsValid() && mapScene.isLoaded)
-            {
-                var roots = mapScene.GetRootGameObjects();
-                for (var i = 0; i < roots.Length; i++)
-                {
-                    var spawnPoints = roots[i].GetComponentsInChildren<CombatSpawnPoint>(true);
-                    for (var j = 0; j < spawnPoints.Length; j++)
-                    {
-                        var spawnPoint = spawnPoints[j];
-                        if (spawnPoint.Side == CombatSpawnSide.Player && playerSpawn == null)
-                        {
-                            playerSpawn = spawnPoint.transform;
-                        }
-                        else if (spawnPoint.Side == CombatSpawnSide.Enemy && enemySpawn == null)
-                        {
-                            enemySpawn = spawnPoint.transform;
-                        }
-
-                        if (playerSpawn != null && enemySpawn != null)
-                        {
-                            break;
-                        }
-                    }
-
-                    if (playerSpawn != null && enemySpawn != null)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            if (playerSpawn != null && enemySpawn != null)
-            {
-                targetController.SetSpawnAnchors(playerSpawn, enemySpawn);
-            }
-            else
-            {
-                Debug.LogWarning("Combat map scene did not provide both player and enemy spawn points.", this);
-            }
-        }
-
     }
 }

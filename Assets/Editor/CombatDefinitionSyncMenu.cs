@@ -158,19 +158,46 @@ namespace IronKingdoms.Editor
 
         private static CombatAbilityDefinition[] SyncAbilities()
         {
-            var headhunter = GetOrCreateAsset<CombatAbilityDefinition>($"{AbilitiesFolder}/Headhunter.asset");
-            var serializedAbility = new SerializedObject(headhunter);
-            serializedAbility.FindProperty("abilityId").stringValue = "Headhunter";
-            serializedAbility.FindProperty("displayName").stringValue = "Headhunter";
-            serializedAbility.FindProperty("description").stringValue =
-                "This model ignores forests when determining line of sight. While completely in a forest, this model gains +2 DEF against melee attack rolls.";
-            serializedAbility.FindProperty("ignoresForestForLineOfSight").boolValue = true;
+            var headhunter = SyncAbility(
+                $"{AbilitiesFolder}/Headhunter.asset",
+                "Headhunter",
+                "Headhunter",
+                "This model ignores forests when determining line of sight. While completely in a forest, this model gains +2 DEF against melee attack rolls.",
+                ignoresForestForLineOfSight: true,
+                meleeDefenseBonusWhileCompletelyInside: 2);
+
+            var treewalker = SyncAbility(
+                $"{AbilitiesFolder}/Treewalker.asset",
+                "Treewalker",
+                "Treewalker",
+                "This model ignores forests when determining line of sight.",
+                ignoresForestForLineOfSight: true,
+                meleeDefenseBonusWhileCompletelyInside: 0);
+
+            return new[] { headhunter, treewalker };
+        }
+
+        private static CombatAbilityDefinition SyncAbility(
+            string path,
+            string abilityId,
+            string displayName,
+            string description,
+            bool ignoresForestForLineOfSight,
+            int meleeDefenseBonusWhileCompletelyInside,
+            int rangedDefenseBonusWhileCompletelyInside = 0)
+        {
+            var asset = GetOrCreateAsset<CombatAbilityDefinition>(path);
+            var serializedAbility = new SerializedObject(asset);
+            serializedAbility.FindProperty("abilityId").stringValue = abilityId;
+            serializedAbility.FindProperty("displayName").stringValue = displayName;
+            serializedAbility.FindProperty("description").stringValue = description;
+            serializedAbility.FindProperty("ignoresForestForLineOfSight").boolValue = ignoresForestForLineOfSight;
             serializedAbility.FindProperty("requiredTerrainFeatureId").stringValue = "Forest";
-            serializedAbility.FindProperty("meleeDefenseBonusWhileCompletelyInside").intValue = 2;
-            serializedAbility.FindProperty("rangedDefenseBonusWhileCompletelyInside").intValue = 0;
+            serializedAbility.FindProperty("meleeDefenseBonusWhileCompletelyInside").intValue = meleeDefenseBonusWhileCompletelyInside;
+            serializedAbility.FindProperty("rangedDefenseBonusWhileCompletelyInside").intValue = rangedDefenseBonusWhileCompletelyInside;
             serializedAbility.ApplyModifiedPropertiesWithoutUndo();
-            EditorUtility.SetDirty(headhunter);
-            return new[] { headhunter };
+            EditorUtility.SetDirty(asset);
+            return asset;
         }
 
         private static void SyncCatalog(

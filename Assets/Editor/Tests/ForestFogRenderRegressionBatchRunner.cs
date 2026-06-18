@@ -241,7 +241,7 @@ namespace IronKingdoms.Editor.Tests
             revealer.NumExtraIterations = 0;
             revealer.NumExtraRaysOnIteration = 0;
             revealer.ObstacleLayerMask = ~0;
-            revealer.ConfigureForUnit(null);
+            revealer.ConfigureForUnit((UnitTypeDefinition)null);
             revealer.GetComponent<CombatForestFogBlockerRing>()?.RebuildNow();
         }
 

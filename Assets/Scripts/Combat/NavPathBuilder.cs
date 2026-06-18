@@ -8,7 +8,7 @@ namespace IronKingdoms.Combat
 {
     /// <summary>
     /// MonoBehaviour that builds funnel-smoothed navmesh paths between two world-space positions.
-    /// Attach one instance to a scene GameObject (e.g. CombatFlowBootstrap) and reference it via
+    /// Attach one instance to a scene GameObject (e.g. the combat bootstrap object) and reference it via
     /// <see cref="TestLevelUnitController.navPathBuilder"/>.
     /// Call <see cref="RequestAsync"/> to kick off a non-blocking path request (e.g. during
     /// movement preview) or <see cref="BuildSync"/> for an immediate result (e.g. on click-confirm).

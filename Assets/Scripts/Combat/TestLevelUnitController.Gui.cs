@@ -163,6 +163,7 @@ namespace IronKingdoms.Combat
 
             if (selectedUnit == null)
             {
+                DrawTeamVisionHint();
                 DrawHoveredEnemyHealth();
                 return;
             }
@@ -180,10 +181,10 @@ namespace IronKingdoms.Combat
             GUILayout.Label($"HP: {selectedUnit.Health}/{selectedUnit.Definition.Stats.health}");
             GUILayout.Label(BuildHealthBoxes(selectedUnit.Health, selectedUnit.Definition.Stats.health));
             GUILayout.Label($"Speed: {selectedUnit.Definition.Stats.speed:0.0}  |  Move left: {selectedUnit.RemainingMovementThisTurn:0.0}\"");
-            DrawUnitTerrainStateDebug(selectedUnit);
-            DrawUnitDefenseModifierDebug(selectedUnit);
-            DrawUnitAbilityDebug(selectedUnit);
-            DrawUnitAdvantageDebug(selectedUnit);
+            Unit.DrawTerrainStateDebug(selectedUnit);
+            Unit.DrawDefenseModifierDebug(selectedUnit);
+            Unit.DrawAbilityDebug(selectedUnit);
+            Unit.DrawAdvantageDebug(selectedUnit);
             GUILayout.Label($"Model Size: {selectedUnit.Definition.Stats.modelSize.DisplayName()}");
             var selectedWeapon = GetSelectedAttackWeapon(selectedUnit);
             GUILayout.Label($"Weapon: {selectedWeapon.DisplayName}");
@@ -197,6 +198,15 @@ namespace IronKingdoms.Combat
             var effectiveMat = selectedUnit.Definition.Stats.meleeAttack + selectedWeapon.MatModifier;
             var effectiveRat = selectedUnit.Definition.Stats.rangedAttack + selectedWeapon.RatModifier;
             GUILayout.Label($"Effective MAT: {effectiveMat}  |  Effective RAT: {effectiveRat}");
+            GUILayout.Space(6f);
+            if (GUILayout.Button("Team Vision (show all friendly fog)"))
+            {
+                if (!WasUiCancelTriggeredThisFrame())
+                {
+                    SelectUnit(null);
+                }
+            }
+
             GUILayout.EndScrollView();
             GUILayout.EndArea();
             DrawActionBar();
@@ -370,7 +380,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            if (UnitIgnoresRoughTerrainMovementCost(selectedUnit))
+            if (selectedUnit.IgnoresRoughTerrainMovementCost(selectedUnit, selectedMovementOption))
             {
                 GUILayout.Label($"Total Move: {stagedMoveAmountInches:0.0}\" (Pathfinder: rough terrain treated as open)");
             }
@@ -470,7 +480,7 @@ namespace IronKingdoms.Combat
         {
             var category = modifier.Definition.Category;
             var attackerIgnoresConcealment = selectedUnit?.Definition?.Stats != null
-                && selectedUnit.Definition.Stats.IgnoresConcealmentAndStealth();
+                && selectedUnit.IgnoresConcealmentAndStealth();
             var ignored = category == CombatDefenseModifierCategory.Concealment && attackerIgnoresConcealment;
             var color = ignored
                 ? new Color(0.6f, 0.6f, 0.6f)
@@ -511,7 +521,7 @@ namespace IronKingdoms.Combat
         {
             var baseDefense = hoveredEnemyUnit.Definition.Stats.defense;
             var effectiveDefense = selectedUnit != null && currentPlayerMode == UnitActionMode.Attack
-                ? GetEffectiveDefense(hoveredEnemyUnit, selectedUnit, GetSelectedAttackWeapon(selectedUnit))
+                ? hoveredEnemyUnit.GetEffectiveDefense(selectedUnit, GetSelectedAttackWeapon(selectedUnit))
                 : baseDefense;
             var defenseLabel = effectiveDefense != baseDefense
                 ? $"DEF: {baseDefense} -> {effectiveDefense} (mod)  |  ARM: {hoveredEnemyUnit.Definition.Stats.armor}"
@@ -527,11 +537,18 @@ namespace IronKingdoms.Combat
             }
 
             var weapon = GetSelectedAttackWeapon(selectedUnit);
-            if (!IsInLiveFogVision(GetLineOfSightVolume(hoveredEnemyUnit).SightPoint))
+            if (!IsInLiveFogVision(hoveredEnemyUnit.GetLineOfSightVolume().SightPoint))
             {
-                GUILayout.Label("Not in vision (fog of war)");
+                if (IsSpottedByAnyPlayerUnit(hoveredEnemyUnit))
+                {
+                    GUILayout.Label("Spotted by team (outside this unit's vision)");
+                }
+                else
+                {
+                    GUILayout.Label("Not in vision (fog of war)");
+                }
             }
-            else if (!IsWithinObserverVisibilityRange(selectedUnit, hoveredEnemyUnit))
+            else if (!selectedUnit.IsWithinVisibilityRangeOf(hoveredEnemyUnit))
             {
                 GUILayout.Label("Outside visibility range");
             }
@@ -539,15 +556,28 @@ namespace IronKingdoms.Combat
             {
                 GUILayout.Label("No line of sight");
             }
-            else if (IsTargetInRange(selectedUnit, hoveredEnemyUnit, weapon))
+            else if (selectedUnit.IsTargetInRange(hoveredEnemyUnit, weapon))
             {
-                var hitChance = CalculateHitChancePercent(selectedUnit, hoveredEnemyUnit, weapon);
+                var hitChance = Unit.CalculateHitChancePercent(selectedUnit, hoveredEnemyUnit, weapon);
                 GUILayout.Label($"Hit Chance: {hitChance:0}%");
             }
             else
             {
                 GUILayout.Label("Out of range");
             }
+        }
+
+        private void DrawTeamVisionHint()
+        {
+            if (activeTurnSide != TurnSide.Player)
+            {
+                return;
+            }
+
+            GUILayout.BeginArea(new Rect(SelectedUnitPanelOffsetX, Screen.height - 72f - SelectedUnitPanelOffsetY, SelectedUnitPanelWidth, 72f), "Vision", GUI.skin.window);
+            GUILayout.Label("Team vision — all friendly units reveal fog.");
+            GUILayout.Label("Select a unit to focus fog on that model only.");
+            GUILayout.EndArea();
         }
 
         private void DrawCombatLog()
