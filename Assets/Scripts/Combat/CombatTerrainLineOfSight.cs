@@ -231,7 +231,8 @@ namespace IronKingdoms.Combat
             Vector3 planarDirection,
             float maxDistanceWorld,
             float originRadius = 0f,
-            bool? rayStartedInsideOverride = null)
+            bool? rayStartedInsideOverride = null,
+            float neighborHalfAngleRadians = -1f)
         {
             var baseClip = GetFogClipDistanceWorldUnsmoothed(
                 origin,
@@ -252,7 +253,9 @@ namespace IronKingdoms.Combat
 
             dir.Normalize();
             var angle = Mathf.Atan2(dir.y, dir.x);
-            var halfStep = (Mathf.PI * 2f) / AngularSmoothingSamples * 0.5f;
+            var halfStep = neighborHalfAngleRadians > 1e-6f
+                ? neighborHalfAngleRadians
+                : (Mathf.PI * 2f) / AngularSmoothingSamples * 0.5f;
             var leftDir = new Vector3(Mathf.Cos(angle - halfStep), 0f, Mathf.Sin(angle - halfStep));
             var rightDir = new Vector3(Mathf.Cos(angle + halfStep), 0f, Mathf.Sin(angle + halfStep));
 
@@ -301,13 +304,14 @@ namespace IronKingdoms.Combat
             }
 
             var rayStartedInside = rayStartedInsideOverride
-                ?? IsInsideBlockingTerrain(origin, originRadius);
+                ?? RayStartsInsideBlockingTerrain(origin, planarDirection, originRadius);
             return ComputeFirstContactDepthClipCandidate(
                 origin,
                 planarDirection,
                 maxDistanceWorld,
                 depthLimitWorld,
-                rayStartedInside);
+                rayStartedInside,
+                originRadius);
         }
 
         private static float Median3(float a, float b, float c)
@@ -361,13 +365,47 @@ namespace IronKingdoms.Combat
             Vector3 planarDirection,
             float maxDistanceWorld,
             float depthLimitWorld,
-            bool rayStartedInside)
+            bool rayStartedInside,
+            float originRadius = 0f)
         {
             origin.y = 0f;
+            originRadius = Mathf.Max(0f, originRadius);
             var cursor = 0f;
             const float advanceEpsilon = 0.001f;
             var thinZoneEpsilon = CombatScale.InchesToWorldUnits(0.05f);
             var boundaryClearanceWorld = CombatScale.InchesToWorldUnits(BoundaryClearanceInches);
+
+            if (rayStartedInside)
+            {
+                var exitFromUnit = FindBlockingTerrainExitAlongRay(
+                    origin,
+                    originRadius,
+                    planarDirection,
+                    maxDistanceWorld);
+
+                if (exitFromUnit < 0f)
+                {
+                    return TryFinalizeClipDistance(
+                        origin,
+                        planarDirection,
+                        depthLimitWorld,
+                        maxDistanceWorld,
+                        exitFromContact: -1f);
+                }
+
+                if (exitFromUnit > depthLimitWorld + thinZoneEpsilon)
+                {
+                    return TryFinalizeClipDistance(
+                        origin,
+                        planarDirection,
+                        depthLimitWorld,
+                        maxDistanceWorld,
+                        exitFromUnit);
+                }
+
+                cursor = exitFromUnit + advanceEpsilon;
+                rayStartedInside = false;
+            }
 
             while (cursor < maxDistanceWorld - advanceEpsilon)
             {
@@ -375,7 +413,8 @@ namespace IronKingdoms.Combat
                     origin,
                     planarDirection,
                     cursor,
-                    maxDistanceWorld);
+                    maxDistanceWorld,
+                    originRadius);
                 if (entryDistance < 0f)
                 {
                     return maxDistanceWorld;
@@ -452,13 +491,38 @@ namespace IronKingdoms.Combat
             return maxDistanceWorld;
         }
 
+        private static bool RayStartsInsideBlockingTerrain(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float originRadius = 0f)
+        {
+            _ = originRadius;
+            origin.y = 0f;
+            planarDirection.y = 0f;
+            if (planarDirection.sqrMagnitude > 1e-6f)
+            {
+                planarDirection.Normalize();
+            }
+
+            if (IsInsideBlockingTerrain(origin))
+            {
+                return true;
+            }
+
+            var step = CombatScale.InchesToWorldUnits(0.05f);
+            return IsInsideBlockingTerrain(origin + planarDirection * step);
+        }
+
         private static float FindNextBlockingTerrainEntryDistance(
             Vector3 origin,
             Vector3 planarDirection,
             float searchStart,
-            float maxDistanceWorld)
+            float maxDistanceWorld,
+            float originRadius = 0f)
         {
-            if (searchStart <= 0.001f && IsInsideBlockingTerrain(origin))
+            originRadius = Mathf.Max(0f, originRadius);
+            if (searchStart <= 0.001f
+                && RayStartsInsideBlockingTerrain(origin, planarDirection, originRadius))
             {
                 return 0f;
             }
@@ -487,6 +551,21 @@ namespace IronKingdoms.Combat
             }
 
             return -1f;
+        }
+
+        private static float FindBlockingTerrainExitAlongRay(
+            Vector3 origin,
+            float originRadius,
+            Vector3 planarDirection,
+            float maxDistanceWorld)
+        {
+            origin.y = 0f;
+            if (!RayStartsInsideBlockingTerrain(origin, planarDirection, originRadius))
+            {
+                return -1f;
+            }
+
+            return FindFirstOutsideDistanceFromInside(origin, planarDirection, maxDistanceWorld);
         }
 
         private static float FindFirstOutsideDistanceFromInside(

@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace IronKingdoms.Combat
 {
-    [DefaultExecutionOrder(200)]
+    [DefaultExecutionOrder(-150)]
     public partial class TestLevelUnitController : MonoBehaviour
     {
         private const float AiInRangeTolerance = 0.95f;
@@ -81,6 +81,10 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
         [SerializeField, Min(1)] private int maxFogRevealersPerFrame = 12;
         [SerializeField] private bool debugUseCrispFogRendering = true;
+        [SerializeField] private bool debugUseForestFogPass = true;
+        [SerializeField] private bool debugShowWallBaselineProof = false;
+        [SerializeField] private bool debugShowShaderUploadPolygons = false;
+        [SerializeField] private bool debugShowFogTextureBoundary = false;
         [SerializeField] private bool autoSpawnOnStart = true;
         private MatchArmySpawner matchArmySpawner;
 
@@ -110,6 +114,7 @@ namespace IronKingdoms.Combat
         private readonly List<string> combatLog = new();
         private Vector2 combatLogScrollPosition;
         private Vector2 selectedUnitPanelScrollPosition;
+        private readonly CombatFogTextureBoundaryDrawer fogTextureBoundaryDrawer = new();
         private GUIStyle floatingDamageStyle;
         private GUIStyle floatingDamageShadowStyle;
         private GUIStyle coverPopupStyle;
@@ -141,6 +146,7 @@ namespace IronKingdoms.Combat
         private int losDirtyVersion;
         private int losCachedVersion = -1;
         private bool playerFogRevealerActivationDirty;
+        private bool fogRevealerSettingsDirty;
 
         private void Awake()
         {
@@ -151,6 +157,7 @@ namespace IronKingdoms.Combat
             EnsureFogOfWarWorldAssigned();
             ConfigureFogOfWarWorld();
             EnsureFogOfWarCameraEffectAssigned();
+            CombatForestFogPassSettings.UseForestPass = debugUseForestFogPass;
         }
 
         private void Start()
@@ -201,16 +208,50 @@ namespace IronKingdoms.Combat
             }
 
             var fow = FogOfWarWorld.instance;
-            if (fow != null && fow.IsInPhasedUpdate)
+            if (fow == null || !fow.IsInPhasedUpdate)
             {
+                var fogChanged = SyncPlayerFogRevealerActivation();
+                if (fogChanged || playerFogRevealerActivationDirty)
+                {
+                    UpdateFogOfWarVisibility();
+                }
+
+                if (fogRevealerSettingsDirty)
+                {
+                    fogRevealerSettingsDirty = false;
+                    RefreshAllFogRevealersAfterForestPassToggle();
+                }
+            }
+
+            DrawFogTextureBoundaryDebugIfNeeded();
+        }
+
+        private void DrawFogTextureBoundaryDebugIfNeeded()
+        {
+            fogTextureBoundaryDrawer.SetLineParent(transform);
+
+            if (!debugShowFogTextureBoundary || selectedUnit == null)
+            {
+                fogTextureBoundaryDrawer.ClearGameViewLines();
                 return;
             }
 
-            var fogChanged = SyncPlayerFogRevealerActivation();
-            if (fogChanged || playerFogRevealerActivationDirty)
+            if (FogOfWarWorld.instance == null)
             {
-                UpdateFogOfWarVisibility();
+                fogTextureBoundaryDrawer.ClearGameViewLines();
+                return;
             }
+
+            var revealer = GetFogRevealer(selectedUnit);
+            if (revealer == null || !revealer.isActiveAndEnabled)
+            {
+                fogTextureBoundaryDrawer.ClearGameViewLines();
+                return;
+            }
+
+            fogTextureBoundaryDrawer.DrawEffectiveFogBoundaryAroundRevealer(
+                revealer,
+                boundaryColor: new Color(1f, 0.85f, 0.1f, 1f));
         }
 
         private void MarkPlayerFogRevealerActivationDirty()
@@ -962,6 +1003,7 @@ namespace IronKingdoms.Combat
                     }
 
                     unit.Pawn.transform.position = nextPosition;
+                    NotifyFogRevealerMoved(unit);
                     losDirtyVersion++;
                     var movementCost = unit.CalculateMovementCostForSegmentInInches(
                         currentPosition, nextPosition, selectedUnit, selectedMovementOption, unitRadius);
@@ -1550,6 +1592,7 @@ namespace IronKingdoms.Combat
             UpdateNavGraphGizmoVisibility(selectedUnit);
             MarkPlayerFogRevealerActivationDirty();
             TryApplyPlayerFogRevealerActivationIfSafe();
+            SyncWallBaselineProofOnRevealers();
             UpdateFogOfWarVisibility();
         }
 
@@ -1558,6 +1601,15 @@ namespace IronKingdoms.Combat
             return unit?.Pawn != null
                 ? unit.Pawn.GetComponentInChildren<CombatFogOfWarRevealer3D>(true)
                 : null;
+        }
+
+        private static void NotifyFogRevealerMoved(Unit unit)
+        {
+            var revealer = GetFogRevealer(unit);
+            if (revealer != null && revealer.isActiveAndEnabled)
+            {
+                revealer.NotifyPawnMoved();
+            }
         }
 
         /// <summary>
@@ -1613,6 +1665,8 @@ namespace IronKingdoms.Combat
 
         private void RefreshActivePlayerFogRevealers()
         {
+            var fow = FogOfWarWorld.instance;
+
             for (var i = 0; i < playerRuntimeUnits.Count; i++)
             {
                 var revealer = GetFogRevealer(playerRuntimeUnits[i]);
@@ -1622,15 +1676,80 @@ namespace IronKingdoms.Combat
                 }
 
                 revealer.SetRevealerAsStatic(false);
+                if (!revealer.IsContributingToFog)
+                {
+                    continue;
+                }
+
+                if (fow != null && !fow.IsInPhasedUpdate)
+                {
+                    revealer.ManualCalculateLineOfSight();
+                }
+                else
+                {
+                    revealer.RequestLineOfSightRecalculation();
+                }
             }
 
-            var fow = FogOfWarWorld.instance;
             if (fow == null || fow.IsInPhasedUpdate || fow.FOWSamplingMode != FogOfWarWorld.FogSampleMode.Texture)
             {
                 return;
             }
 
             fow.RenderFogTexture();
+        }
+
+        private void SyncWallBaselineProofOnRevealers()
+        {
+            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            {
+                var revealer = GetFogRevealer(allRuntimeUnits[i]);
+                if (revealer == null)
+                {
+                    continue;
+                }
+
+                var isSelected = selectedUnit != null && ReferenceEquals(allRuntimeUnits[i], selectedUnit);
+                revealer.DrawWallBaselineProof = debugShowWallBaselineProof && isSelected;
+                revealer.DrawShaderUploadPolygons = debugShowShaderUploadPolygons && isSelected;
+            }
+        }
+
+        private void MarkFogRevealerSettingsDirty()
+        {
+            fogRevealerSettingsDirty = true;
+        }
+
+        private void RefreshAllFogRevealersAfterForestPassToggle()
+        {
+            SyncWallBaselineProofOnRevealers();
+            var fow = FogOfWarWorld.instance;
+            if (fow == null || fow.IsInPhasedUpdate)
+            {
+                return;
+            }
+
+            for (var i = 0; i < allRuntimeUnits.Count; i++)
+            {
+                var revealer = GetFogRevealer(allRuntimeUnits[i]);
+                if (revealer == null || !revealer.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
+                revealer.SetRevealerAsStatic(false);
+                if (!revealer.IsContributingToFog)
+                {
+                    continue;
+                }
+
+                revealer.ManualCalculateLineOfSight();
+            }
+
+            if (fow.FOWSamplingMode == FogOfWarWorld.FogSampleMode.Texture)
+            {
+                fow.RenderFogTexture();
+            }
         }
 
         private bool IsSpottedByAnyPlayerUnit(Unit target)
@@ -1798,8 +1917,8 @@ namespace IronKingdoms.Combat
 
         private float GetLiveFogVisibilityThreshold()
         {
-            // Shroud regrows to fogExploredShroudVisibility (~0.35); live vision is ~1.0.
-            return Mathf.Max(0.5f, fogExploredShroudVisibility + 0.12f);
+            // Without regrow, texture visibility is binary (0 = fogged, 1 = lit).
+            return 0.5f;
         }
 
         private bool HasLineOfSight(Unit observer, Unit target)

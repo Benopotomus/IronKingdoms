@@ -456,17 +456,20 @@ namespace FOW
             RevealerInfoStruct.Opacity = opacity;
 
             RevealerInfoStruct.UseOcclusion = (useOcclusion ? 1 : 0);
+            RevealerInfoStruct.CircleIsComplete = CircleIsComplete ? 1 : 0;
 
             FogOfWarWorld.instance.UpdateRevealerInfo(RevealerGPUDataPosition, RevealerInfoStruct);
         }
 
         //sends data to FogOfWarWorld to be uploaded to the shader
-        protected void ApplyData()
+        protected virtual void ApplyData()
         {
             RevealerDataStruct.RevealerPosition = RevealerPosition;
             RevealerDataStruct.RevealerHeight = RevealerHeightPosition + ShaderEyeOffset;
             RevealerDataStruct.NumSegments = NumberOfPoints;
 
+            RevealerInfoStruct.NumTerrainClipSegments = 0;
+            FogOfWarWorld.instance.UpdateRevealerInfo(RevealerGPUDataPosition, RevealerInfoStruct);
             FogOfWarWorld.instance.UpdateRevealerData(RevealerGPUDataPosition, RevealerDataStruct, NumberOfPoints, OutputDirections, OutputDistances);
             SparseRevealerGrid.UpdateRevealerBuckets(this, RevealerPosition);
         }

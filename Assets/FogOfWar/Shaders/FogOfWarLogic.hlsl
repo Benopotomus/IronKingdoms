@@ -20,6 +20,8 @@ struct RevealerInfoStruct
     float revealerOpacity;
 
     bool useOcclusion;
+    int numTerrainClipSegments;
+    int circleIsComplete;
 };
 
 struct RevealerDataStruct
@@ -337,31 +339,35 @@ int GetCellHash(int2 cell)
     return h % _TableSize;
 }
 
-#if FOW_HARD
+const float FOW_WALL_BLOCK_EPSILON = 0.01;
 
-void LoopRevealerHardFog(RevealerInfoStruct revealerInfo, RevealerDataStruct revealerData, float2 relativePosition, float distToRevealerOrigin, int numSegments, float totalRevealerRadius, inout float RevealerOut)
+// Stock sight-mesh limit (same wedge/chord rules as LoopRevealerHardFog).
+bool TryComputeSightMeshDistanceLimit(
+    int baseIndex,
+    int numSegments,
+    float2 relativePosition,
+    float distToRevealerOrigin,
+    float totalRevealerRadius,
+    float unobscuredRadius,
+    out float distLimit)
 {
+    distLimit = totalRevealerRadius + 1.0;
+    if (numSegments < 2)
+        return false;
+
     float2 toPixelDir = relativePosition / distToRevealerOrigin;
-    
-    int baseIndex = revealerInfo.startIndex;
     RevealerSightSegment previousCone = _SightSegmentBuffer[baseIndex];
     float crossPrev = toPixelDir.x * previousCone.segmentDirection.y - toPixelDir.y * previousCone.segmentDirection.x;
-    //bool cutShortPrev = previousCone.length <= totalRevealerRadius;
-    
+
     for (int c = 1; c < numSegments; c++)
     {
         RevealerSightSegment currentCone = _SightSegmentBuffer[baseIndex + c];
-        
         float crossCurr = toPixelDir.x * currentCone.segmentDirection.y - toPixelDir.y * currentCone.segmentDirection.x;
-        //bool cutShortCurr = currentCone.length <= totalRevealerRadius;
-
         bool inCone = (crossPrev <= 0) && (crossCurr >= 0);
-        
+
         if (inCone)
         {
             float DistToSegmentEnd = currentCone.length;
-
-            //if (previousCone.cutShort && currentCone.cutShort)
             bool cutShortPrev = previousCone.length <= totalRevealerRadius;
             bool cutShortCurr = currentCone.length <= totalRevealerRadius;
             if (cutShortPrev && cutShortCurr)
@@ -369,32 +375,271 @@ void LoopRevealerHardFog(RevealerInfoStruct revealerInfo, RevealerDataStruct rev
                 float2 start = previousCone.segmentDirection * previousCone.length;
                 float2 end = currentCone.segmentDirection * currentCone.length;
                 float distSq = dot(end - start, end - start);
-
-                const float reqDistSq = 0.0225; // 0.15^2
+                const float reqDistSq = 0.0225;
                 if (distSq > reqDistSq)
                 {
                     float2 intersection = CalculateIntersectionCramersRule(start, end, relativePosition);
                     DistToSegmentEnd = length(intersection);
                     DistToSegmentEnd += _extraRadius;
-
-                    #ifdef FOW_BLEED_ON
-                    CalculateFogBleed(start, end, relativePosition, intersection, DistToSegmentEnd);
-                    #endif
                 }
             }
-            
-            DistToSegmentEnd = max(DistToSegmentEnd, revealerInfo.unobscuredRadius);
-                    
-            if (distToRevealerOrigin < DistToSegmentEnd)
-            {
-                RevealerOut = 1;
-                return;
-            }
+
+            distLimit = max(DistToSegmentEnd, unobscuredRadius);
+            return true;
         }
 
         crossPrev = crossCurr;
-        //cutShortPrev = cutShortCurr;
         previousCone = currentCone;
+    }
+
+    return false;
+}
+
+bool TerrainUploadRayIsOpen(RevealerSightSegment segment, float totalRevealerRadius)
+{
+    return segment.length > totalRevealerRadius - FOW_WALL_BLOCK_EPSILON;
+}
+
+// Uniform angular clipper LUT (same samples as yellow debug contour).
+bool TryComputeTerrainClipDistanceLimit(
+    int baseIndex,
+    int numSegments,
+    float2 relativePosition,
+    float distToRevealerOrigin,
+    float totalRevealerRadius,
+    float unobscuredRadius,
+    out float distLimit)
+{
+    distLimit = totalRevealerRadius + 1.0;
+    if (numSegments < 2)
+        return false;
+
+    float2 toPixelDir = relativePosition / distToRevealerOrigin;
+    float angle = atan2(toPixelDir.y, toPixelDir.x);
+    if (angle < 0.0)
+        angle += 6.28318530718;
+
+    const float twoPi = 6.28318530718;
+    float sampleIndex = angle * ((float)numSegments / twoPi);
+    int i0 = ((int)floor(sampleIndex)) % numSegments;
+    int i1 = (i0 + 1) % numSegments;
+    float t = frac(sampleIndex);
+
+    float len0 = _SightSegmentBuffer[baseIndex + i0].length;
+    float len1 = _SightSegmentBuffer[baseIndex + i1].length;
+    float clip = lerp(len0, len1, t);
+
+    if (clip > totalRevealerRadius - FOW_WALL_BLOCK_EPSILON)
+        return false;
+
+    distLimit = max(clip, unobscuredRadius);
+    return true;
+}
+
+// Terrain only tightens visibility; never expand past the baseline limit.
+void MinTerrainClipIntoDistance(
+    RevealerInfoStruct revealerInfo,
+    int numBaselineSegments,
+    float2 relativePosition,
+    float distToRevealerOrigin,
+    float totalRevealerRadius,
+    float unobscuredRadius,
+    inout float distLimit)
+{
+    if (revealerInfo.numTerrainClipSegments <= 0)
+        return;
+
+    float terrainLimit;
+    if (TryComputeTerrainClipDistanceLimit(
+            revealerInfo.startIndex + numBaselineSegments,
+            revealerInfo.numTerrainClipSegments,
+            relativePosition,
+            distToRevealerOrigin,
+            totalRevealerRadius,
+            unobscuredRadius,
+            terrainLimit)
+        && terrainLimit <= totalRevealerRadius - FOW_WALL_BLOCK_EPSILON)
+    {
+        distLimit = min(distLimit, max(terrainLimit, unobscuredRadius));
+    }
+}
+
+float ComputeTerrainOnlyVisibilityLimit(
+    RevealerInfoStruct revealerInfo,
+    float2 relativePosition,
+    float distToRevealerOrigin,
+    float totalRevealerRadius,
+    float unobscuredRadius)
+{
+    float distLimit = totalRevealerRadius + 1.0;
+    MinTerrainClipIntoDistance(
+        revealerInfo,
+        0,
+        relativePosition,
+        distToRevealerOrigin,
+        totalRevealerRadius,
+        unobscuredRadius,
+        distLimit);
+    return distLimit;
+}
+
+#if FOW_SOFT
+bool TryComputeSightMeshDistanceLimitSoft(
+    int baseIndex,
+    int numSegments,
+    float2 relativePosition,
+    float distToRevealerOrigin,
+    float totalRevealerRadius,
+    float unobscuredRadius,
+    float revealerRadius,
+    out float distLimit)
+{
+    distLimit = totalRevealerRadius + 1.0;
+    if (numSegments < 2)
+        return false;
+
+    float2 toPixelDir = relativePosition / distToRevealerOrigin;
+    RevealerSightSegment previousCone = _SightSegmentBuffer[baseIndex];
+    float crossPrev = toPixelDir.x * previousCone.segmentDirection.y - toPixelDir.y * previousCone.segmentDirection.x;
+
+    for (int c = 1; c < numSegments; c++)
+    {
+        RevealerSightSegment currentCone = _SightSegmentBuffer[baseIndex + c];
+        float crossCurr = toPixelDir.x * currentCone.segmentDirection.y - toPixelDir.y * currentCone.segmentDirection.x;
+        bool inCone = (crossPrev <= 0) && (crossCurr >= 0);
+
+        if (inCone)
+        {
+            float currConeLength = min(totalRevealerRadius, currentCone.length);
+            float DistToSegmentEnd = currConeLength;
+            bool cutShortPrev = previousCone.length <= totalRevealerRadius;
+            bool cutShortCurr = currentCone.length <= totalRevealerRadius;
+            if (cutShortPrev && cutShortCurr)
+            {
+                float prevConeLength = min(totalRevealerRadius, previousCone.length);
+                float2 start = previousCone.segmentDirection * prevConeLength;
+                float2 end = currentCone.segmentDirection * currConeLength;
+                float distSq = dot(end - start, end - start);
+                const float reqDist = .15;
+                if (distSq > reqDist * reqDist)
+                {
+                    float2 intersection = CalculateIntersectionCramersRule(start, end, relativePosition);
+                    DistToSegmentEnd = length(intersection);
+                    DistToSegmentEnd = min(max(prevConeLength, currConeLength), DistToSegmentEnd);
+                    DistToSegmentEnd += _extraRadius;
+                }
+            }
+
+            distLimit = max(DistToSegmentEnd, unobscuredRadius);
+            distLimit = min(distLimit, revealerRadius);
+            return true;
+        }
+
+        crossPrev = crossCurr;
+        previousCone = currentCone;
+    }
+
+    return false;
+}
+#endif
+
+#if FOW_HARD
+
+void ProcessHardFogWedge(
+    RevealerSightSegment previousCone,
+    RevealerSightSegment currentCone,
+    float2 relativePosition,
+    float2 toPixelDir,
+    float distToRevealerOrigin,
+    RevealerInfoStruct revealerInfo,
+    int numSegments,
+    float totalRevealerRadius,
+    inout float RevealerOut)
+{
+    float crossPrev = toPixelDir.x * previousCone.segmentDirection.y - toPixelDir.y * previousCone.segmentDirection.x;
+    float crossCurr = toPixelDir.x * currentCone.segmentDirection.y - toPixelDir.y * currentCone.segmentDirection.x;
+    bool inCone = (crossPrev <= 0) && (crossCurr >= 0);
+    if (!inCone)
+        return;
+
+    float DistToSegmentEnd = currentCone.length;
+
+    bool cutShortPrev = previousCone.length <= totalRevealerRadius;
+    bool cutShortCurr = currentCone.length <= totalRevealerRadius;
+    if (cutShortPrev && cutShortCurr)
+    {
+        float2 start = previousCone.segmentDirection * previousCone.length;
+        float2 end = currentCone.segmentDirection * currentCone.length;
+        float distSq = dot(end - start, end - start);
+
+        const float reqDistSq = 0.0225; // 0.15^2
+        if (distSq > reqDistSq)
+        {
+            float2 intersection = CalculateIntersectionCramersRule(start, end, relativePosition);
+            DistToSegmentEnd = length(intersection);
+            DistToSegmentEnd += _extraRadius;
+
+            #ifdef FOW_BLEED_ON
+            CalculateFogBleed(start, end, relativePosition, intersection, DistToSegmentEnd);
+            #endif
+        }
+    }
+
+    DistToSegmentEnd = max(DistToSegmentEnd, revealerInfo.unobscuredRadius);
+    MinTerrainClipIntoDistance(
+        revealerInfo,
+        numSegments,
+        relativePosition,
+        distToRevealerOrigin,
+        totalRevealerRadius,
+        revealerInfo.unobscuredRadius,
+        DistToSegmentEnd);
+
+    if (distToRevealerOrigin < DistToSegmentEnd)
+    {
+        RevealerOut = 1;
+    }
+}
+
+void LoopRevealerHardFog(RevealerInfoStruct revealerInfo, RevealerDataStruct revealerData, float2 relativePosition, float distToRevealerOrigin, int numSegments, float totalRevealerRadius, inout float RevealerOut)
+{
+    float2 toPixelDir = relativePosition / distToRevealerOrigin;
+    
+    int baseIndex = revealerInfo.startIndex;
+    RevealerSightSegment previousCone = _SightSegmentBuffer[baseIndex];
+    
+    for (int c = 1; c < numSegments; c++)
+    {
+        RevealerSightSegment currentCone = _SightSegmentBuffer[baseIndex + c];
+        ProcessHardFogWedge(
+            previousCone,
+            currentCone,
+            relativePosition,
+            toPixelDir,
+            distToRevealerOrigin,
+            revealerInfo,
+            numSegments,
+            totalRevealerRadius,
+            RevealerOut);
+
+        if (IsOne(RevealerOut))
+            return;
+
+        previousCone = currentCone;
+    }
+
+    if (revealerInfo.circleIsComplete != 0 && numSegments >= 2)
+    {
+        ProcessHardFogWedge(
+            _SightSegmentBuffer[baseIndex + numSegments - 1],
+            _SightSegmentBuffer[baseIndex],
+            relativePosition,
+            toPixelDir,
+            distToRevealerOrigin,
+            revealerInfo,
+            numSegments,
+            totalRevealerRadius,
+            RevealerOut);
     }
 }
 
@@ -457,9 +702,21 @@ void FOW_Hard(float2 Position, float height, out float Out)
         float RevealerOut = 0;
 
         int numSegments = revealerData.numSegments;
-        if (numSegments == 0)  //special condition - revealer has no occlusion, and is full circle
+        if (numSegments == 0)  // full circle with no wall hits — still apply terrain clip
         {
-            RevealerOut = 1;
+            if (distToRevealerOrigin < revealerInfo.unobscuredRadius)
+                RevealerOut = 1;
+            else
+            {
+                float distLimit = ComputeTerrainOnlyVisibilityLimit(
+                    revealerInfo,
+                    relativePosition,
+                    distToRevealerOrigin,
+                    revealerData.totalRevealerRadius,
+                    revealerInfo.unobscuredRadius);
+                if (distToRevealerOrigin < distLimit)
+                    RevealerOut = 1;
+            }
         }
         else
         {
@@ -687,6 +944,15 @@ void LoopRevealerSoftFog(RevealerInfoStruct revealerInfo, RevealerDataStruct rev
             DistToSegmentEnd = max(DistToSegmentEnd, revealerInfo.unobscuredRadius);
             DistToSegmentEnd = min(DistToSegmentEnd, revealerInfo.revealerRadius);
 
+            MinTerrainClipIntoDistance(
+                revealerInfo,
+                numSegments,
+                relativePosition,
+                distToRevealerOrigin,
+                totalRevealerRadius,
+                revealerInfo.unobscuredRadius,
+                DistToSegmentEnd);
+
             if (distToRevealerOrigin < DistToSegmentEnd + _fadeOutDistance)
             {
                 float revVal = SmoothValue(CalculateFadeZonePercent(DistToSegmentEnd, _fadeOutDistance, distToRevealerOrigin));
@@ -779,9 +1045,18 @@ void FOW_Soft(float2 Position, float height, out float Out)
         }
 
         int numSegments = revealerData.numSegments;
-        if (numSegments == 0)  //special condition - revealer has no occlusion, and is full circle
-        { 
-            RevealerOut = max(RevealerOut, SmoothValue(CalculateFadeZonePercent(revealerInfo.revealerRadius, revealerInfo.revealerFadeDistance, distToRevealerOrigin)));
+        if (numSegments == 0)  // full circle with no wall hits — still apply terrain clip
+        {
+            float visibilityLimit = revealerInfo.revealerRadius;
+            MinTerrainClipIntoDistance(
+                revealerInfo,
+                0,
+                relativePosition,
+                distToRevealerOrigin,
+                maxPossibleDistance,
+                revealerInfo.unobscuredRadius,
+                visibilityLimit);
+            RevealerOut = max(RevealerOut, SmoothValue(CalculateFadeZonePercent(visibilityLimit, revealerInfo.revealerFadeDistance, distToRevealerOrigin)));
         }
         else
         {

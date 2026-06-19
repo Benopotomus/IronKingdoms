@@ -99,13 +99,11 @@ namespace IronKingdoms.Combat
             fogOfWarWorld.PixelateFog = false;
             fogOfWarWorld.RoundRevealerPosition = false;
 
-            // Texture storage + regrow keeps explored-but-out-of-sight areas dimmed (shroud)
-            // while never-visited areas stay fully black.
-            fogOfWarWorld.UseRegrow = true;
+            // Texture storage without regrow: _FowRT mirrors live LOS each frame only.
+            fogOfWarWorld.UseRegrow = false;
             fogOfWarWorld.RevealerFadeIn = false;
             fogOfWarWorld.RevealerFadeOut = false;
             fogOfWarWorld.InitialFogExplorationValue = 0f;
-            fogOfWarWorld.MaxFogRegrowAmount = fogExploredShroudVisibility;
             fogOfWarWorld.MaxPossibleSegmentsPerRevealer = 1000;
             fogOfWarWorld.UseConstantBlur = false;
             fogOfWarWorld.FogType = debugUseCrispFogRendering
@@ -137,6 +135,13 @@ namespace IronKingdoms.Combat
             fogOfWarWorld.SwitchHidersUseFogTextureMode(fogOfWarWorld.HidersUseFogTexture);
             fogOfWarWorld.UpdateAllShaderProperties();
             FogOfWarWorld.SetFowEffectStrength(1f);
+            fogOfWarWorld.SetFowTextureFilterMode(FilterMode.Point);
+
+            var displayTuning = fogOfWarWorld.GetComponent<CombatFogProjectionTuning>();
+            if (displayTuning != null)
+            {
+                Destroy(displayTuning);
+            }
 
             // Segment budget is consumed during FogOfWarWorld.Initialize(); if we raised it
             // after initialization, reinitialize once so new buffers are allocated.
@@ -146,6 +151,7 @@ namespace IronKingdoms.Combat
             {
                 fogOfWarWorld.enabled = false;
                 fogOfWarWorld.enabled = true;
+                fogOfWarWorld.SetFowTextureFilterMode(FilterMode.Point);
             }
         }
 
@@ -157,8 +163,19 @@ namespace IronKingdoms.Combat
                 activeCamera = Camera.main;
             }
 
-            if (activeCamera == null
-                || activeCamera.GetComponent<FowImageEffectOpaque>() != null
+            if (activeCamera == null)
+            {
+                return;
+            }
+
+            // Debug calibrator adds a second ImageEffectOpaque pass; keep it off the gameplay camera.
+            var calibrator = activeCamera.GetComponent<CombatFogProjectionCalibrator>();
+            if (calibrator != null)
+            {
+                Destroy(calibrator);
+            }
+
+            if (activeCamera.GetComponent<FowImageEffectOpaque>() != null
                 || activeCamera.GetComponent<FowImageEffect>() != null)
             {
                 return;

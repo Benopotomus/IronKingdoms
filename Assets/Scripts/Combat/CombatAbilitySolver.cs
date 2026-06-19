@@ -7,48 +7,27 @@ namespace IronKingdoms.Combat
     {
         public CombatUnitTerrainState(
             bool isInRoughTerrain,
-            bool isCompletelyInForest,
-            bool isPartiallyInForest,
+            bool isInForest,
             CombatTerrainFeatureDefinition forestFeature,
-            bool isCompletelyInCloud,
-            bool isPartiallyInCloud,
+            bool isInCloud,
             CombatTerrainFeatureDefinition cloudFeature)
         {
             IsInRoughTerrain = isInRoughTerrain;
-            IsCompletelyInForest = isCompletelyInForest;
-            IsPartiallyInForest = isPartiallyInForest;
+            IsInForest = isInForest;
             ForestFeature = forestFeature;
-            IsCompletelyInCloud = isCompletelyInCloud;
-            IsPartiallyInCloud = isPartiallyInCloud;
+            IsInCloud = isInCloud;
             CloudFeature = cloudFeature;
         }
 
         public bool IsInRoughTerrain { get; }
-        public bool IsCompletelyInForest { get; }
-        public bool IsPartiallyInForest { get; }
+        public bool IsInForest { get; }
         public CombatTerrainFeatureDefinition ForestFeature { get; }
-        public bool IsCompletelyInCloud { get; }
-        public bool IsPartiallyInCloud { get; }
+        public bool IsInCloud { get; }
         public CombatTerrainFeatureDefinition CloudFeature { get; }
 
-        public string ForestStatusLabel => GetTerrainStatusLabel(IsCompletelyInForest, IsPartiallyInForest);
+        public string ForestStatusLabel => IsInForest ? "Inside" : "Outside";
 
-        public string CloudStatusLabel => GetTerrainStatusLabel(IsCompletelyInCloud, IsPartiallyInCloud);
-
-        private static string GetTerrainStatusLabel(bool isCompletelyInside, bool isPartiallyInside)
-        {
-            if (isCompletelyInside)
-            {
-                return "Completely inside";
-            }
-
-            if (isPartiallyInside)
-            {
-                return "Partially inside";
-            }
-
-            return "Open";
-        }
+        public string CloudStatusLabel => IsInCloud ? "Inside" : "Outside";
     }
 
     public readonly struct CombatActiveAbilityPassive
@@ -85,10 +64,8 @@ namespace IronKingdoms.Combat
             var forestFeature = ResolveForestFeature();
             var cloudFeature = ResolveCloudFeature();
             var isInRoughTerrain = false;
-            var isCompletelyInForest = false;
-            var isPartiallyInForest = false;
-            var isCompletelyInCloud = false;
-            var isPartiallyInCloud = false;
+            var isInForest = false;
+            var isInCloud = false;
 
             var activeZones = CombatZone.ActiveZones;
             for (var i = 0; i < activeZones.Count; i++)
@@ -105,38 +82,22 @@ namespace IronKingdoms.Combat
                     isInRoughTerrain = true;
                 }
 
-                if (forestFeature != null && feature == forestFeature)
+                if (forestFeature != null && feature == forestFeature && zone.IntersectsDisc(center, radius))
                 {
-                    if (zone.ContainsUnitCompletely(center, radius))
-                    {
-                        isCompletelyInForest = true;
-                    }
-                    else if (zone.IntersectsDisc(center, radius))
-                    {
-                        isPartiallyInForest = true;
-                    }
+                    isInForest = true;
                 }
 
-                if (cloudFeature != null && feature == cloudFeature)
+                if (cloudFeature != null && feature == cloudFeature && zone.IntersectsDisc(center, radius))
                 {
-                    if (zone.ContainsUnitCompletely(center, radius))
-                    {
-                        isCompletelyInCloud = true;
-                    }
-                    else if (zone.IntersectsDisc(center, radius))
-                    {
-                        isPartiallyInCloud = true;
-                    }
+                    isInCloud = true;
                 }
             }
 
             return new CombatUnitTerrainState(
                 isInRoughTerrain,
-                isCompletelyInForest,
-                isPartiallyInForest,
+                isInForest,
                 forestFeature,
-                isCompletelyInCloud,
-                isPartiallyInCloud,
+                isInCloud,
                 cloudFeature);
         }
 
@@ -314,7 +275,7 @@ namespace IronKingdoms.Combat
                     var inForest = IsAbilityTerrainRequirementMet(ability, terrainState);
                     results.Add(new CombatActiveAbilityPassive(
                         ability,
-                        $"+{ability.MeleeDefenseBonusWhileCompletelyInside} DEF vs melee attack rolls while completely in a forest",
+                        $"+{ability.MeleeDefenseBonusWhileCompletelyInside} DEF vs melee attack rolls while in a forest",
                         inForest));
                 }
 
@@ -323,7 +284,7 @@ namespace IronKingdoms.Combat
                     var inForest = IsAbilityTerrainRequirementMet(ability, terrainState);
                     results.Add(new CombatActiveAbilityPassive(
                         ability,
-                        $"+{ability.RangedDefenseBonusWhileCompletelyInside} DEF vs ranged attack rolls while completely in a forest",
+                        $"+{ability.RangedDefenseBonusWhileCompletelyInside} DEF vs ranged attack rolls while in a forest",
                         inForest));
                 }
             }
@@ -366,15 +327,15 @@ namespace IronKingdoms.Combat
             var requiredFeature = ResolveTerrainFeature(ability.RequiredTerrainFeatureId);
             if (requiredFeature == null)
             {
-                return terrainState.IsCompletelyInForest;
+                return terrainState.IsInForest;
             }
 
             if (terrainState.ForestFeature != null && requiredFeature == terrainState.ForestFeature)
             {
-                return terrainState.IsCompletelyInForest;
+                return terrainState.IsInForest;
             }
 
-            return terrainState.IsCompletelyInForest;
+            return terrainState.IsInForest;
         }
 
         private static CombatTerrainFeatureDefinition ResolveForestFeature()

@@ -93,7 +93,6 @@ namespace IronKingdoms.Editor.Tests
             // Ensure active zone registry/cache are current before LOS clipping reads it.
             context.Revealer.SetCachedRayDistance();
             CombatForestFogClipper.EnsureCache();
-            context.Revealer.GetComponent<CombatForestFogBlockerRing>()?.RebuildNow();
             context.FogWorld.RenderFogTexture();
             context.FogWorld.RenderFogTexture();
             context.Revealer.ManualCalculateLineOfSight();
@@ -105,7 +104,6 @@ namespace IronKingdoms.Editor.Tests
             context.Revealer.transform.position = unitPosition;
             context.Revealer.SetCachedRayDistance();
             CombatForestFogClipper.EnsureCache();
-            context.Revealer.GetComponent<CombatForestFogBlockerRing>()?.RebuildNow();
             context.Revealer.ManualCalculateLineOfSight();
             context.FogWorld.RenderFogTexture();
             context.FogWorld.RenderFogTexture();
@@ -235,14 +233,13 @@ namespace IronKingdoms.Editor.Tests
             revealer.Opacity = 1f;
             revealer.UseOcclusion = true;
             // Mirror gameplay configuration for geometry parity with in-scene rendering.
-            revealer.AddCorners = false;
-            revealer.ResolveEdge = false;
+            revealer.AddCorners = true;
+            revealer.ResolveEdge = true;
             revealer.RaycastResolution = 0.5f;
             revealer.NumExtraIterations = 0;
             revealer.NumExtraRaysOnIteration = 0;
             revealer.ObstacleLayerMask = ~0;
             revealer.ConfigureForUnit((UnitTypeDefinition)null);
-            revealer.GetComponent<CombatForestFogBlockerRing>()?.RebuildNow();
         }
 
         private static bool[,] BuildActualMaskFromRevealerRays(ScenarioContext context, Vector3 origin, float maxRadius)

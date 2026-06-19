@@ -27,6 +27,87 @@ namespace IronKingdoms.Combat
             HasContour = false;
         }
 
+        public void CaptureFromViewPoints(
+            RaycastRevealer.SightSegment[] viewPoints,
+            int numberOfPoints,
+            Vector3 sourceEyeWorld,
+            float maxRadius,
+            FogOfWarRevealer3D.PlaneProjection projection)
+        {
+            Clear();
+            eyeWorld = sourceEyeWorld;
+
+            for (var i = 0; i < numberOfPoints; i++)
+            {
+                ref var segment = ref viewPoints[i];
+                if (!segment.DidHit || segment.Radius >= maxRadius - 0.01f)
+                {
+                    continue;
+                }
+
+                var direction2D = segment.Direction;
+                if (math.lengthsq(direction2D) <= 1e-8f)
+                {
+                    continue;
+                }
+
+                direction2D = math.normalize(direction2D);
+                var pointWorld = sourceEyeWorld
+                    + (CombatFogProjection.Direction2DToWorld(direction2D, projection) * segment.Radius);
+                contourPointsWorld.Add(pointWorld);
+                HasContour = true;
+                clipPointsWorld.Add(pointWorld);
+            }
+        }
+
+        public void Capture(
+            float2[] directions,
+            float[] uploadLengths,
+            int count,
+            Vector3 sourceEyeWorld,
+            float maxRadius,
+            FogOfWarRevealer3D.PlaneProjection projection,
+            HashSet<int> bridgedRayIndices)
+        {
+            Clear();
+            eyeWorld = sourceEyeWorld;
+
+            if (directions == null || uploadLengths == null || count <= 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < count; i++)
+            {
+                var uploadLength = uploadLengths[i];
+                if (uploadLength > maxRadius - 0.01f)
+                {
+                    continue;
+                }
+
+                var direction2D = directions[i];
+                if (math.lengthsq(direction2D) <= 1e-8f)
+                {
+                    continue;
+                }
+
+                direction2D = math.normalize(direction2D);
+                var pointWorld = eyeWorld
+                    + (CombatFogProjection.Direction2DToWorld(direction2D, projection) * uploadLength);
+                contourPointsWorld.Add(pointWorld);
+                HasContour = true;
+
+                if (bridgedRayIndices != null && bridgedRayIndices.Contains(i))
+                {
+                    bridgePointsWorld.Add(pointWorld);
+                }
+                else
+                {
+                    clipPointsWorld.Add(pointWorld);
+                }
+            }
+        }
+
         public void Capture(
             RaycastRevealer.SightIteration firstIteration,
             int stepCount,

@@ -1,12 +1,13 @@
 using FOW;
-using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Combat unit revealer that lets stock FOW calculate wall/occluder hits first, then applies
-    /// combat forest pass-through depth to those phase-1 ray samples before stock contour sorting.
+    /// Pass 1 (baseline): stock FindEdges walls, uploaded unchanged.
+    /// Pass 2 (terrain): forest/cloud clip per ray only — no wall tests.
+    /// Shader combines: walls from baseline, forest subtractive on open ground.
     /// </summary>
     [DefaultExecutionOrder(50)]
     public class CombatFogOfWarRevealer3D : FogOfWarRevealer3D
@@ -18,14 +19,61 @@ namespace IronKingdoms.Combat
         [Header("Forest Debug")]
         [SerializeField] private bool drawForestClipDebug = false;
         [SerializeField] private bool drawForestClipInGameView = true;
+        [SerializeField] private bool drawWallBaselineProof = false;
+        [SerializeField] private bool drawShaderUploadPolygons = false;
         [SerializeField] private Color debugClipRayColor = new(0.1f, 1f, 0.2f, 1f);
         [SerializeField] private Color debugBridgeRayColor = new(1f, 0.85f, 0.1f, 1f);
         [SerializeField] private Color debugContourColor = new(0.2f, 0.9f, 1f, 1f);
+        [SerializeField] private Color debugSparseWallBaselineColor = new(1f, 0.1f, 1f, 1f);
+        [SerializeField] private Color debugDenseWallHitColor = new(1f, 0.95f, 0.2f, 1f);
+        [SerializeField] private Color debugWallViolationColor = new(1f, 0.1f, 0.1f, 1f);
+        [SerializeField] private Color debugBaselineUploadColor = new(0.2f, 0.55f, 1f, 1f);
+        [SerializeField] private Color debugTerrainUploadColor = new(0.1f, 0.95f, 0.35f, 1f);
+        [SerializeField] private Color debugTerrainClipTickColor = new(1f, 0.55f, 0.1f, 1f);
+        [SerializeField] private Color debugBaselineWallChordColor = new(1f, 0.2f, 0.85f, 1f);
+        [SerializeField] private Color debugEffectiveBoundaryColor = new(0.95f, 0.95f, 0.2f, 1f);
 
         private readonly CombatForestFogRayPostProcessor forestPostProcessor = new();
         private readonly CombatForestFogDebugContour forestDebugContour = new();
+        private readonly CombatForestFogWallBaselineProofDrawer wallBaselineProofDrawer = new();
+        private readonly CombatFogShaderUploadPolygonDrawer shaderUploadPolygonDrawer = new();
+        private LineRenderer wallProofLoopLine;
+        private LineRenderer wallProofHitLine;
+        private LineRenderer baselineUploadLoopLine;
+        private LineRenderer terrainUploadLoopLine;
+        private LineRenderer terrainUploadClipTicksLine;
+        private LineRenderer baselineWallChordLine;
+        private LineRenderer effectiveBoundaryLine;
+        private const float WallProofLineYBoost = 0.15f;
+        private const float ShaderUploadLineYBoost = 0.22f;
+        private const float WallProofLoopWidth = 0.08f;
+        private const float WallProofRayWidth = 0.04f;
+        private const float BaselineUploadLoopWidth = 0.07f;
+        private const float TerrainUploadLoopWidth = 0.05f;
+        private const float TerrainClipTickWidth = 0.03f;
+        private const float BaselineWallChordWidth = 0.06f;
+        private const float EffectiveBoundaryWidth = 0.04f;
 
-        private CombatForestFogBlockerRing blockerRing;
+        public CombatForestFogWallBaselineReport WallBaselineReport => forestPostProcessor.LastWallBaselineReport;
+
+        public int TerrainClipUploadSegmentCount => forestPostProcessor.TerrainClipSegmentCount;
+
+        public float2[] TerrainClipUploadDirections => forestPostProcessor.TerrainClipDirections;
+
+        public float[] TerrainClipUploadDistances => forestPostProcessor.TerrainClipUploadDistances;
+
+        public bool DrawWallBaselineProof
+        {
+            get => drawWallBaselineProof;
+            set => drawWallBaselineProof = value;
+        }
+
+        public bool DrawShaderUploadPolygons
+        {
+            get => drawShaderUploadPolygons;
+            set => drawShaderUploadPolygons = value;
+        }
+
         private bool ignoresForestForLineOfSight;
         private float baseRadiusWorld;
         private Vector3 lastCalculatedEyeWorld;
@@ -33,12 +81,27 @@ namespace IronKingdoms.Combat
         private bool hasCalculatedLineOfSightPose;
         private bool pendingLineOfSightRecalculation;
         private bool wantsLocalFogContribution = true;
+        private bool applyForestPassThisFrame;
+        private bool forestPassRanThisFrame;
 
         public bool ShouldContributeToLocalFog => wantsLocalFogContribution;
 
         public bool IsContributingToFog => wantsLocalFogContribution && IsRegistered;
 
         public bool IgnoresForestLineOfSightLimits => ignoresForestForLineOfSight;
+
+        public float BaseRadiusWorld => baseRadiusWorld;
+
+        public bool ShouldApplyTerrainFeatureClipForFog()
+        {
+            if (!CombatForestFogPassSettings.UseForestPass)
+            {
+                CombatBlockingTerrainClipper.EnsureCache();
+                return CombatBlockingTerrainClipper.HasActiveZones;
+            }
+
+            return ShouldApplyTerrainFeatureClip();
+        }
 
         public bool MatchesUnitVisionRules(Unit unit)
         {
@@ -67,10 +130,8 @@ namespace IronKingdoms.Combat
             var nextIgnoresForest = CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(unit);
             var forestRulesChanged = ignoresForestForLineOfSight != nextIgnoresForest;
             ignoresForestForLineOfSight = nextIgnoresForest;
-            baseRadiusWorld = Mathf.Max(0f, unit.Definition.Stats.modelSize.BaseDiameterWorldUnits() * 0.5f);
+            baseRadiusWorld = ResolveUnitBaseRadiusWorld(unit);
 
-            EnsureBlockerRing();
-            blockerRing.ConfigureForUnit(unit);
             InvalidateLineOfSightPose();
 
             if (Application.isPlaying && forestRulesChanged)
@@ -100,12 +161,16 @@ namespace IronKingdoms.Combat
 
             if (active)
             {
+                RequestLineOfSightRecalculation();
                 TryProcessPendingLineOfSightRecalculation();
             }
         }
 
         private void OnEnable()
         {
+            EnsureCachedTransform();
+            ApplyLocalFogContributionState();
+
             if (!wantsLocalFogContribution && IsRegistered)
             {
                 DeregisterRevealer();
@@ -179,33 +244,77 @@ namespace IronKingdoms.Combat
         public void ForceImmediateLineOfSightRecalculation()
         {
             RequestLineOfSightRecalculation();
+            TryProcessPendingLineOfSightRecalculation();
         }
 
-        private void LateUpdate()
+        /// <summary>
+        /// Safe entry for manual LOS when transform/FOW state is valid. Skips deregistered or
+        /// mid-phase revealers (e.g. toggles fired from OnGUI).
+        /// </summary>
+        public new void ManualCalculateLineOfSight()
+        {
+            if (!CanCalculateLineOfSight())
+            {
+                RequestLineOfSightRecalculation();
+                return;
+            }
+
+            base.ManualCalculateLineOfSight();
+        }
+
+        public void NotifyPawnMoved()
+        {
+            SetRevealerAsStatic(false);
+            InvalidateLineOfSightPose();
+        }
+
+        private void Update()
         {
             if (IsRegistered && Application.isPlaying)
             {
                 UpdateStationaryState();
             }
+        }
 
+        private void LateUpdate()
+        {
             TryProcessPendingLineOfSightRecalculation();
         }
 
         private void TryProcessPendingLineOfSightRecalculation()
         {
-            if (!pendingLineOfSightRecalculation || !isActiveAndEnabled || !IsRegistered)
-            {
-                return;
-            }
-
-            var fow = FogOfWarWorld.instance;
-            if (fow == null || fow.IsInPhasedUpdate)
+            if (!pendingLineOfSightRecalculation || !CanCalculateLineOfSight())
             {
                 return;
             }
 
             pendingLineOfSightRecalculation = false;
-            ManualCalculateLineOfSight();
+            base.ManualCalculateLineOfSight();
+        }
+
+        private bool CanCalculateLineOfSight()
+        {
+            if (!isActiveAndEnabled || !IsRegistered)
+            {
+                return false;
+            }
+
+            EnsureCachedTransform();
+            if (CachedTransform == null)
+            {
+                return false;
+            }
+
+            var fow = FogOfWarWorld.instance;
+            return fow != null && !fow.IsInPhasedUpdate;
+        }
+
+        private void EnsureCachedTransform()
+        {
+            if (CachedTransform == null)
+            {
+                CachedTransform = transform;
+            }
         }
 
         public void ConfigureForUnit(UnitTypeDefinition definition)
@@ -219,8 +328,6 @@ namespace IronKingdoms.Combat
             ignoresForestForLineOfSight = CombatAbilitySolver.IgnoresForestWhenDeterminingLineOfSight(definition, null);
             baseRadiusWorld = Mathf.Max(0f, definition.Stats.modelSize.BaseDiameterWorldUnits() * 0.5f);
 
-            EnsureBlockerRing();
-            blockerRing.ConfigureForUnitDefinition(definition);
             InvalidateLineOfSightPose();
         }
 
@@ -228,17 +335,28 @@ namespace IronKingdoms.Combat
         {
             ignoresForestForLineOfSight = false;
             baseRadiusWorld = 0f;
-            EnsureBlockerRing();
-            blockerRing.ConfigureForUnitDefinition(null);
             InvalidateLineOfSightPose();
+        }
+
+        private static float ResolveUnitBaseRadiusWorld(Unit unit)
+        {
+            if (unit?.Definition?.Stats == null || unit.Pawn == null)
+            {
+                return 0f;
+            }
+
+            var collider = unit.Pawn.GetComponent<CapsuleCollider>();
+            if (collider != null)
+            {
+                return collider.radius;
+            }
+
+            return Mathf.Max(0f, unit.Definition.Stats.modelSize.BaseDiameterWorldUnits() * 0.5f);
         }
 
         public override void LineOfSightPhase1()
         {
-            EnsureBlockerRing();
-            blockerRing?.DisableForFogCalculation();
-
-            // Base phase 1 is where stock FOW raycasts against normal wall/fog occluder colliders.
+            forestPostProcessor.ClearDebugState();
             base.LineOfSightPhase1();
         }
 
@@ -246,23 +364,333 @@ namespace IronKingdoms.Combat
         {
             forestPostProcessor.ClearDebugState();
 
-            if (useOcclusion && ShouldApplyTerrainFeatureClip())
-            {
-                CompletePhaseOneBeforeForestClip();
-                ApplyForestClipBeforeStockSorting();
-            }
-            else
+            applyForestPassThisFrame = useOcclusion
+                && CombatForestFogPassSettings.UseForestPass
+                && ShouldApplyTerrainFeatureClip();
+            forestPassRanThisFrame = applyForestPassThisFrame;
+
+            if (!applyForestPassThisFrame)
             {
                 ClearForestDebug();
             }
 
             base.LineOfSightPhase2();
+
+            applyForestPassThisFrame = false;
             CaptureLineOfSightPose();
+            CaptureWallBaselineProofIfNeeded();
+            CaptureShaderUploadPolygonsIfNeeded();
 
             if (drawForestClipDebug && drawForestClipInGameView && forestDebugContour.HasContour)
             {
                 forestDebugContour.DrawRuntimeLines(debugClipRayColor, debugBridgeRayColor, debugContourColor);
             }
+
+            if (drawWallBaselineProof && drawForestClipInGameView && wallBaselineProofDrawer.HasData)
+            {
+                wallBaselineProofDrawer.DrawRuntime(
+                    debugSparseWallBaselineColor,
+                    debugDenseWallHitColor,
+                    debugWallViolationColor);
+            }
+
+            if (drawShaderUploadPolygons && drawForestClipInGameView && shaderUploadPolygonDrawer.HasData)
+            {
+                shaderUploadPolygonDrawer.DrawRuntimeLines(
+                    debugBaselineUploadColor,
+                    debugTerrainUploadColor,
+                    debugTerrainClipTickColor,
+                    debugBaselineWallChordColor,
+                    debugEffectiveBoundaryColor);
+            }
+
+            if (!drawWallBaselineProof)
+            {
+                ClearWallProofGameViewLines();
+            }
+
+            if (!drawShaderUploadPolygons)
+            {
+                ClearShaderUploadGameViewLines();
+            }
+        }
+
+        private void CaptureShaderUploadPolygonsIfNeeded()
+        {
+            if (!drawShaderUploadPolygons)
+            {
+                return;
+            }
+
+            var eyeWorld = (Vector3)GetEyePosition();
+            shaderUploadPolygonDrawer.Capture(
+                OutputDirections,
+                OutputDistances,
+                NumberOfPoints,
+                forestPostProcessor.TerrainClipDirections,
+                forestPostProcessor.TerrainClipUploadDistances,
+                forestPostProcessor.TerrainClipSegmentCount,
+                eyeWorld,
+                TotalRevealerRadius,
+                CircleIsComplete,
+                Projection);
+
+            if (drawForestClipInGameView)
+            {
+                ApplyShaderUploadGameViewLines();
+            }
+        }
+
+        private void ApplyShaderUploadGameViewLines()
+        {
+            EnsureShaderUploadLineRenderers();
+            shaderUploadPolygonDrawer.ApplyGameViewLines(
+                baselineUploadLoopLine,
+                terrainUploadLoopLine,
+                terrainUploadClipTicksLine,
+                baselineWallChordLine,
+                effectiveBoundaryLine,
+                ShaderUploadLineYBoost);
+        }
+
+        private void ClearShaderUploadGameViewLines()
+        {
+            if (baselineUploadLoopLine != null)
+            {
+                baselineUploadLoopLine.positionCount = 0;
+            }
+
+            if (terrainUploadLoopLine != null)
+            {
+                terrainUploadLoopLine.positionCount = 0;
+            }
+
+            if (terrainUploadClipTicksLine != null)
+            {
+                terrainUploadClipTicksLine.positionCount = 0;
+            }
+
+            if (baselineWallChordLine != null)
+            {
+                baselineWallChordLine.positionCount = 0;
+            }
+
+            if (effectiveBoundaryLine != null)
+            {
+                effectiveBoundaryLine.positionCount = 0;
+            }
+        }
+
+        private void EnsureShaderUploadLineRenderers()
+        {
+            if (baselineUploadLoopLine == null)
+            {
+                baselineUploadLoopLine = CombatFogShaderUploadPolygonDrawer.CreateLoopLineRenderer(
+                    transform,
+                    "ShaderBaselineUploadLoop",
+                    debugBaselineUploadColor,
+                    BaselineUploadLoopWidth,
+                    true);
+            }
+
+            if (terrainUploadLoopLine == null)
+            {
+                terrainUploadLoopLine = CombatFogShaderUploadPolygonDrawer.CreateLoopLineRenderer(
+                    transform,
+                    "ShaderTerrainUploadLoop",
+                    debugTerrainUploadColor,
+                    TerrainUploadLoopWidth,
+                    true);
+            }
+
+            if (terrainUploadClipTicksLine == null)
+            {
+                terrainUploadClipTicksLine = CombatFogShaderUploadPolygonDrawer.CreateLoopLineRenderer(
+                    transform,
+                    "ShaderTerrainClipTicks",
+                    debugTerrainClipTickColor,
+                    TerrainClipTickWidth,
+                    false);
+            }
+
+            if (baselineWallChordLine == null)
+            {
+                baselineWallChordLine = CombatFogShaderUploadPolygonDrawer.CreateLoopLineRenderer(
+                    transform,
+                    "ShaderBaselineWallChords",
+                    debugBaselineWallChordColor,
+                    BaselineWallChordWidth,
+                    false);
+            }
+
+            if (effectiveBoundaryLine == null)
+            {
+                effectiveBoundaryLine = CombatFogShaderUploadPolygonDrawer.CreateLoopLineRenderer(
+                    transform,
+                    "ShaderEffectiveBoundary",
+                    debugEffectiveBoundaryColor,
+                    EffectiveBoundaryWidth,
+                    true);
+            }
+        }
+
+        private void CaptureWallBaselineProofIfNeeded()
+        {
+            if (!drawWallBaselineProof)
+            {
+                return;
+            }
+
+            var eyeWorld = (Vector3)GetEyePosition();
+            if (!forestPassRanThisFrame)
+            {
+                forestPostProcessor.SnapshotWallPassForProof(ViewPoints, NumberOfPoints);
+                var report = forestPostProcessor.BuildBaselineOnlyReport(ViewPoints, NumberOfPoints, TotalRevealerRadius);
+                forestPostProcessor.SetLastWallBaselineReport(report);
+            }
+
+            wallBaselineProofDrawer.Capture(
+                forestPostProcessor.WallPassSegments,
+                ViewPoints,
+                NumberOfPoints,
+                eyeWorld,
+                TotalRevealerRadius,
+                CircleIsComplete,
+                Projection);
+
+            if (drawForestClipInGameView)
+            {
+                ApplyWallProofGameViewLines();
+            }
+        }
+
+        private void ApplyWallProofGameViewLines()
+        {
+            EnsureWallProofLineRenderers();
+            wallBaselineProofDrawer.ApplyGameViewLines(
+                wallProofLoopLine,
+                wallProofHitLine,
+                WallProofLineYBoost);
+        }
+
+        private void ClearWallProofGameViewLines()
+        {
+            if (wallProofLoopLine != null)
+            {
+                wallProofLoopLine.positionCount = 0;
+            }
+
+            if (wallProofHitLine != null)
+            {
+                wallProofHitLine.positionCount = 0;
+            }
+        }
+
+        private void EnsureWallProofLineRenderers()
+        {
+            if (wallProofLoopLine == null)
+            {
+                wallProofLoopLine = CombatForestFogWallBaselineProofDrawer.CreateProofLineRenderer(
+                    transform,
+                    "WallBaselineProofLoop",
+                    debugSparseWallBaselineColor,
+                    WallProofLoopWidth);
+                wallProofLoopLine.loop = true;
+            }
+
+            if (wallProofHitLine == null)
+            {
+                wallProofHitLine = CombatForestFogWallBaselineProofDrawer.CreateProofLineRenderer(
+                    transform,
+                    "WallBaselineProofHits",
+                    debugDenseWallHitColor,
+                    WallProofRayWidth);
+            }
+        }
+
+        protected override void OnAfterResolveEdges()
+        {
+            if (!applyForestPassThisFrame)
+            {
+                forestPostProcessor.ClearTerrainClipUpload();
+                return;
+            }
+
+            CompletePhaseOneBeforeForestClip();
+
+            var eyeWorld = (Vector3)GetEyePosition();
+            var eyeIntersectsForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, 0f);
+            var eyeIntersectsCloud = CombatBlockingTerrainClipper.IsInsideBlockingTerrain(eyeWorld, 0f);
+            var collectDebugState = drawForestClipDebug && drawForestClipInGameView;
+            var maxUploadSegments = FogOfWarWorld.instance != null
+                ? FogOfWarWorld.instance.MaxPossibleSegmentsPerRevealer
+                : NumberOfPoints;
+
+            forestPostProcessor.BuildTerrainClipSegmentsForShader(
+                ViewPoints,
+                NumberOfPoints,
+                FirstIteration,
+                FirstIterationStepCount,
+                eyeWorld,
+                TotalRevealerRadius,
+                0f,
+                Projection,
+                eyeIntersectsForest,
+                eyeIntersectsCloud,
+                CircleIsComplete,
+                maxUploadSegments,
+                collectDebugState);
+
+            if (drawWallBaselineProof)
+            {
+                wallBaselineProofDrawer.Capture(
+                    forestPostProcessor.WallPassSegments,
+                    ViewPoints,
+                    NumberOfPoints,
+                    eyeWorld,
+                    TotalRevealerRadius,
+                    CircleIsComplete,
+                    Projection);
+            }
+
+            if (!drawForestClipDebug)
+            {
+                forestDebugContour.Clear();
+            }
+            else
+            {
+                forestDebugContour.Capture(
+                    forestPostProcessor.TerrainClipDirections,
+                    forestPostProcessor.TerrainClipUploadDistances,
+                    forestPostProcessor.TerrainClipSegmentCount,
+                    eyeWorld,
+                    TotalRevealerRadius,
+                    Projection,
+                    forestPostProcessor.BridgedRayIndices);
+            }
+        }
+
+        protected override void ApplyData()
+        {
+            RevealerDataStruct.RevealerPosition = RevealerPosition;
+            RevealerDataStruct.RevealerHeight = RevealerHeightPosition + ShaderEyeOffset;
+            RevealerDataStruct.NumSegments = NumberOfPoints;
+
+            var terrainCount = forestPostProcessor.TerrainClipSegmentCount;
+            RevealerInfoStruct.NumTerrainClipSegments = terrainCount;
+            FogOfWarWorld.instance.UpdateRevealerInfo(RevealerGPUDataPosition, RevealerInfoStruct);
+
+            FogOfWarWorld.instance.UpdateRevealerData(
+                RevealerGPUDataPosition,
+                RevealerDataStruct,
+                NumberOfPoints,
+                OutputDirections,
+                OutputDistances,
+                terrainCount,
+                forestPostProcessor.TerrainClipDirections,
+                forestPostProcessor.TerrainClipUploadDistances);
+
+            SparseRevealerGrid.UpdateRevealerBuckets(this, RevealerPosition);
         }
 
         private void UpdateStationaryState()
@@ -278,16 +706,6 @@ namespace IronKingdoms.Combat
                 {
                     SetRevealerAsStatic(false);
                 }
-
-                return;
-            }
-
-            if (!CurrentlyStaticRevealer)
-            {
-                // Must run after FogOfWarWorld Phase2 (StartInUpdateFinishInLateUpdate). Marking static
-                // between Phase1 and Phase2 skips Phase2 and leaves native job handles in flight.
-                CompletePhaseOneBeforeForestClip();
-                SetRevealerAsStatic(true);
             }
         }
 
@@ -334,106 +752,46 @@ namespace IronKingdoms.Combat
             return CombatForestFogClipper.HasActiveZones;
         }
 
-        private bool ShouldApplyForestClip()
-        {
-            return ShouldApplyTerrainFeatureClip();
-        }
-
-        private void ApplyForestClipBeforeStockSorting()
-        {
-            var eyeWorld = (Vector3)GetEyePosition();
-            var baseIntersectsForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, baseRadiusWorld);
-            var baseIntersectsCloud = CombatBlockingTerrainClipper.IsInsideBlockingTerrain(eyeWorld, baseRadiusWorld);
-            var collectDebugState = drawForestClipDebug && drawForestClipInGameView;
-
-            forestPostProcessor.Apply(
-                FirstIteration,
-                FirstIterationStepCount,
-                eyeWorld,
-                TotalRevealerRadius,
-                baseRadiusWorld,
-                Projection,
-                baseIntersectsForest,
-                baseIntersectsCloud,
-                collectDebugState);
-
-            // Re-run the stock first-iteration conditions after forest has tightened ray distances.
-            FirstIterationPointsAndConditionsJob.Run(FirstIterationStepCount);
-            forestPostProcessor.ForceContourConditions(
-                FirstIteration,
-                FirstIterationConditions,
-                FirstIterationStepCount,
-                eyeWorld,
-                TotalRevealerRadius,
-                Projection,
-                baseIntersectsForest);
-
-            if (!drawForestClipDebug)
-            {
-                forestDebugContour.Clear();
-                return;
-            }
-
-            forestDebugContour.Capture(
-                FirstIteration,
-                FirstIterationStepCount,
-                eyeWorld,
-                TotalRevealerRadius,
-                Projection,
-                forestPostProcessor.BridgedRayIndices);
-            blockerRing?.RebuildForDebug();
-        }
-
         private void ClearForestDebug()
         {
             forestDebugContour.Clear();
-            if (drawForestClipDebug)
-            {
-                blockerRing?.DisableForFogCalculation();
-            }
         }
 
         private void OnDrawGizmos()
         {
-            if (!drawForestClipDebug || !Application.isPlaying || !forestDebugContour.HasContour)
+            if (!Application.isPlaying)
             {
                 return;
             }
 
-            forestDebugContour.DrawGizmos(debugClipRayColor, debugBridgeRayColor, debugContourColor);
-        }
+            if (drawForestClipDebug && forestDebugContour.HasContour)
+            {
+                forestDebugContour.DrawGizmos(debugClipRayColor, debugBridgeRayColor, debugContourColor);
+            }
 
-        private void Reset()
-        {
-            EnsureBlockerRing();
-        }
-
-        private void OnValidate()
-        {
-            EnsureBlockerRing();
-        }
-
-        private void Awake()
-        {
-            EnsureBlockerRing();
+            if (drawWallBaselineProof && wallBaselineProofDrawer.HasData)
+            {
+                wallBaselineProofDrawer.DrawGizmos(
+                    debugSparseWallBaselineColor,
+                    debugDenseWallHitColor,
+                    debugWallViolationColor);
+            }
+            if (drawShaderUploadPolygons && shaderUploadPolygonDrawer.HasData)
+            {
+                shaderUploadPolygonDrawer.DrawGizmos(
+                    debugBaselineUploadColor,
+                    debugTerrainUploadColor,
+                    debugTerrainClipTickColor,
+                    debugBaselineWallChordColor,
+                    debugEffectiveBoundaryColor);
+            }
         }
 
         private void OnDisable()
         {
             pendingLineOfSightRecalculation = false;
-        }
-
-        private void EnsureBlockerRing()
-        {
-            if (blockerRing == null)
-            {
-                blockerRing = GetComponent<CombatForestFogBlockerRing>();
-            }
-
-            if (blockerRing == null)
-            {
-                blockerRing = gameObject.AddComponent<CombatForestFogBlockerRing>();
-            }
+            ClearWallProofGameViewLines();
+            ClearShaderUploadGameViewLines();
         }
     }
 }

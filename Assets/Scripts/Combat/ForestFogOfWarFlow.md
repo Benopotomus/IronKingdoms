@@ -26,7 +26,7 @@ The key rule is first contact plus depth: open ground before forest does not con
 
 `CombatFogOfWarRevealer3D` controls the phase order:
 
-1. `LineOfSightPhase1()` disables generated forest debug blockers and calls `base.LineOfSightPhase1()`.
+1. `LineOfSightPhase1()` calls `base.LineOfSightPhase1()`.
 2. The base FOW phase performs the normal physics raycasts against wall and fog-occluder colliders.
 3. `LineOfSightPhase2()` waits for the base phase-1 jobs to complete.
 4. `CombatForestFogRayPostProcessor.Apply()` edits the first-iteration ray buffers in place:
@@ -51,8 +51,7 @@ Wall handling remains in the imported FOW base path:
 ## Class Responsibilities
 
 - `CombatForestFogClipper`: find forest entries/exits and compute per-ray clip distance.
-- `CombatForestFogDepth`: resolve the shared depth value used by clipping and debug blocker generation.
+- `CombatForestFogDepth`: resolve the shared depth value used by clipping.
 - `CombatForestFogRayPostProcessor`: modify FOW phase-1 ray buffers after wall hits are known.
 - `CombatForestFogDebugContour`: store and draw debug-only forest contour data.
-- `CombatForestFogBlockerRing`: build debug/generated ring meshes at the forest frontier.
 - `CombatFogOfWarRevealer3D`: keep the phase order explicit and hand work to the small classes above.

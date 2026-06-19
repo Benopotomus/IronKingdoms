@@ -361,6 +361,7 @@ namespace FOW
         int fowAxisID = Shader.PropertyToID("_fowAxis");
         int lineThicknessID = Shader.PropertyToID("lineThickness");
         int fowRTID = Shader.PropertyToID("_FowRT");
+        static readonly int CombatTabletopGroundYId = Shader.PropertyToID("_combatTabletopGroundY");
         int sampleBlurQualityID = Shader.PropertyToID("_Sample_Blur_Quality");
         int sampleBlurAmountID = Shader.PropertyToID("_Sample_Blur_Amount");
         int worldBoundsID = Shader.PropertyToID("_worldBounds");
@@ -413,6 +414,8 @@ namespace FOW
             public float VisionHeightFade;
             public float Opacity;
             public int UseOcclusion;   //0 false, 1 true
+            public int NumTerrainClipSegments;
+            public int CircleIsComplete;
         };
 
         [StructLayout(LayoutKind.Sequential)]
@@ -1255,6 +1258,26 @@ namespace FOW
             return FOW_RT;
         }
 
+        public void SetFowTextureFilterMode(FilterMode filterMode)
+        {
+            if (FOW_RT == null)
+            {
+                return;
+            }
+
+            FOW_RT.filterMode = filterMode;
+        }
+
+        public void SetCombatTabletopGroundY(float groundYWorld)
+        {
+            Shader.SetGlobalFloat(CombatTabletopGroundYId, groundYWorld);
+        }
+
+        public void DisableCombatTabletopGroundY()
+        {
+            Shader.SetGlobalFloat(CombatTabletopGroundYId, -99999f);
+        }
+
         public void ClearFowTexture()
         {
             var tmp = RenderTexture.active;
@@ -1556,82 +1579,137 @@ namespace FOW
         private RevealerDataStruct[] _revealerDataToSet = new RevealerDataStruct[1];
         public void UpdateRevealerData(int gpuPositionId, in RevealerDataStruct data, int numHits, float2[] directions, float[] distances)
         {
+            UpdateRevealerData(gpuPositionId, data, numHits, directions, distances, 0, null, null);
+        }
+
+        public void UpdateRevealerData(
+            int gpuPositionId,
+            in RevealerDataStruct data,
+            int numBaselineHits,
+            float2[] baselineDirections,
+            float[] baselineDistances,
+            int numTerrainClipHits,
+            float2[] terrainClipDirections,
+            float[] terrainClipDistances)
+        {
 #if UNITY_EDITOR
             UploadToGpuProfileMarker.Begin();
 #endif
 
             if (UseStagedGPUUploads)
-                UpdateRevealerDataCompute(gpuPositionId, data, numHits, directions, distances);
+                UpdateRevealerDataCompute(
+                    gpuPositionId,
+                    data,
+                    numBaselineHits,
+                    baselineDirections,
+                    baselineDistances,
+                    numTerrainClipHits,
+                    terrainClipDirections,
+                    terrainClipDistances);
             else
-                UpdateRevealerDataLegacy(gpuPositionId, data, numHits, directions, distances);
+                UpdateRevealerDataLegacy(
+                    gpuPositionId,
+                    data,
+                    numBaselineHits,
+                    baselineDirections,
+                    baselineDistances,
+                    numTerrainClipHits,
+                    terrainClipDirections,
+                    terrainClipDistances);
 
 #if UNITY_EDITOR
             UploadToGpuProfileMarker.End();
 #endif
         }
 
-        void UpdateRevealerDataLegacy(int gpuPositionId, in RevealerDataStruct data, int numHits, float2[] directions, float[] distances)
+        void UpdateRevealerDataLegacy(
+            int gpuPositionId,
+            in RevealerDataStruct data,
+            int numBaselineHits,
+            float2[] baselineDirections,
+            float[] baselineDistances,
+            int numTerrainClipHits,
+            float2[] terrainClipDirections,
+            float[] terrainClipDistances)
         {
-            //setAnglesBuffersJobHandle.Complete();
-
             _revealerDataToSet[0] = data;
             RevealerDataBuffer.SetData(_revealerDataToSet, 0, gpuPositionId, 1);
-            //_circleArray = circleBuffer.BeginWrite<CircleStruct>(gpuPositionId, 1);
-            //_circleArray[0] = data;
-            //circleBuffer.EndWrite<CircleStruct>(1);
 
-            if (numHits == 0)
-                return;
-            else if (numHits > MaxPossibleSegmentsPerRevealer)
+            var totalHits = numBaselineHits + numTerrainClipHits;
+            if (totalHits == 0)
             {
-                Debug.LogError($"the revealer is trying to register {numHits} segments. this is more than was set by maxPossibleSegmentsPerRevealer");
                 return;
             }
 
-            for (int i = 0; i < numHits; i++)
+            if (totalHits > MaxPossibleSegmentsPerRevealer)
             {
-                ref var segment = ref SightSegmentsUploadData[i];
-                //segment.angle = radii[i];
-                segment.direction = directions[i];
-                segment.length = distances[i];
+                Debug.LogError($"the revealer is trying to register {totalHits} segments. this is more than was set by maxPossibleSegmentsPerRevealer");
+                return;
             }
 
-            AnglesBuffer.SetData(SightSegmentsUploadData, 0, gpuPositionId * MaxPossibleSegmentsPerRevealer, numHits);
-            //the following lines of code should work in theory, however due to a unity bug, are going to be put on hold for a little bit.
-            //_angleArray = anglesBuffer.BeginWrite<ConeEdgeStruct>(gpuPositionId * maxPossibleSegmentsPerRevealer, radii.Length);
-            //setAnglesBuffersJob.AnglesArray = _angleArray;
-            //setAnglesBuffersJob.Angles = AnglesNativeArray;
-            //setAnglesBuffersJobHandle = setAnglesBuffersJob.Schedule(radii.Length, 128);
-            //setAnglesBuffersJobHandle.Complete();
-            //anglesBuffer.EndWrite<ConeEdgeStruct>(radii.Length);
+            var writeIndex = 0;
+            for (var i = 0; i < numBaselineHits; i++)
+            {
+                ref var segment = ref SightSegmentsUploadData[writeIndex++];
+                segment.direction = baselineDirections[i];
+                segment.length = baselineDistances[i];
+            }
+
+            for (var i = 0; i < numTerrainClipHits; i++)
+            {
+                ref var segment = ref SightSegmentsUploadData[writeIndex++];
+                segment.direction = terrainClipDirections[i];
+                segment.length = terrainClipDistances[i];
+            }
+
+            AnglesBuffer.SetData(SightSegmentsUploadData, 0, gpuPositionId * MaxPossibleSegmentsPerRevealer, totalHits);
         }
 
-        void UpdateRevealerDataCompute(int gpuPositionId, in RevealerDataStruct data, int numHits, float2[] directions, float[] distances)
+        void UpdateRevealerDataCompute(
+            int gpuPositionId,
+            in RevealerDataStruct data,
+            int numBaselineHits,
+            float2[] baselineDirections,
+            float[] baselineDistances,
+            int numTerrainClipHits,
+            float2[] terrainClipDirections,
+            float[] terrainClipDistances)
         {
-            if (numHits > MaxPossibleSegmentsPerRevealer)
+            var totalHits = numBaselineHits + numTerrainClipHits;
+            if (totalHits > MaxPossibleSegmentsPerRevealer)
             {
-                Debug.LogError($"the revealer is trying to register {numHits} segments. this is more than was set by maxPossibleSegmentsPerRevealer");
-                numHits = MaxPossibleSegmentsPerRevealer;
+                Debug.LogError($"the revealer is trying to register {totalHits} segments. this is more than was set by maxPossibleSegmentsPerRevealer");
+                totalHits = MaxPossibleSegmentsPerRevealer;
+                numTerrainClipHits = math.max(0, totalHits - numBaselineHits);
             }
 
-            if (_dirtyCount >= _dirtyMetas.Length || _segmentWriteHead + numHits > _stagingSegments.Length)
+            if (_dirtyCount >= _dirtyMetas.Length || _segmentWriteHead + totalHits > _stagingSegments.Length)
                 FlushStagedRevealerData();
 
-            int idx = _dirtyCount++;
+            var idx = _dirtyCount++;
             _dirtyMetas[idx] = new DirtyRevealerMeta
             {
                 GpuId = gpuPositionId,
                 StagingSegmentStart = _segmentWriteHead,
-                NumSegments = numHits
+                NumSegments = totalHits
             };
             _stagingRevealerData[idx] = data;
 
-            for (int i = 0; i < numHits; i++)
+            for (var i = 0; i < numBaselineHits; i++)
             {
                 _stagingSegments[_segmentWriteHead++] = new GpuSightSegment
                 {
-                    direction = directions[i],
-                    length = distances[i]
+                    direction = baselineDirections[i],
+                    length = baselineDistances[i]
+                };
+            }
+
+            for (var i = 0; i < numTerrainClipHits; i++)
+            {
+                _stagingSegments[_segmentWriteHead++] = new GpuSightSegment
+                {
+                    direction = terrainClipDirections[i],
+                    length = terrainClipDistances[i]
                 };
             }
         }
@@ -1793,6 +1871,101 @@ namespace FOW
             RenderTexture.active = previous;
 
             return c;
+        }
+
+        static Texture2D gridSampleTex;
+
+        /// <summary>
+        /// One GPU read for debug overlays. Fills row-major visibility (1 = lit, 0 = fogged).
+        /// </summary>
+        public static bool TrySampleFogTextureVisibilityGrid(
+            Vector3 centerWorld,
+            float halfExtentWorld,
+            int resolution,
+            float[] visibilityOut)
+        {
+            if (instance == null
+                || FOW_RT == null
+                || resolution < 2
+                || halfExtentWorld <= 0f
+                || visibilityOut == null
+                || visibilityOut.Length < resolution * resolution)
+            {
+                return false;
+            }
+
+            var groundY = instance.WorldBounds.center.y;
+            var minX = centerWorld.x - halfExtentWorld;
+            var minZ = centerWorld.z - halfExtentWorld;
+            var step = (halfExtentWorld * 2f) / (resolution - 1);
+
+            if (instance._asyncFogTextureReader != null
+                && instance._asyncFogTextureReader.HasData
+                && (instance.AsyncReadbackFogDataToCpu || NumActiveHiders != 0))
+            {
+                for (var y = 0; y < resolution; y++)
+                {
+                    for (var x = 0; x < resolution; x++)
+                    {
+                        var world = new Vector3(minX + x * step, groundY, minZ + y * step);
+                        var uv = GetFowTextureUVFromWorldPosition(world);
+                        visibilityOut[(y * resolution) + x] =
+                            1f - instance._asyncFogTextureReader.SampleAsyncData(uv);
+                    }
+                }
+
+                return true;
+            }
+
+            var cornerA = new Vector3(minX, groundY, minZ);
+            var cornerB = new Vector3(minX + ((resolution - 1) * step), groundY, minZ + ((resolution - 1) * step));
+            var uvMin = GetFowTextureUVFromWorldPosition(cornerA);
+            var uvMax = GetFowTextureUVFromWorldPosition(cornerB);
+            var u0 = Mathf.Min(uvMin.x, uvMax.x);
+            var u1 = Mathf.Max(uvMin.x, uvMax.x);
+            var v0 = Mathf.Min(uvMin.y, uvMax.y);
+            var v1 = Mathf.Max(uvMin.y, uvMax.y);
+
+            var px0 = Mathf.Clamp(Mathf.FloorToInt(u0 * FOW_RT.width), 0, FOW_RT.width - 2);
+            var py0 = Mathf.Clamp(Mathf.FloorToInt(v0 * FOW_RT.height), 0, FOW_RT.height - 2);
+            var px1 = Mathf.Clamp(Mathf.CeilToInt(u1 * FOW_RT.width), px0 + 1, FOW_RT.width);
+            var py1 = Mathf.Clamp(Mathf.CeilToInt(v1 * FOW_RT.height), py0 + 1, FOW_RT.height);
+            var readWidth = px1 - px0;
+            var readHeight = py1 - py0;
+
+            var previous = RenderTexture.active;
+            RenderTexture.active = FOW_RT;
+
+            if (gridSampleTex == null
+                || gridSampleTex.width != readWidth
+                || gridSampleTex.height != readHeight)
+            {
+                if (gridSampleTex != null)
+                {
+                    Destroy(gridSampleTex);
+                }
+
+                gridSampleTex = new Texture2D(readWidth, readHeight, saveTextureFormat, false, true);
+            }
+
+            gridSampleTex.ReadPixels(new Rect(px0, py0, readWidth, readHeight), 0, 0, false);
+            gridSampleTex.Apply(false, false);
+            RenderTexture.active = previous;
+
+            var pixels = gridSampleTex.GetPixels();
+            for (var y = 0; y < resolution; y++)
+            {
+                for (var x = 0; x < resolution; x++)
+                {
+                    var u = x / (float)(resolution - 1);
+                    var v = y / (float)(resolution - 1);
+                    var px = Mathf.Clamp(Mathf.RoundToInt(u * (readWidth - 1)), 0, readWidth - 1);
+                    var py = Mathf.Clamp(Mathf.RoundToInt(v * (readHeight - 1)), 0, readHeight - 1);
+                    visibilityOut[(y * resolution) + x] = 1f - pixels[(py * readWidth) + px].r;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>

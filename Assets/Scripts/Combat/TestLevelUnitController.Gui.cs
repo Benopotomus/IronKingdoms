@@ -98,6 +98,7 @@ namespace IronKingdoms.Combat
         private void OnGUI()
         {
             cameraManager?.DrawGui();
+            DrawFogDebugPanel();
             DrawFloatingDamageNumbers();
             DrawTargetCoverPopup();
             DrawCombatLog();
@@ -577,6 +578,125 @@ namespace IronKingdoms.Combat
             GUILayout.BeginArea(new Rect(SelectedUnitPanelOffsetX, Screen.height - 72f - SelectedUnitPanelOffsetY, SelectedUnitPanelWidth, 72f), "Vision", GUI.skin.window);
             GUILayout.Label("Team vision — all friendly units reveal fog.");
             GUILayout.Label("Select a unit to focus fog on that model only.");
+            GUILayout.EndArea();
+        }
+
+        private void DrawFogDebugPanel()
+        {
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+
+            const float panelWidth = 360f;
+            const float panelHeight = 328f;
+            var areaY = RosterAreaY + RosterAreaHeight + 8f;
+            GUILayout.BeginArea(
+                new Rect(RosterAreaX, areaY, panelWidth, panelHeight),
+                "Fog Drawing",
+                GUI.skin.window);
+
+            var useForestPass = CombatForestFogPassSettings.UseForestPass;
+            var toggled = GUILayout.Toggle(useForestPass, "Use combat forest pass");
+            if (toggled != useForestPass)
+            {
+                CombatForestFogPassSettings.UseForestPass = toggled;
+                debugUseForestFogPass = toggled;
+                MarkFogRevealerSettingsDirty();
+            }
+
+            var showProof = debugShowWallBaselineProof;
+            var proofToggled = GUILayout.Toggle(showProof, "Show wall baseline proof (selected unit)");
+            if (proofToggled != showProof)
+            {
+                debugShowWallBaselineProof = proofToggled;
+                SyncWallBaselineProofOnRevealers();
+                MarkFogRevealerSettingsDirty();
+            }
+
+            var showShaderUpload = debugShowShaderUploadPolygons;
+            var shaderUploadToggled = GUILayout.Toggle(
+                showShaderUpload,
+                "Show shader upload polygons (selected unit)");
+            if (shaderUploadToggled != showShaderUpload)
+            {
+                debugShowShaderUploadPolygons = shaderUploadToggled;
+                SyncWallBaselineProofOnRevealers();
+                MarkFogRevealerSettingsDirty();
+            }
+
+            GUILayout.Label(toggled
+                ? "Mode: baseline polygon + added forest verts"
+                : "Mode: baseline stock FOW");
+
+            if (shaderUploadToggled)
+            {
+                GUILayout.Label("Blue loop = raw baseline upload verts (not the fog edge).");
+                GUILayout.Label("Magenta = wall chord segments the shader draws.");
+                GUILayout.Label("Yellow = per-direction baseline boundary (shader pass 1).");
+                GUILayout.Label("Green = forest/cloud clip samples only (not open rays).");
+            }
+
+            var showFogTexture = debugShowFogTextureBoundary;
+            var fogTextureToggled = GUILayout.Toggle(showFogTexture, "Show fog texture boundary (selected unit)");
+            if (fogTextureToggled != showFogTexture)
+            {
+                debugShowFogTextureBoundary = fogTextureToggled;
+                if (!fogTextureToggled)
+                {
+                    fogTextureBoundaryDrawer.ClearGameViewLines();
+                }
+            }
+
+            if (fogTextureToggled)
+            {
+                GUILayout.Label("Yellow loop = effective fog boundary (baseline + terrain upload).");
+                GUILayout.Label("Cyan outline = forest zone footprint (reference only).");
+                GUILayout.Label("Yellow should match the on-screen fog edge on open ground.");
+                GUILayout.Label("Cyan only aligns when the clip lands on the forest edge (thin patch).");
+            }
+
+            if (proofToggled)
+            {
+                GUILayout.Label("Magenta loop = pass-1 FindEdges (forest-off upload).");
+                GUILayout.Label("Yellow ticks = uploaded wall hits (must match magenta).");
+            }
+
+            var revealer = GetFogRevealer(selectedUnit);
+            if (proofToggled && selectedUnit == null)
+            {
+                GUILayout.Label("Select a unit to verify wall baseline.");
+            }
+            else if (proofToggled && revealer == null)
+            {
+                GUILayout.Label("Selected unit has no fog revealer.");
+            }
+            else if (proofToggled && revealer != null && !toggled)
+            {
+                var report = revealer.WallBaselineReport;
+                if (report.HasData)
+                {
+                    GUILayout.Label(report.SummaryLine);
+                    GUILayout.Label(report.DetailLine);
+                }
+                else
+                {
+                    GUILayout.Label("Forest off — magenta loop shows stock baseline upload.");
+                }
+            }
+            else if (proofToggled && revealer != null && toggled)
+            {
+                var report = revealer.WallBaselineReport;
+                var summaryStyle = report.HasData && report.AllWallBlockedRaysPreserved
+                    ? GUI.skin.label
+                    : GUI.skin.box;
+                GUILayout.Label(report.SummaryLine, summaryStyle);
+                if (report.HasData)
+                {
+                    GUILayout.Label(report.DetailLine);
+                }
+            }
+
             GUILayout.EndArea();
         }
 

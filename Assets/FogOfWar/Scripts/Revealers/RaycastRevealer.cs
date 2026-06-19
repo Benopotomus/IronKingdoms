@@ -648,6 +648,7 @@ namespace FOW
             if (!AnyHits && CircleIsComplete)   //early out for shader, just draw circle
             {
                 NumberOfPoints = 0;
+                OnAfterResolveEdges();
                 SetData();
 #if UNITY_EDITOR
                 if (ProfileRevealers) LineOfSightMarker.End();
@@ -667,6 +668,8 @@ namespace FOW
             {
                 FindEdges();    //binary search to find the edge of the object
             }
+
+            OnAfterResolveEdges();
 
 #if UNITY_EDITOR
             if (ProfileRevealers) EdgeDetectionMarker.End();
@@ -959,10 +962,32 @@ namespace FOW
             }
         }
 
+        /// <summary>
+        /// Called after edge refinement and before GPU upload. Combat revealers apply forest
+        /// depth here so wall edge resolve stays on raw physics hits.
+        /// </summary>
+        protected virtual void OnAfterResolveEdges()
+        {
+        }
+
+        /// <summary>
+        /// Combat revealers skip forest/cloud clip segments so binary wall edge search
+        /// does not pull analytic terrain contours back to full physics range.
+        /// </summary>
+        protected virtual bool ShouldResolveSegmentEdge(int segmentIndex)
+        {
+            return true;
+        }
+
         private void FindEdges()
         {
             for (int i = 0; i < NumberOfPoints; i++)
             {
+                if (!ShouldResolveSegmentEdge(i))
+                {
+                    continue;
+                }
+
                 ref SightSegment segment = ref ViewPoints[i];
                 ref float2 edgeNormal = ref EdgeNormals[i];
 

@@ -68,17 +68,19 @@ Shader "Hidden/FullScreen/FOW/FOW_RT"
                     //return tex2D(_MainTex, i.uv);
                     float opacitySample = 1 - tex2D(_MainTex, i.uv).r;
 
-                    if (revealerSample > opacitySample) //fade in
-                    { 
-                        float targetValue = _FowRT_FadeInSpeed > 1000 ? 1 : opacitySample + _FowRT_FadeInSpeed * unity_DeltaTime.x; //if fade out speed is this high we can assume we are aiming for instant fade in (default behavior).
-                        revealerSample = min(revealerSample, targetValue);
+                    if (revealerSample >= opacitySample)
+                    {
+                        if (_FowRT_FadeInSpeed > 1000)
+                            revealerSample = saturate(revealerSample);
+                        else
+                            revealerSample = min(revealerSample, opacitySample + _FowRT_FadeInSpeed * unity_DeltaTime.x);
                     }
-                    else    //fade out
+                    else
                     {
                         float targetValue = opacitySample;
                         if (opacitySample >= _FowRT_MaxRegrowAmount) 
                         {
-                            targetValue = _FowRT_FadeOutSpeed > 1000 ? 0 : targetValue - unity_DeltaTime.x * _FowRT_FadeOutSpeed; //if fade out speed is this high we can assume we are aiming for instant regrowth (default behavior).
+                            targetValue = _FowRT_FadeOutSpeed > 1000 ? 0 : targetValue - unity_DeltaTime.x * _FowRT_FadeOutSpeed;
                             targetValue = max(targetValue, _FowRT_MaxRegrowAmount);
                         }
                         revealerSample = max(revealerSample, targetValue);
