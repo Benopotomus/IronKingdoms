@@ -100,6 +100,11 @@ namespace IronKingdoms.Combat
 
         public bool ShouldApplyTerrainFeatureClipForFog()
         {
+            if (!useOcclusion || !CombatForestFogPassSettings.UseForestPass)
+            {
+                return false;
+            }
+
             return ShouldApplyForestClipThisFrame() || ShouldApplyBlockingTerrainClipThisFrame();
         }
 
@@ -118,7 +123,7 @@ namespace IronKingdoms.Combat
 
         public bool ShouldApplyBlockingTerrainClipThisFrame()
         {
-            if (!useOcclusion)
+            if (!useOcclusion || !CombatForestFogPassSettings.UseForestPass)
             {
                 return false;
             }
@@ -401,7 +406,7 @@ namespace IronKingdoms.Combat
             forestPostProcessor.ClearDebugState();
 
             applyForestClipThisFrame = ShouldApplyForestClipThisFrame();
-            applyForestPassThisFrame = applyForestClipThisFrame || ShouldApplyBlockingTerrainClipThisFrame();
+            applyForestPassThisFrame = ShouldApplyTerrainFeatureClipForFog();
             forestPassRanThisFrame = applyForestPassThisFrame;
 
             if (!applyForestPassThisFrame)
@@ -783,11 +788,14 @@ namespace IronKingdoms.Combat
             }
 
             // Stale LOS + coarse moving LUT collapses forest see-out into a fixed depth circle.
-            CombatForestFogClipper.EnsureCache();
-            if (CombatForestFogClipper.HasActiveForestFogZones
-                || CombatForestFogClipper.HasActiveCloudFogZones)
+            if (CombatForestFogPassSettings.UseForestPass)
             {
-                return false;
+                CombatForestFogClipper.EnsureCache();
+                if (CombatForestFogClipper.HasActiveForestFogZones
+                    || CombatForestFogClipper.HasActiveCloudFogZones)
+                {
+                    return false;
+                }
             }
 
             var interval = CombatForestFogPassSettings.MovingLineOfSightUpdateInterval;

@@ -770,6 +770,142 @@ namespace IronKingdoms.Combat.Tests
             Assert.That(clipOpen, Is.GreaterThan(depthWorld + CombatScale.InchesToWorldUnits(0.5f)));
         }
 
+        [Test]
+        public void CloudZone_IsNotInsideLimitedDepthForest()
+        {
+            var cloudFeature = CreateCloudFeature();
+            extraZoneObject = CreateCloudBoxZone(
+                cloudFeature,
+                new Vector3(CombatScale.InchesToWorldUnits(20f), 2f, CombatScale.InchesToWorldUnits(8f)),
+                new Vector3(CombatScale.InchesToWorldUnits(12f), 0f, 0f));
+
+            Physics.SyncTransforms();
+            CombatForestFogClipper.InvalidateCache();
+            EnsureCacheMethod.Invoke(null, null);
+
+            var insideCloud = new Vector3(CombatScale.InchesToWorldUnits(12f), 0f, 0f);
+            Assert.That(CombatForestFogClipper.IsInsideLimitedDepthForest(insideCloud), Is.False);
+            Assert.That(CombatForestFogClipper.IsInsideBlockingTerrainForClip(insideCloud), Is.True);
+        }
+
+        [Test]
+        public void OutsideThickCloud_ClipsAtThreeInchesNotFullRadius()
+        {
+            var cloudFeature = CreateCloudFeature();
+            extraZoneObject = CreateCloudBoxZone(
+                cloudFeature,
+                new Vector3(CombatScale.InchesToWorldUnits(20f), 2f, CombatScale.InchesToWorldUnits(8f)),
+                new Vector3(CombatScale.InchesToWorldUnits(12f), 0f, 0f));
+
+            Physics.SyncTransforms();
+            CombatForestFogClipper.InvalidateCache();
+            EnsureCacheMethod.Invoke(null, null);
+
+            var depthWorld = CombatScale.InchesToWorldUnits(3f);
+            var maxDistance = CombatScale.InchesToWorldUnits(30f);
+            var origin = new Vector3(0f, 0f, 0f);
+            var direction = Vector3.right;
+
+            var clip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                origin,
+                direction,
+                maxDistance,
+                depthWorld);
+
+            var nearFace = CombatScale.InchesToWorldUnits(2f);
+            var expectedClip = nearFace + depthWorld;
+            Assert.That(clip, Is.EqualTo(expectedClip).Within(CombatScale.InchesToWorldUnits(0.35f)));
+            Assert.That(clip, Is.LessThan(maxDistance - CombatScale.InchesToWorldUnits(1f)));
+        }
+
+        [Test]
+        public void OutsideThinCloud_DoesNotRevealGroundBehindCloud()
+        {
+            var cloudFeature = CreateCloudFeature();
+            extraZoneObject = CreateCloudBoxZone(
+                cloudFeature,
+                new Vector3(CombatScale.InchesToWorldUnits(2f), 2f, CombatScale.InchesToWorldUnits(8f)),
+                new Vector3(CombatScale.InchesToWorldUnits(12f), 0f, 0f));
+
+            Physics.SyncTransforms();
+            CombatForestFogClipper.InvalidateCache();
+            EnsureCacheMethod.Invoke(null, null);
+
+            var depthWorld = CombatScale.InchesToWorldUnits(3f);
+            var maxDistance = CombatScale.InchesToWorldUnits(30f);
+            var origin = new Vector3(0f, 0f, 0f);
+            var direction = Vector3.right;
+
+            var clip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                origin,
+                direction,
+                maxDistance,
+                depthWorld);
+
+            var nearFace = CombatScale.InchesToWorldUnits(11f);
+            var farFace = CombatScale.InchesToWorldUnits(13f);
+            Assert.That(clip, Is.GreaterThanOrEqualTo(nearFace - CombatScale.InchesToWorldUnits(0.25f)));
+            Assert.That(clip, Is.LessThanOrEqualTo(farFace + CombatScale.InchesToWorldUnits(0.25f)));
+            Assert.That(clip, Is.LessThan(maxDistance - CombatScale.InchesToWorldUnits(1f)));
+        }
+
+        [Test]
+        public void InsideCloudNearEdge_DoesNotFullyOpenPastCloud()
+        {
+            var cloudFeature = CreateCloudFeature();
+            extraZoneObject = CreateCloudBoxZone(
+                cloudFeature,
+                new Vector3(CombatScale.InchesToWorldUnits(8f), 2f, CombatScale.InchesToWorldUnits(8f)),
+                new Vector3(CombatScale.InchesToWorldUnits(12f), 0f, 0f));
+
+            Physics.SyncTransforms();
+            CombatForestFogClipper.InvalidateCache();
+            EnsureCacheMethod.Invoke(null, null);
+
+            var depthWorld = CombatScale.InchesToWorldUnits(3f);
+            var maxDistance = CombatScale.InchesToWorldUnits(30f);
+            var insideOrigin = new Vector3(CombatScale.InchesToWorldUnits(14f), 0f, 0f);
+            var direction = Vector3.right;
+
+            var clip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                insideOrigin,
+                direction,
+                maxDistance,
+                depthWorld);
+
+            var expectedExit = CombatScale.InchesToWorldUnits(16f) - CombatScale.InchesToWorldUnits(14f);
+            Assert.That(clip, Is.LessThanOrEqualTo(expectedExit + CombatScale.InchesToWorldUnits(0.35f)));
+            Assert.That(clip, Is.LessThan(maxDistance - CombatScale.InchesToWorldUnits(1f)));
+        }
+
+        private static CombatTerrainFeatureDefinition CreateCloudFeature()
+        {
+            var cloudFeature = ScriptableObject.CreateInstance<CombatTerrainFeatureDefinition>();
+            SetPrivateField(cloudFeature, "featureId", "TestCloud");
+            SetPrivateField(cloudFeature, "displayName", "Test Cloud");
+            SetPrivateField(cloudFeature, "lineOfSightMode", CombatTerrainLineOfSightMode.BlocksCompletely);
+            SetPrivateField(cloudFeature, "lineOfSightPassThroughDepthInches", 3f);
+            return cloudFeature;
+        }
+
+        private static GameObject CreateCloudBoxZone(
+            CombatTerrainFeatureDefinition cloudFeature,
+            Vector3 size,
+            Vector3 position)
+        {
+            var cloudObject = new GameObject("TestCloudZone");
+            var collider = cloudObject.AddComponent<BoxCollider>();
+            collider.isTrigger = true;
+            collider.size = size;
+            collider.center = new Vector3(0f, 1f, 0f);
+            cloudObject.transform.position = position;
+            var cloudZone = cloudObject.AddComponent<CombatZone>();
+            SetPrivateField(cloudZone, "terrainFeature", cloudFeature);
+            cloudObject.SetActive(false);
+            cloudObject.SetActive(true);
+            return cloudObject;
+        }
+
         private static float InvokePreciseClip(Vector3 origin, Vector3 direction, float maxDistance)
         {
             var result = PreciseClipMethod.Invoke(null, new object[] { origin, direction, maxDistance });

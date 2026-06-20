@@ -635,8 +635,8 @@ namespace IronKingdoms.Combat
             }
 
             GUILayout.Label(CombatForestFogPassSettings.UseForestPass
-                ? "Mode: baseline polygon + added forest verts"
-                : "Mode: baseline stock FOW");
+                ? "Mode: baseline polygon + forest/cloud terrain clip"
+                : "Mode: baseline stock FOW (no terrain clip)");
 
             if (shaderUploadToggled)
             {

@@ -235,7 +235,7 @@ namespace IronKingdoms.Combat
 
         /// <summary>
         /// True when <paramref name="worldPoint"/> (optionally expanded by <paramref name="radius"/> on XZ)
-        /// lies inside a limited-depth terrain zone such as forest.
+        /// lies inside a limited-depth terrain zone such as forest (not blocking clouds).
         /// </summary>
         public static bool IsInsideLimitedDepthForest(Vector3 worldPoint, float radius = 0f)
         {
@@ -244,7 +244,17 @@ namespace IronKingdoms.Combat
             {
                 var zone = activeZones[i];
                 var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
+                if (zone == null
+                    || feature == null
+                    || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                {
+                    continue;
+                }
+
+                if (!IsZoneActiveForClipPass(
+                        new ClipZone { LineOfSightMode = feature.LineOfSightMode },
+                        applyForestClipPass,
+                        applyBlockingClipPass))
                 {
                     continue;
                 }
@@ -263,6 +273,76 @@ namespace IronKingdoms.Combat
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// True when the eye lies inside a blocking terrain zone (e.g. cloud) that participates in fog clip.
+        /// </summary>
+        public static bool IsInsideBlockingTerrainForClip(Vector3 worldPoint, float radius = 0f)
+        {
+            var activeZones = CombatZone.ActiveZones;
+            for (var i = 0; i < activeZones.Count; i++)
+            {
+                var zone = activeZones[i];
+                var feature = zone?.TerrainFeature;
+                if (zone == null
+                    || feature == null
+                    || feature.LineOfSightMode != CombatTerrainLineOfSightMode.BlocksCompletely
+                    || !feature.UsesPassThroughFogClip)
+                {
+                    continue;
+                }
+
+                if (!IsZoneActiveForClipPass(
+                        new ClipZone { LineOfSightMode = feature.LineOfSightMode },
+                        applyForestClipPass,
+                        applyBlockingClipPass))
+                {
+                    continue;
+                }
+
+                if (radius > 0.001f)
+                {
+                    if (zone.IntersectsDisc(worldPoint, radius))
+                    {
+                        return true;
+                    }
+                }
+                else if (zone.ContainsPoint(worldPoint))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Thin-forest pass-through caps apply only when the first contact clip zone is limited-depth forest.
+        /// </summary>
+        internal static bool ShouldApplyThinForestPassThroughCap(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float clipDistance,
+            float maxDistanceWorld)
+        {
+            if (clipDistance >= maxDistanceWorld - 0.001f)
+            {
+                return false;
+            }
+
+            origin.y = 0f;
+            planarDirection.y = 0f;
+            if (planarDirection.sqrMagnitude <= 1e-8f)
+            {
+                return false;
+            }
+
+            planarDirection.Normalize();
+            EnsureCache();
+            var probeDistance = Mathf.Clamp(clipDistance * 0.5f, 0.001f, maxDistanceWorld);
+            var zone = TryGetInnermostLimitedDepthZoneAt(origin + planarDirection * probeDistance);
+            return zone?.TerrainFeature?.LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth;
         }
 
         public static float GetStrictestLimitedDepthWorld()
@@ -965,26 +1045,34 @@ namespace IronKingdoms.Combat
                     planarDirection,
                     remainingFromEntry);
 
+                var entryZone = TryGetInnermostLimitedDepthZoneAt(probeStart);
+                var zoneDepthLimit = GetZoneDepthLimitWorld(entryZone, depthLimitWorld);
+                var isBlockingEntry = IsBlockingClipZone(entryZone);
+
                 if (exitFromEntry < 0f)
                 {
-                    var surroundedClip = Mathf.Min(maxDistanceWorld, entryDistance + depthLimitWorld);
+                    var surroundedClip = Mathf.Min(maxDistanceWorld, entryDistance + zoneDepthLimit);
                     return TryFinalizeClipDistance(
                         origin,
                         planarDirection,
                         surroundedClip,
                         maxDistanceWorld,
-                        exitFromContact: -1f);
+                        exitFromContact: -1f,
+                        failClosed: isBlockingEntry);
                 }
 
-                var absoluteExit = entryDistance + exitFromEntry;
-                var outsideEntryClip = Mathf.Min(maxDistanceWorld, entryDistance + depthLimitWorld);
-                outsideEntryClip = Mathf.Min(outsideEntryClip, absoluteExit);
+                var outsideEntryClip = ComputeOutsideEntryClipDistance(
+                    entryDistance,
+                    exitFromEntry,
+                    zoneDepthLimit,
+                    maxDistanceWorld);
                 return TryFinalizeClipDistance(
                     origin,
                     planarDirection,
                     outsideEntryClip,
                     maxDistanceWorld,
-                    exitFromEntry);
+                    exitFromEntry,
+                    failClosed: isBlockingEntry);
             }
 
             return maxDistanceWorld;
@@ -1382,11 +1470,17 @@ namespace IronKingdoms.Combat
             Vector3 planarDirection,
             float clipDistance,
             float maxDistanceWorld,
-            float exitFromContact)
+            float exitFromContact,
+            bool failClosed = false)
         {
             if (clipDistance >= maxDistanceWorld - 0.001f)
             {
                 return maxDistanceWorld;
+            }
+
+            if (failClosed)
+            {
+                return clipDistance;
             }
 
             var clipPoint = origin + planarDirection * clipDistance;
@@ -1409,6 +1503,41 @@ namespace IronKingdoms.Combat
             }
 
             return clipDistance;
+        }
+
+        private static float GetZoneDepthLimitWorld(CombatZone zone, float fallbackDepthLimitWorld)
+        {
+            var feature = zone?.TerrainFeature;
+            if (feature == null || !feature.UsesPassThroughFogClip)
+            {
+                return fallbackDepthLimitWorld;
+            }
+
+            return CombatScale.InchesToWorldUnits(feature.LineOfSightPassThroughDepthInches);
+        }
+
+        private static bool IsBlockingClipZone(CombatZone zone)
+        {
+            return zone?.TerrainFeature?.LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely;
+        }
+
+        /// <summary>
+        /// Caps reveal at first-contact pass-through depth; thin spans clip at the far boundary.
+        /// </summary>
+        private static float ComputeOutsideEntryClipDistance(
+            float entryDistance,
+            float exitFromEntry,
+            float depthLimitWorld,
+            float maxDistanceWorld)
+        {
+            var passThroughClip = Mathf.Min(maxDistanceWorld, entryDistance + depthLimitWorld);
+            if (exitFromEntry < 0f)
+            {
+                return passThroughClip;
+            }
+
+            var absoluteExit = entryDistance + exitFromEntry;
+            return Mathf.Min(passThroughClip, absoluteExit);
         }
 
         private static float FindFirstOutsideDistanceFromInside(

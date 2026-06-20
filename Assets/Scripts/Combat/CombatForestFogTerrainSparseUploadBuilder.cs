@@ -605,7 +605,7 @@ namespace IronKingdoms.Combat
                         continue;
                     }
 
-                    clip = CapThinForestExitClip(flatEye, dir2, clip, maxRadius, buildContext);
+                    clip = CapThinForestExitClip(flatEye, dir2, clip, maxRadius, buildContext, isForest);
                     if (clip >= openThreshold)
                     {
                         continue;
@@ -771,7 +771,7 @@ namespace IronKingdoms.Combat
                         continue;
                     }
 
-                    clip = CapThinForestExitClip(flatEye, dir2, clip, maxRadius, buildContext);
+                    clip = CapThinForestExitClip(flatEye, dir2, clip, maxRadius, buildContext, isForest);
                     if (clip >= openThreshold)
                     {
                         continue;
@@ -800,6 +800,7 @@ namespace IronKingdoms.Combat
             float[] clipDistances,
             int lutSampleCount)
         {
+            var isForest = zone?.TerrainFeature?.LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth;
             edgeStart.y = flatEye.y;
             edgeEnd.y = flatEye.y;
             var edgeLen = Vector3.Distance(edgeStart, edgeEnd);
@@ -829,7 +830,7 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                clip = CapThinForestExitClip(flatEye, dir2, clip, maxRadius, buildContext);
+                clip = CapThinForestExitClip(flatEye, dir2, clip, maxRadius, buildContext, isForest);
                 if (clip >= openThreshold)
                 {
                     continue;
@@ -1256,7 +1257,12 @@ namespace IronKingdoms.Combat
                 sample.Direction,
                 sample.ClipDistance,
                 maxRadius,
-                buildContext);
+                buildContext,
+                allowThinPassThrough: CombatForestFogClipper.ShouldApplyThinForestPassThroughCap(
+                    flatEye,
+                    new Vector3(sample.Direction.x, 0f, sample.Direction.y),
+                    sample.ClipDistance,
+                    maxRadius));
         }
 
         private static float CapThinForestExitClip(
@@ -1264,9 +1270,10 @@ namespace IronKingdoms.Combat
             float2 direction2D,
             float clipDistance,
             float maxRadius,
-            in CombatForestFogLutBuildContext buildContext)
+            in CombatForestFogLutBuildContext buildContext,
+            bool allowThinPassThrough)
         {
-            if (clipDistance >= maxRadius - DistanceEpsilonWorld)
+            if (!allowThinPassThrough || clipDistance >= maxRadius - DistanceEpsilonWorld)
             {
                 return clipDistance;
             }
