@@ -694,7 +694,9 @@ namespace IronKingdoms.Combat
                 var movingHz = CombatForestFogPassSettings.MovingLineOfSightTargetHz;
                 var movingHzLabel = movingHz > 0.001f ? $"{movingHz:0.#} Hz full LOS" : "every frame";
                 var terrainMode = revealerMoving && CombatForestFogPassSettings.UseWallRayDirectionsWhileMoving
-                    ? "wall-ray directions"
+                    ? CombatForestFogPassSettings.ThrottleMovingWallRayTerrainRecalc
+                        ? $"wall-ray @ {CombatForestFogPassSettings.MovingLineOfSightTargetHz:0.#}Hz"
+                        : "wall-ray every frame"
                     : $"LUT {lutBins}";
                 GUILayout.Label(
                     revealerMoving && movingProfile

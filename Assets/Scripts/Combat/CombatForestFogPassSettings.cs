@@ -108,6 +108,22 @@ namespace IronKingdoms.Combat
         public static bool UseWallRayDirectionsWhileMoving { get; set; } = true;
 
         /// <summary>
+        /// When wall-ray terrain is on, full clipper passes run at <see cref="MovingLineOfSightTargetHz"/>.
+        /// Skipped frames reuse the last ray fan and refresh polygon corner/edge anchors only.
+        /// </summary>
+        public static bool ThrottleMovingWallRayTerrainRecalc { get; set; } = true;
+
+        /// <summary>
+        /// Sample every Nth pass-1 direction for moving wall-ray terrain in open ground (near zones use 1).
+        /// </summary>
+        public static int MovingWallRayTerrainStrideOpenGround { get; set; } = 3;
+
+        /// <summary>
+        /// Polygon edge subdivision in world units while moving (stationary sparse builder uses 0.1).
+        /// </summary>
+        public static float MovingPolygonEdgeSubdivisionWorld { get; set; } = 0.35f;
+
+        /// <summary>
         /// When true, reduced terrain LUT applies even near / inside forest or cloud zones while moving.
         /// Ignored when <see cref="UseWallRayDirectionsWhileMoving"/> is on. Turn off for sharper LUT edges.
         /// </summary>

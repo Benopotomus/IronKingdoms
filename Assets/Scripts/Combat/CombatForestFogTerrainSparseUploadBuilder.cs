@@ -255,7 +255,8 @@ namespace IronKingdoms.Combat
             bool applyBlockingClip,
             List<float2> directions,
             List<float> uploadLengths,
-            int maxSegments)
+            int maxSegments,
+            float edgeSubdivisionWorld = 0f)
         {
             if (directions == null
                 || uploadLengths == null
@@ -311,7 +312,8 @@ namespace IronKingdoms.Combat
                 applyForestClip,
                 applyBlockingClip,
                 clipDistances: null,
-                lutSampleCount: 2);
+                lutSampleCount: 2,
+                edgeSubdivisionWorld);
             SortAndDedupeSamples(openThreshold);
             InsertEssentialOpenBreaksBetweenClippedIslands(
                 eyeWorld,
@@ -736,7 +738,8 @@ namespace IronKingdoms.Combat
             bool applyForestClip,
             bool applyBlockingClip,
             float[] clipDistances,
-            int lutSampleCount)
+            int lutSampleCount,
+            float edgeSubdivisionWorld = 0f)
         {
             if (!applyForestClip && !applyBlockingClip)
             {
@@ -745,7 +748,9 @@ namespace IronKingdoms.Combat
 
             var flatEye = eyeWorld;
             flatEye.y = 0f;
-            var subdivWorld = CombatScale.InchesToWorldUnits(EdgeSubdivisionWorld);
+            var subdivWorld = edgeSubdivisionWorld > 0.001f
+                ? edgeSubdivisionWorld
+                : CombatScale.InchesToWorldUnits(EdgeSubdivisionWorld);
             var activeZones = CombatZone.ActiveZones;
             for (var z = 0; z < activeZones.Count; z++)
             {
