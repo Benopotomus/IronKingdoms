@@ -53,11 +53,13 @@ namespace IronKingdoms.Editor
                 if (existing != null)
                 {
                     PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+                    CombatZonePolygonFootprintMeshPersistence.BakePrefabAtPath(PrefabPath);
                     Debug.Log($"Updated {PrefabPath}.", existing);
                 }
                 else
                 {
                     PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+                    CombatZonePolygonFootprintMeshPersistence.BakePrefabAtPath(PrefabPath);
                     var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
                     Debug.Log($"Created {PrefabPath}.", prefab);
                     Selection.activeObject = prefab;

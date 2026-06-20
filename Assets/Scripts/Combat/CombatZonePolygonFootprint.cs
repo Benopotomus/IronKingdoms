@@ -12,6 +12,7 @@ namespace IronKingdoms.Combat
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(CombatZone))]
+    [ExecuteAlways]
     public class CombatZonePolygonFootprint : MonoBehaviour
     {
         private const string VisualChildName = "Visual";
@@ -238,6 +239,7 @@ namespace IronKingdoms.Combat
             }
         }
 
+        [ContextMenu("Regenerate Mesh")]
         public void RegenerateGeometry()
         {
             if (!HasFootprint || isRegeneratingGeometry)
@@ -264,6 +266,13 @@ namespace IronKingdoms.Combat
                 }
 
                 ExcludeVisualFromNavmeshScan(visual.gameObject);
+
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                {
+                    EditorPersistVisualMeshHandler?.Invoke(gameObject, visual, visualMeshInstance);
+                }
+#endif
             }
             catch (Exception ex)
             {
@@ -311,7 +320,7 @@ namespace IronKingdoms.Combat
                 (minZ + maxZ) * 0.5f);
             var size = new Vector3(
                 Mathf.Max(0.01f, maxX - minX),
-                Mathf.Max(0.01f, colliderHeight),
+                Mathf.Max(0.01f, Mathf.Max(visualThickness, 0.01f)),
                 Mathf.Max(0.01f, maxZ - minZ));
             bounds = new Bounds(center, size);
             return true;
@@ -405,9 +414,8 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            var bottomY = 0f;
-            var topY = colliderHeight;
             var vertexCount = localVertices.Count;
+            const float surfaceY = 0f;
 
             if (visualMesh == null)
             {
@@ -418,56 +426,52 @@ namespace IronKingdoms.Combat
                 visualMesh.Clear(false);
             }
 
-            var vertices = new Vector3[vertexCount * 2];
+            var vertices = new Vector3[vertexCount];
             visualTriangleScratch.Clear();
-            if (visualTriangleScratch.Capacity < triangleScratch.Count * 2 + vertexCount * 6)
+            if (visualTriangleScratch.Capacity < triangleScratch.Count)
             {
-                visualTriangleScratch.Capacity = triangleScratch.Count * 2 + vertexCount * 6;
+                visualTriangleScratch.Capacity = triangleScratch.Count;
             }
 
             for (var i = 0; i < vertexCount; i++)
             {
                 var xz = localVertices[i];
-                vertices[i] = new Vector3(xz.x, bottomY, xz.y);
-                vertices[i + vertexCount] = new Vector3(xz.x, topY, xz.y);
+                vertices[i] = new Vector3(xz.x, surfaceY, xz.y);
             }
 
+            // Footprint vertices are CCW in XZ; Unity front faces need CW when viewed from +Y.
+            var footprintCounterClockwise = CombatPolygonFootprintGeometry.SignedAreaLocal(localVertices) > 0f;
             for (var t = 0; t < triangleScratch.Count; t += 3)
             {
                 var a = triangleScratch[t];
                 var b = triangleScratch[t + 1];
                 var c = triangleScratch[t + 2];
-                visualTriangleScratch.Add(a + vertexCount);
-                visualTriangleScratch.Add(b + vertexCount);
-                visualTriangleScratch.Add(c + vertexCount);
-                visualTriangleScratch.Add(c);
-                visualTriangleScratch.Add(b);
-                visualTriangleScratch.Add(a);
+                if (footprintCounterClockwise)
+                {
+                    visualTriangleScratch.Add(a);
+                    visualTriangleScratch.Add(c);
+                    visualTriangleScratch.Add(b);
+                }
+                else
+                {
+                    visualTriangleScratch.Add(a);
+                    visualTriangleScratch.Add(b);
+                    visualTriangleScratch.Add(c);
+                }
             }
 
+            var normals = new Vector3[vertexCount];
             for (var i = 0; i < vertexCount; i++)
             {
-                var next = (i + 1) % vertexCount;
-                // CCW footprint in XZ: outward side normals need bottom→top→next-top winding.
-                AddQuad(visualTriangleScratch, i, i + vertexCount, next + vertexCount, next);
+                normals[i] = Vector3.up;
             }
 
             visualMesh.SetVertices(vertices);
             visualMesh.SetTriangles(visualTriangleScratch, 0);
-            visualMesh.RecalculateNormals();
+            visualMesh.SetNormals(normals);
             visualMesh.RecalculateBounds();
             cachedGeometryHash = ComputeGeometryHash();
             return visualMesh;
-        }
-
-        private static void AddQuad(List<int> triangles, int a, int b, int c, int d)
-        {
-            triangles.Add(a);
-            triangles.Add(b);
-            triangles.Add(c);
-            triangles.Add(a);
-            triangles.Add(c);
-            triangles.Add(d);
         }
 
         private int ComputeGeometryHash()
@@ -482,12 +486,40 @@ namespace IronKingdoms.Combat
 
                 hash = (hash * 397) ^ colliderCenterLocalY.GetHashCode();
                 hash = (hash * 397) ^ colliderHeight.GetHashCode();
+                hash = (hash * 397) ^ visualThickness.GetHashCode();
                 return hash;
             }
         }
 
 
 #if UNITY_EDITOR
+        public static Action<GameObject, Transform, Mesh> EditorPersistVisualMeshHandler;
+#endif
+
+#if UNITY_EDITOR
+        private void OnDrawGizmosSelected()
+        {
+            // Ensures prefab-stage previews refresh when the asset is first opened.
+            if (Application.isPlaying || !HasFootprint)
+            {
+                return;
+            }
+
+            var visual = transform.Find(VisualChildName);
+            if (visual == null)
+            {
+                return;
+            }
+
+            var meshFilter = visual.GetComponent<MeshFilter>();
+            if (meshFilter != null && meshFilter.sharedMesh != null)
+            {
+                return;
+            }
+
+            EnsureVisualMeshIfNeeded();
+        }
+
         private void OnValidate()
         {
             if (!HasFootprint || !isActiveAndEnabled)

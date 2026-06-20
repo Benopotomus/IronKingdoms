@@ -1,4 +1,3 @@
-#if UNITY_EDITOR
 using System.Collections.Generic;
 using IronKingdoms.Combat;
 using UnityEditor;
@@ -9,37 +8,63 @@ namespace IronKingdoms.Editor
     [CustomEditor(typeof(CombatZonePolygonFootprint))]
     public class CombatZonePolygonFootprintEditor : UnityEditor.Editor
     {
-        private void OnInspectorGUI()
+        public override void OnInspectorGUI()
         {
-            DrawDefaultInspector();
-
             var footprint = (CombatZonePolygonFootprint)target;
-            EditorGUILayout.Space(8f);
-            EditorGUILayout.LabelField("Polygon Editing", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox(
-                "Scene view (with this object selected):\n"
-                + "• Drag green dots to move vertices\n"
-                + "• Shift+click to remove the nearest vertex\n"
-                + "• Ctrl+click to add a vertex on the nearest edge",
-                MessageType.Info);
 
+            EditorGUILayout.LabelField("Polygon Zone Tools", EditorStyles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("Open Zone Editor Window"))
+                if (GUILayout.Button("Regenerate Mesh", GUILayout.Height(24f)))
+                {
+                    RegenerateMesh(footprint);
+                }
+
+                if (GUILayout.Button("Open Zone Editor", GUILayout.Height(24f)))
                 {
                     PolygonForestZoneEditorWindow.OpenAndLoadFrom(footprint);
                 }
-
-                GUI.enabled = footprint.HasFootprint;
-                if (GUILayout.Button("Regenerate Mesh"))
-                {
-                    Undo.RecordObject(footprint, "Regenerate Polygon Zone Mesh");
-                    footprint.RegenerateGeometry();
-                    EditorUtility.SetDirty(footprint);
-                }
-
-                GUI.enabled = true;
             }
+
+            EditorGUILayout.HelpBox(
+                "Scene view: drag green handles to move vertices. Shift+click removes a vertex. Ctrl+click adds one on an edge.",
+                MessageType.None);
+
+            EditorGUILayout.Space(6f);
+            DrawDefaultInspector();
+        }
+
+        [MenuItem("CONTEXT/CombatZonePolygonFootprint/Regenerate Mesh")]
+        private static void RegenerateMeshContextMenu(MenuCommand command)
+        {
+            if (command.context is CombatZonePolygonFootprint footprint)
+            {
+                RegenerateMesh(footprint);
+            }
+        }
+
+        internal static void RegenerateMesh(CombatZonePolygonFootprint footprint)
+        {
+            if (footprint == null || !footprint.HasFootprint)
+            {
+                EditorUtility.DisplayDialog(
+                    "Regenerate Mesh",
+                    "This zone needs at least 3 footprint vertices before a mesh can be built.",
+                    "OK");
+                return;
+            }
+
+            Undo.RecordObject(footprint, "Regenerate Polygon Zone Mesh");
+            footprint.RegenerateGeometry();
+            EditorUtility.SetDirty(footprint);
+
+            var prefabPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(footprint.gameObject);
+            if (!string.IsNullOrEmpty(prefabPath))
+            {
+                CombatZonePolygonFootprintMeshPersistence.BakePrefabAtPath(prefabPath);
+            }
+
+            SceneView.RepaintAll();
         }
 
         private void OnSceneGUI()
@@ -379,4 +404,3 @@ namespace IronKingdoms.Editor
         }
     }
 }
-#endif
