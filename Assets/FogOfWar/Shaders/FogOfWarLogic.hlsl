@@ -481,6 +481,7 @@ bool TerrainUploadRayIsOpen(RevealerSightSegment segment, float totalRevealerRad
 }
 
 const float FOW_TERRAIN_MAX_CLIPPED_WRAP_GAP = 2.3561945; // 135 degrees
+const float FOW_TERRAIN_MAX_CLIPPED_TO_CLIPPED_WRAP_GAP = 0.39269908; // 22.5 degrees
 
 float ComputeSortedWrapGapRadians(float2 lastDir, float2 firstDir)
 {
@@ -500,7 +501,10 @@ bool ShouldAllowTerrainWrapWedge(
     bool firstOpen = first.length > totalRevealerRadius - FOW_WALL_BLOCK_EPSILON;
     if (lastOpen || firstOpen)
         return true;
-    return ComputeSortedWrapGapRadians(last.segmentDirection, first.segmentDirection) <= FOW_TERRAIN_MAX_CLIPPED_WRAP_GAP;
+    float gap = ComputeSortedWrapGapRadians(last.segmentDirection, first.segmentDirection);
+    if (gap > FOW_TERRAIN_MAX_CLIPPED_WRAP_GAP)
+        return false;
+    return gap <= FOW_TERRAIN_MAX_CLIPPED_TO_CLIPPED_WRAP_GAP;
 }
 
 float SampleTerrainClipAngular(

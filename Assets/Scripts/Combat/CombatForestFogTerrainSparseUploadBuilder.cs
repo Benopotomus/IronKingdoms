@@ -6,16 +6,23 @@ using UnityEngine;
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Converts a uniform terrain clip LUT into sparse sight segments with refined edges and
-    /// polygon corners — same wedge/chord rules as stock FOW walls.
+    /// Terrain upload: LUT depth-clip distances for fill, subdivided polygon edges for straight boundaries.
+    /// Distances always come from the analytic clipper — edge samples only anchor angular shape.
     /// </summary>
     internal static class CombatForestFogTerrainSparseUploadBuilder
     {
         private const float DistanceEpsilonWorld = 0.01f;
-        private const float CornerCrossThreshold = 0.002f;
+        private const float NearEntrySnapWorld = 0.08f;
         private const float MinAngleSeparationRadians = math.PI / 720f;
+        /// <summary>
+        /// Wedge/chord span above this must contain an open upload sample or the shader lerps
+        /// between separate forest edges (giant arc), especially while the eye moves.
+        /// </summary>
+        private const float MaxClippedWedgeWithoutOpenRadians = math.PI / 18f;
         private const int EdgeRefineIterations = 8;
-        private const float EdgeSubdivisionWorld = 0.15f;
+        private const float EdgeSubdivisionWorld = 0.1f;
+
+        private static readonly List<AngularSample> OpenBreakInsertScratch = new();
 
         private struct AngularSample
         {
@@ -24,15 +31,10 @@ namespace IronKingdoms.Combat
             public float ClipDistance;
             public bool Clipped;
             public bool Essential;
-            /// <summary>True when every LUT neighbor is also clipped — keeps full depth clip, no silhouette cap.</summary>
-            public bool InteriorDepth;
         }
 
         private static readonly List<AngularSample> SampleScratch = new();
-        private static readonly List<Vector3> CornerScratch = new();
         private static readonly List<Vector3> ZoneCornerScratch = new();
-        private static readonly bool[] KeepBinScratch = new bool[CombatForestFogAngularClipperLut.SampleCount];
-        private static readonly bool[] EssentialBinScratch = new bool[CombatForestFogAngularClipperLut.SampleCount];
 
         public static int BuildUploadSegments(
             float[] clipDistances,
@@ -60,23 +62,102 @@ namespace IronKingdoms.Combat
             var openThreshold = maxRadius - DistanceEpsilonWorld;
             SampleScratch.Clear();
 
-            MarkTransitionAndCornerBins(clipDistances, lutSampleCount, openThreshold);
-            CollectMarkedLutBins(clipDistances, lutSampleCount, openThreshold);
-            RefineOpenClippedTransitions(clipDistances, lutSampleCount, maxRadius, eyeWorld, buildContext, openThreshold);
-            InjectFootprintCorners(
-                eyeWorld,
+            var flatEye = eyeWorld;
+            flatEye.y = 0f;
+            var activeClipZoneCount = CombatForestFogClipper.GetActiveClipZoneCount(
+                applyForestClip,
+                applyBlockingClip);
+            var injectPolygonShape = ShouldInjectPolygonShapeSamples(buildContext, activeClipZoneCount);
+
+            // Depth fill from LUT; polygon edge anchors only when the eye is outside forest.
+            InjectDepthClippedLutBins(
+                clipDistances,
+                lutSampleCount,
+                flatEye,
                 maxRadius,
                 buildContext,
                 openThreshold,
-                applyForestClip,
-                applyBlockingClip);
-            InjectPolygonEdgeSamples(
-                eyeWorld,
+                activeClipZoneCount);
+            RefineOpenClippedTransitions(
+                clipDistances,
+                lutSampleCount,
                 maxRadius,
+                eyeWorld,
                 buildContext,
+                openThreshold);
+            if (injectPolygonShape)
+            {
+                InjectPolygonEdgeSamples(
+                    eyeWorld,
+                    maxRadius,
+                    buildContext,
+                    openThreshold,
+                    applyForestClip,
+                    applyBlockingClip,
+                    clipDistances,
+                    lutSampleCount);
+                InjectFootprintCorners(
+                    eyeWorld,
+                    maxRadius,
+                    buildContext,
+                    openThreshold,
+                    applyForestClip,
+                    applyBlockingClip,
+                    clipDistances,
+                    lutSampleCount);
+            }
+
+            if (CountClippedSamples(openThreshold) < 2 && (applyForestClip || applyBlockingClip))
+            {
+                if (injectPolygonShape)
+                {
+                    BuildExitSilhouetteFallbackUpload(
+                        flatEye,
+                        maxRadius,
+                        buildContext,
+                        openThreshold,
+                        applyForestClip,
+                        applyBlockingClip,
+                        clipDistances,
+                        lutSampleCount);
+                }
+            }
+
+            if (CountClippedSamples(openThreshold) < 2 && (applyForestClip || applyBlockingClip))
+            {
+                BuildDenseClippedLutFallbackUpload(
+                    clipDistances,
+                    lutSampleCount,
+                    maxRadius,
+                    openThreshold);
+            }
+
+            if (CountClippedSamples(openThreshold) > 0)
+            {
+                InjectSparseOpenLutBins(
+                    clipDistances,
+                    lutSampleCount,
+                    maxRadius,
+                    openThreshold,
+                    activeClipZoneCount);
+            }
+
+            if (SampleScratch.Count < 2 && (applyForestClip || applyBlockingClip))
+            {
+                BuildDenseClippedLutFallbackUpload(
+                    clipDistances,
+                    lutSampleCount,
+                    maxRadius,
+                    openThreshold);
+            }
+
+            SortAndDedupeSamples(openThreshold);
+            InsertEssentialOpenBreaksBetweenClippedIslands(
+                flatEye,
+                maxRadius,
                 openThreshold,
-                applyForestClip,
-                applyBlockingClip);
+                buildContext,
+                activeClipZoneCount);
             SortAndDedupeSamples(openThreshold);
 
             if (SampleScratch.Count > maxSegments)
@@ -84,20 +165,91 @@ namespace IronKingdoms.Combat
                 DecimateSamplesToBudget(maxSegments);
             }
 
-            if (SampleScratch.Count > maxSegments)
+            TrimToUploadBudget(maxSegments);
+
+            if (SampleScratch.Count < 2)
             {
-                BuildPrioritizedFallbackUpload(
-                    clipDistances,
-                    lutSampleCount,
-                    maxRadius,
-                    outDirections,
-                    outUploadLengths,
-                    maxSegments);
-                return outDirections.Count;
+                return 0;
             }
 
+            WriteSamplesToOutput(flatEye, maxRadius, buildContext, outDirections, outUploadLengths);
+            return outDirections.Count;
+        }
+
+        public static bool UploadHasClippedSegments(
+            IReadOnlyList<float> uploadLengths,
+            float maxRadius)
+        {
+            if (uploadLengths == null || uploadLengths.Count < 2 || maxRadius <= 0.001f)
+            {
+                return false;
+            }
+
+            var openThreshold = maxRadius - DistanceEpsilonWorld;
+            for (var i = 0; i < uploadLengths.Count; i++)
+            {
+                if (uploadLengths[i] < openThreshold)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static int BuildDenseLutFallbackUploadSegments(
+            float[] clipDistances,
+            int lutSampleCount,
+            float maxRadius,
+            Vector3 eyeWorld,
+            in CombatForestFogLutBuildContext buildContext,
+            List<float2> outDirections,
+            List<float> outUploadLengths,
+            int maxSegments)
+        {
+            outDirections.Clear();
+            outUploadLengths.Clear();
+            if (clipDistances == null
+                || lutSampleCount < 2
+                || maxSegments < 2
+                || maxRadius <= 0.001f)
+            {
+                return 0;
+            }
+
+            var openThreshold = maxRadius - DistanceEpsilonWorld;
+            SampleScratch.Clear();
             var flatEye = eyeWorld;
             flatEye.y = 0f;
+            BuildDenseClippedLutFallbackUpload(clipDistances, lutSampleCount, maxRadius, openThreshold);
+            SortAndDedupeSamples(openThreshold);
+            InsertEssentialOpenBreaksBetweenClippedIslands(
+                flatEye,
+                maxRadius,
+                openThreshold,
+                buildContext,
+                CombatForestFogClipper.GetActiveClipZoneCount(
+                    buildContext.ApplyForestClip,
+                    buildContext.ApplyBlockingClip));
+            SortAndDedupeSamples(openThreshold);
+            TrimToUploadBudget(maxSegments);
+
+            if (SampleScratch.Count < 2 || CountClippedSamples(openThreshold) < 1)
+            {
+                return 0;
+            }
+
+            WriteSamplesToOutput(flatEye, maxRadius, buildContext, outDirections, outUploadLengths);
+            return outDirections.Count;
+        }
+
+        private static void WriteSamplesToOutput(
+            Vector3 flatEye,
+            float maxRadius,
+            in CombatForestFogLutBuildContext buildContext,
+            List<float2> outDirections,
+            List<float> outUploadLengths)
+        {
             for (var i = 0; i < SampleScratch.Count; i++)
             {
                 var sample = SampleScratch[i];
@@ -107,92 +259,99 @@ namespace IronKingdoms.Combat
                         ? ResolveMeshUploadLength(sample, flatEye, maxRadius, buildContext)
                         : maxRadius + 1f);
             }
-
-            return outDirections.Count;
         }
 
-        private static void MarkTransitionAndCornerBins(
-            float[] clipDistances,
-            int lutSampleCount,
-            float openThreshold)
+        private static void TrimToUploadBudget(int maxSegments)
         {
-            for (var i = 0; i < lutSampleCount; i++)
+            while (SampleScratch.Count > maxSegments)
             {
-                KeepBinScratch[i] = false;
-                EssentialBinScratch[i] = false;
-            }
-
-            for (var i = 0; i < lutSampleCount; i++)
-            {
-                var prev = (i - 1 + lutSampleCount) % lutSampleCount;
-                var next = (i + 1) % lutSampleCount;
-                var clipped = clipDistances[i] < openThreshold;
-                var prevClipped = clipDistances[prev] < openThreshold;
-                var nextClipped = clipDistances[next] < openThreshold;
-
-                if (clipped != prevClipped || clipped != nextClipped)
+                var removeIndex = -1;
+                for (var i = SampleScratch.Count - 1; i >= 0; i--)
                 {
-                    KeepBinScratch[i] = true;
-                    KeepBinScratch[prev] = true;
-                    KeepBinScratch[next] = true;
-                    EssentialBinScratch[i] = true;
-                    EssentialBinScratch[prev] = true;
-                    EssentialBinScratch[next] = true;
+                    if (!SampleScratch[i].Essential && SampleScratch[i].Clipped)
+                    {
+                        removeIndex = i;
+                        break;
+                    }
                 }
 
-                if (!clipped || !prevClipped || !nextClipped)
+                if (removeIndex >= 0)
+                {
+                    SampleScratch.RemoveAt(removeIndex);
+                    continue;
+                }
+
+                for (var i = SampleScratch.Count - 1; i >= 0; i--)
+                {
+                    if (!SampleScratch[i].Essential && !SampleScratch[i].Clipped)
+                    {
+                        removeIndex = i;
+                        break;
+                    }
+                }
+
+                if (removeIndex < 0)
+                {
+                    break;
+                }
+
+                SampleScratch.RemoveAt(removeIndex);
+            }
+        }
+
+        private static bool ShouldInjectPolygonShapeSamples(
+            in CombatForestFogLutBuildContext buildContext,
+            int activeClipZoneCount)
+        {
+            // Multi-zone polygon anchors + sparse decimation chord across zones while moving.
+            return !buildContext.RayStartedInsideForest && activeClipZoneCount <= 1;
+        }
+
+        /// <summary>
+        /// LUT clipped bins carrying analytic depth distances (entry-side promoted to entry + depth).
+        /// </summary>
+        private static void InjectDepthClippedLutBins(
+            float[] clipDistances,
+            int lutSampleCount,
+            Vector3 flatEye,
+            float maxRadius,
+            in CombatForestFogLutBuildContext buildContext,
+            float openThreshold,
+            int activeClipZoneCount)
+        {
+            if (clipDistances == null || lutSampleCount < 1)
+            {
+                return;
+            }
+
+            var lutFillZoneCount = activeClipZoneCount > 0
+                ? activeClipZoneCount
+                : CombatForestFogClipper.GetActiveClipZoneCount(
+                    buildContext.ApplyForestClip,
+                    buildContext.ApplyBlockingClip);
+            var multiZone = lutFillZoneCount >= 2;
+            var step = math.max(1, lutSampleCount / (multiZone ? 360 : 180));
+            for (var i = 0; i < lutSampleCount; i += step)
+            {
+                var clip = clipDistances[i];
+                if (clip >= openThreshold)
                 {
                     continue;
                 }
 
-                var dir = GetDirection2D(i, lutSampleCount);
-                var dirPrev = GetDirection2D(prev, lutSampleCount);
-                var dirNext = GetDirection2D(next, lutSampleCount);
-                var point = dir * clipDistances[i];
-                var pointPrev = dirPrev * clipDistances[prev];
-                var pointNext = dirNext * clipDistances[next];
-                var edgePrev = point - pointPrev;
-                var edgeNext = pointNext - point;
-                var cross = edgePrev.x * edgeNext.y - edgePrev.y * edgeNext.x;
-                if (math.abs(cross) > CornerCrossThreshold)
-                {
-                    KeepBinScratch[i] = true;
-                    EssentialBinScratch[i] = true;
-                }
-
-                // Interior forest rays keep full depth clip; silhouette uses footprint boundary.
-                if (clipped && prevClipped && nextClipped)
-                {
-                    KeepBinScratch[i] = true;
-                }
-            }
-        }
-
-        private static void CollectMarkedLutBins(
-            float[] clipDistances,
-            int lutSampleCount,
-            float openThreshold)
-        {
-            for (var i = 0; i < lutSampleCount; i++)
-            {
-                if (!KeepBinScratch[i])
+                var dir2 = GetDirection2D(i, lutSampleCount);
+                clip = ResolveUploadClipDistance(flatEye, dir2, clip, maxRadius, buildContext);
+                if (clip >= openThreshold)
                 {
                     continue;
                 }
 
-                var clipped = clipDistances[i] < openThreshold;
-                var prev = (i - 1 + lutSampleCount) % lutSampleCount;
-                var next = (i + 1) % lutSampleCount;
-                var interiorDepth = clipped
-                    && clipDistances[prev] < openThreshold
-                    && clipDistances[next] < openThreshold;
                 AddSample(
                     IndexToAngle(i, lutSampleCount),
-                    GetDirection2D(i, lutSampleCount),
-                    clipDistances[i],
-                    clipped,
-                    essential: EssentialBinScratch[i] || !clipped,
-                    interiorDepth: interiorDepth);
+                    dir2,
+                    clip,
+                    clipped: true,
+                    essential: multiZone);
             }
         }
 
@@ -239,14 +398,134 @@ namespace IronKingdoms.Combat
                     }
                 }
 
-                var refinedAngle = angleHigh % (math.PI * 2f);
-                var refinedDir = AngleToDirection2D(refinedAngle);
-                var refinedClip = SampleClipAtAngle(refinedAngle, maxRadius, eyeWorld, buildContext);
-                AddSample(refinedAngle, refinedDir, refinedClip, refinedClip < openThreshold, essential: true);
+                var refinedClipAngle = angleHigh % (math.PI * 2f);
+                var refinedClipDir = AngleToDirection2D(refinedClipAngle);
+                var refinedClip = SampleClipAtAngle(refinedClipAngle, maxRadius, eyeWorld, buildContext);
+                refinedClip = ResolveUploadClipDistance(
+                    eyeWorld,
+                    refinedClipDir,
+                    refinedClip,
+                    maxRadius,
+                    buildContext);
+                if (refinedClip < openThreshold)
+                {
+                    AddSample(refinedClipAngle, refinedClipDir, refinedClip, true, essential: true);
+                }
 
-                var openDir = AngleToDirection2D(angleOpen % (math.PI * 2f));
-                AddSample(angleOpen % (math.PI * 2f), openDir, maxRadius, clipped: false, essential: true);
+                var refinedOpenAngle = angleLow % (math.PI * 2f);
+                var refinedOpenDir = AngleToDirection2D(refinedOpenAngle);
+                AddSample(refinedOpenAngle, refinedOpenDir, maxRadius, clipped: false, essential: true);
             }
+        }
+
+        /// <summary>
+        /// Thick forest uploads must sit on the depth limit (entry + depth), not the entry wall.
+        /// Entry-side transitions were skipped before, leaving only coarse LUT stairs while moving.
+        /// </summary>
+        private static float ResolveUploadClipDistance(
+            Vector3 flatEye,
+            float2 direction2D,
+            float clipDistance,
+            float maxRadius,
+            in CombatForestFogLutBuildContext buildContext)
+        {
+            if (!buildContext.HasForest || clipDistance >= maxRadius - DistanceEpsilonWorld)
+            {
+                return clipDistance;
+            }
+
+            var dirWorld = new Vector3(direction2D.x, 0f, direction2D.y);
+            if (dirWorld.sqrMagnitude <= 1e-8f)
+            {
+                return clipDistance;
+            }
+
+            dirWorld.Normalize();
+            var depthWorld = buildContext.DepthWorld;
+            var resolved = clipDistance;
+            var activeZones = CombatZone.ActiveZones;
+            for (var z = 0; z < activeZones.Count; z++)
+            {
+                var zone = activeZones[z];
+                var feature = zone?.TerrainFeature;
+                if (zone == null
+                    || feature == null
+                    || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                {
+                    continue;
+                }
+
+                if (zone.ContainsPoint(flatEye))
+                {
+                    continue;
+                }
+
+                if (!CombatForestFogClipper.TryGetZoneRayFootprintIntervalWorld(
+                        zone,
+                        flatEye,
+                        dirWorld,
+                        out var enter,
+                        out var exit))
+                {
+                    continue;
+                }
+
+                if (enter <= DistanceEpsilonWorld
+                    || exit <= enter + depthWorld * 0.5f)
+                {
+                    continue;
+                }
+
+                var depthClip = math.min(maxRadius, math.min(exit, enter + depthWorld));
+                if (math.abs(clipDistance - enter) <= NearEntrySnapWorld
+                    && clipDistance < enter + depthWorld * 0.25f
+                    && clipDistance < exit - NearEntrySnapWorld)
+                {
+                    resolved = math.max(resolved, depthClip);
+                }
+            }
+
+            return resolved;
+        }
+
+        private static float SampleClipAtAngle(
+            float angleRadians,
+            float maxRadius,
+            Vector3 eyeWorld,
+            in CombatForestFogLutBuildContext buildContext)
+        {
+            var dir2 = AngleToDirection2D(angleRadians);
+            var directionWorld = new Vector3(dir2.x, 0f, dir2.y);
+            return SampleClipAlongDirection(directionWorld, maxRadius, eyeWorld, buildContext);
+        }
+
+        private static float LookupLutClipAtDirection(
+            float2 direction2D,
+            float[] clipDistances,
+            int lutSampleCount,
+            float maxRadius)
+        {
+            if (clipDistances == null || lutSampleCount < 1)
+            {
+                return maxRadius;
+            }
+
+            var bestDot = -2f;
+            var bestClip = maxRadius;
+            for (var i = 0; i < lutSampleCount; i++)
+            {
+                var dir = GetDirection2D(i, lutSampleCount);
+                var dot = math.dot(dir, direction2D);
+                if (dot <= bestDot)
+                {
+                    continue;
+                }
+
+                bestDot = dot;
+                bestClip = clipDistances[i];
+            }
+
+            return bestClip;
         }
 
         private static void InjectFootprintCorners(
@@ -255,47 +534,97 @@ namespace IronKingdoms.Combat
             in CombatForestFogLutBuildContext buildContext,
             float openThreshold,
             bool applyForestClip,
-            bool applyBlockingClip)
+            bool applyBlockingClip,
+            float[] clipDistances,
+            int lutSampleCount)
         {
-            CornerScratch.Clear();
-            if (applyForestClip || applyBlockingClip)
+            if (!applyForestClip && !applyBlockingClip)
             {
-                CombatForestFogClipper.CollectLimitedDepthZoneCornersWorld(CornerScratch);
+                return;
             }
 
             var flatEye = eyeWorld;
             flatEye.y = 0f;
-            for (var i = 0; i < CornerScratch.Count; i++)
+            var activeZones = CombatZone.ActiveZones;
+            for (var z = 0; z < activeZones.Count; z++)
             {
-                var corner = CornerScratch[i];
-                corner.y = flatEye.y;
-                var offset = corner - flatEye;
-                offset.y = 0f;
-                if (offset.sqrMagnitude <= 1e-8f)
+                var zone = activeZones[z];
+                var feature = zone?.TerrainFeature;
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
                 {
                     continue;
                 }
 
-                var directionWorld = offset.normalized;
-                var clip = SampleClipAlongDirection(directionWorld, maxRadius, flatEye, buildContext);
-                if (clip >= openThreshold)
+                var isForest = feature.LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth;
+                var isCloudFog = feature.LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely;
+                if (isForest && !applyForestClip)
                 {
                     continue;
                 }
 
-                var dir2 = math.normalize(new float2(directionWorld.x, directionWorld.z));
-                var angle = math.atan2(dir2.y, dir2.x);
-                if (angle < 0f)
+                if (isCloudFog && !applyBlockingClip)
                 {
-                    angle += math.PI * 2f;
+                    continue;
                 }
 
-                AddSample(angle, dir2, clip, true, essential: true);
+                if (!isForest && !isCloudFog)
+                {
+                    continue;
+                }
+
+                ZoneCornerScratch.Clear();
+                zone.CollectFootprintCorners(ZoneCornerScratch);
+                if (ZoneCornerScratch.Count < 2)
+                {
+                    continue;
+                }
+
+                for (var i = 0; i < ZoneCornerScratch.Count; i++)
+                {
+                    var corner = ZoneCornerScratch[i];
+                    corner.y = flatEye.y;
+                    var offset = corner - flatEye;
+                    offset.y = 0f;
+                    if (offset.sqrMagnitude <= 1e-8f)
+                    {
+                        continue;
+                    }
+
+                    var directionWorld = offset.normalized;
+                    var clip = SampleClipAlongDirection(directionWorld, maxRadius, flatEye, buildContext);
+                    var dir2 = math.normalize(new float2(directionWorld.x, directionWorld.z));
+                    clip = ResolveUploadClipDistance(flatEye, dir2, clip, maxRadius, buildContext);
+                    if (clip >= openThreshold
+                        || !CombatForestFogClipper.ClipDistanceRelatesToZoneFootprint(
+                            zone,
+                            flatEye,
+                            directionWorld,
+                            clip,
+                            buildContext.DepthWorld))
+                    {
+                        continue;
+                    }
+
+                    clip = CapThinForestExitClip(flatEye, dir2, clip, maxRadius, buildContext);
+                    if (clip >= openThreshold)
+                    {
+                        continue;
+                    }
+
+                    var angle = math.atan2(dir2.y, dir2.x);
+                    if (angle < 0f)
+                    {
+                        angle += math.PI * 2f;
+                    }
+
+                    AddSample(angle, dir2, clip, true, essential: true);
+                }
             }
         }
 
         /// <summary>
-        /// Subdivides visible polygon edges so wedge/chords follow straight footprint lines (not LUT stairs).
+        /// Subdivides polygon edges so wedge/chords follow straight footprint lines (not LUT stairs).
+        /// Both near (entry-facing) and far (exit-facing) edges are sampled; distances stay analytic.
         /// </summary>
         private static void InjectPolygonEdgeSamples(
             Vector3 eyeWorld,
@@ -303,7 +632,9 @@ namespace IronKingdoms.Combat
             in CombatForestFogLutBuildContext buildContext,
             float openThreshold,
             bool applyForestClip,
-            bool applyBlockingClip)
+            bool applyBlockingClip,
+            float[] clipDistances,
+            int lutSampleCount)
         {
             if (!applyForestClip && !applyBlockingClip)
             {
@@ -352,66 +683,129 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var eyeInside = zone.ContainsPoint(flatEye);
                 for (var c = 0; c < ZoneCornerScratch.Count; c++)
                 {
                     var edgeStart = ZoneCornerScratch[c];
                     var edgeEnd = ZoneCornerScratch[(c + 1) % ZoneCornerScratch.Count];
-                    if (!IsPolygonEdgeFacingEye(edgeStart, edgeEnd, flatEye, eyeInside))
-                    {
-                        continue;
-                    }
-
                     InjectSubdividedEdgeSamples(
+                        zone,
                         edgeStart,
                         edgeEnd,
                         flatEye,
                         maxRadius,
                         buildContext,
                         openThreshold,
-                        subdivWorld);
+                        subdivWorld,
+                        clipDistances,
+                        lutSampleCount);
                 }
             }
         }
 
-        private static bool IsPolygonEdgeFacingEye(
-            Vector3 edgeStart,
-            Vector3 edgeEnd,
+        private static void BuildExitSilhouetteFallbackUpload(
             Vector3 flatEye,
-            bool eyeInsideZone)
+            float maxRadius,
+            in CombatForestFogLutBuildContext buildContext,
+            float openThreshold,
+            bool applyForestClip,
+            bool applyBlockingClip,
+            float[] clipDistances,
+            int lutSampleCount)
         {
-            var a = new Vector2(edgeStart.x, edgeStart.z);
-            var b = new Vector2(edgeEnd.x, edgeEnd.z);
-            var eye = new Vector2(flatEye.x, flatEye.z);
-            var edge = b - a;
-            if (edge.sqrMagnitude <= 1e-8f)
+            var activeZones = CombatZone.ActiveZones;
+            for (var z = 0; z < activeZones.Count; z++)
             {
-                return false;
-            }
+                var zone = activeZones[z];
+                var feature = zone?.TerrainFeature;
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
+                {
+                    continue;
+                }
 
-            var normal = new Vector2(edge.y, -edge.x);
-            var midpoint = (a + b) * 0.5f;
-            var signedDist = math.dot(normal, eye - midpoint);
-            return eyeInsideZone ? signedDist < 0f : signedDist > 0f;
+                var isForest = feature.LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth;
+                var isCloudFog = feature.LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely;
+                if (isForest && !applyForestClip)
+                {
+                    continue;
+                }
+
+                if (isCloudFog && !applyBlockingClip)
+                {
+                    continue;
+                }
+
+                if (!isForest && !isCloudFog)
+                {
+                    continue;
+                }
+
+                ZoneCornerScratch.Clear();
+                zone.CollectFootprintCorners(ZoneCornerScratch);
+                for (var c = 0; c < ZoneCornerScratch.Count; c++)
+                {
+                    var corner = ZoneCornerScratch[c];
+                    corner.y = flatEye.y;
+                    var offset = corner - flatEye;
+                    offset.y = 0f;
+                    if (offset.sqrMagnitude <= 1e-8f || offset.sqrMagnitude > maxRadius * maxRadius)
+                    {
+                        continue;
+                    }
+
+                    var dirWorld = offset.normalized;
+                    var dir2 = math.normalize(new float2(dirWorld.x, dirWorld.z));
+                    var clip = LookupLutClipAtDirection(dir2, clipDistances, lutSampleCount, maxRadius);
+                    if (clip >= openThreshold)
+                    {
+                        clip = SampleClipAlongDirection(dirWorld, maxRadius, flatEye, buildContext);
+                    }
+
+                    if (clip >= openThreshold
+                        || !CombatForestFogClipper.ClipDistanceRelatesToZoneFootprint(
+                            zone,
+                            flatEye,
+                            dirWorld,
+                            clip,
+                            buildContext.DepthWorld))
+                    {
+                        continue;
+                    }
+
+                    clip = CapThinForestExitClip(flatEye, dir2, clip, maxRadius, buildContext);
+                    if (clip >= openThreshold)
+                    {
+                        continue;
+                    }
+
+                    var angle = math.atan2(dir2.y, dir2.x);
+                    if (angle < 0f)
+                    {
+                        angle += math.PI * 2f;
+                    }
+
+                    AddSample(angle, dir2, clip, true, essential: true);
+                }
+            }
         }
 
         private static void InjectSubdividedEdgeSamples(
+            CombatZone zone,
             Vector3 edgeStart,
             Vector3 edgeEnd,
             Vector3 flatEye,
             float maxRadius,
             in CombatForestFogLutBuildContext buildContext,
             float openThreshold,
-            float subdivWorld)
+            float subdivWorld,
+            float[] clipDistances,
+            int lutSampleCount)
         {
             edgeStart.y = flatEye.y;
             edgeEnd.y = flatEye.y;
             var edgeLen = Vector3.Distance(edgeStart, edgeEnd);
             var steps = math.min(
-                4,
+                16,
                 math.max(1, (int)math.ceil(edgeLen / math.max(subdivWorld, 0.01f))));
-            var segStart2 = new Vector2(edgeStart.x, edgeStart.z);
-            var segEnd2 = new Vector2(edgeEnd.x, edgeEnd.z);
 
             for (var s = 0; s <= steps; s++)
             {
@@ -428,24 +822,15 @@ namespace IronKingdoms.Combat
                 var distToPoint = math.sqrt(distSq);
                 var dirWorld = offset / distToPoint;
                 var dir2 = math.normalize(new float2(dirWorld.x, dirWorld.z));
-                if (!CombatFogPlanarGeometry.TryRaySegmentHit(
-                        new Vector2(flatEye.x, flatEye.z),
-                        dir2,
-                        segStart2,
-                        segEnd2,
-                        out var edgeHitDist))
-                {
-                    continue;
-                }
-
                 var clip = SampleClipAlongDirection(dirWorld, maxRadius, flatEye, buildContext);
+                clip = ResolveUploadClipDistance(flatEye, dir2, clip, maxRadius, buildContext);
                 if (clip >= openThreshold)
                 {
                     continue;
                 }
 
-                // Another feature blocks before this edge along the ray.
-                if (clip + DistanceEpsilonWorld < edgeHitDist)
+                clip = CapThinForestExitClip(flatEye, dir2, clip, maxRadius, buildContext);
+                if (clip >= openThreshold)
                 {
                     continue;
                 }
@@ -456,9 +841,187 @@ namespace IronKingdoms.Combat
                     angle += math.PI * 2f;
                 }
 
-                var isCorner = s == 0 || s == steps;
-                AddSample(angle, dir2, edgeHitDist, true, essential: isCorner);
+                AddSample(angle, dir2, clip, true, essential: true);
             }
+        }
+
+        /// <summary>
+        /// Prevents the shader from angular-lerping between two separate forest edges when budget
+        /// decimation removed the open samples that used to sit between them.
+        /// Uses analytic clip at the midpoint — open only when that direction is genuinely open.
+        /// </summary>
+        private static void InsertEssentialOpenBreaksBetweenClippedIslands(
+            Vector3 flatEye,
+            float maxRadius,
+            float openThreshold,
+            in CombatForestFogLutBuildContext buildContext,
+            int activeClipZoneCount)
+        {
+            if (SampleScratch.Count < 2)
+            {
+                return;
+            }
+
+            OpenBreakInsertScratch.Clear();
+            TryQueueBreakBetweenClippedPair(
+                SampleScratch[SampleScratch.Count - 1],
+                SampleScratch[0],
+                wrapGap: true,
+                flatEye,
+                maxRadius,
+                openThreshold,
+                buildContext,
+                activeClipZoneCount,
+                OpenBreakInsertScratch);
+
+            for (var i = 0; i < SampleScratch.Count - 1; i++)
+            {
+                TryQueueBreakBetweenClippedPair(
+                    SampleScratch[i],
+                    SampleScratch[i + 1],
+                    wrapGap: false,
+                    flatEye,
+                    maxRadius,
+                    openThreshold,
+                    buildContext,
+                    activeClipZoneCount,
+                    OpenBreakInsertScratch);
+            }
+
+            if (OpenBreakInsertScratch.Count == 0)
+            {
+                return;
+            }
+
+            SampleScratch.AddRange(OpenBreakInsertScratch);
+        }
+
+        private const int WedgeSpanFillSteps = 4;
+
+        private static void TryQueueBreakBetweenClippedPair(
+            AngularSample from,
+            AngularSample to,
+            bool wrapGap,
+            Vector3 flatEye,
+            float maxRadius,
+            float openThreshold,
+            in CombatForestFogLutBuildContext buildContext,
+            int activeClipZoneCount,
+            List<AngularSample> output)
+        {
+            if (!from.Clipped || !to.Clipped)
+            {
+                return;
+            }
+
+            if (from.ClipDistance >= openThreshold || to.ClipDistance >= openThreshold)
+            {
+                return;
+            }
+
+            var gap = wrapGap
+                ? (to.Angle + math.PI * 2f) - from.Angle
+                : to.Angle - from.Angle;
+            if (gap <= MaxClippedWedgeWithoutOpenRadians)
+            {
+                return;
+            }
+
+            if (HasOpenSampleBetween(from.Angle, to.Angle, wrapGap, openThreshold))
+            {
+                return;
+            }
+
+            var spanHasForestClip = false;
+            for (var s = 1; s < WedgeSpanFillSteps; s++)
+            {
+                var t = s / (float)WedgeSpanFillSteps;
+                var fillAngle = InterpolateSampleAngle(from.Angle, to.Angle, wrapGap, t);
+                var fillDir = AngleToDirection2D(fillAngle);
+                var fillDirWorld = new Vector3(fillDir.x, 0f, fillDir.y);
+                var fillClip = SampleClipAlongDirection(fillDirWorld, maxRadius, flatEye, buildContext);
+                fillClip = ResolveUploadClipDistance(flatEye, fillDir, fillClip, maxRadius, buildContext);
+
+                if (fillClip < openThreshold)
+                {
+                    spanHasForestClip = true;
+                    output.Add(new AngularSample
+                    {
+                        Angle = fillAngle,
+                        Direction = fillDir,
+                        ClipDistance = fillClip,
+                        Clipped = true,
+                        Essential = true,
+                    });
+                }
+            }
+
+            if (spanHasForestClip || activeClipZoneCount >= 2)
+            {
+                return;
+            }
+
+            for (var s = 1; s < WedgeSpanFillSteps; s++)
+            {
+                var t = s / (float)WedgeSpanFillSteps;
+                var fillAngle = InterpolateSampleAngle(from.Angle, to.Angle, wrapGap, t);
+                output.Add(new AngularSample
+                {
+                    Angle = fillAngle,
+                    Direction = AngleToDirection2D(fillAngle),
+                    ClipDistance = maxRadius + 1f,
+                    Clipped = false,
+                    Essential = true,
+                });
+            }
+        }
+
+        private static float InterpolateSampleAngle(
+            float angleFrom,
+            float angleTo,
+            bool wrapGap,
+            float t)
+        {
+            if (!wrapGap)
+            {
+                return angleFrom + (angleTo - angleFrom) * t;
+            }
+
+            var gap = (angleTo + math.PI * 2f) - angleFrom;
+            return (angleFrom + gap * t) % (math.PI * 2f);
+        }
+
+        private static bool HasOpenSampleBetween(
+            float angleFrom,
+            float angleTo,
+            bool wrapGap,
+            float openThreshold)
+        {
+            for (var i = 0; i < SampleScratch.Count; i++)
+            {
+                var sample = SampleScratch[i];
+                if (sample.Clipped && sample.ClipDistance < openThreshold)
+                {
+                    continue;
+                }
+
+                var angle = sample.Angle;
+                if (wrapGap)
+                {
+                    if (angle > angleFrom + MinAngleSeparationRadians
+                        || angle < angleTo - MinAngleSeparationRadians)
+                    {
+                        return true;
+                    }
+                }
+                else if (angle > angleFrom + MinAngleSeparationRadians
+                         && angle < angleTo - MinAngleSeparationRadians)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void SortAndDedupeSamples(float openThreshold)
@@ -474,16 +1037,24 @@ namespace IronKingdoms.Combat
                     var prev = SampleScratch[write - 1];
                     if (math.abs(sample.Angle - prev.Angle) < MinAngleSeparationRadians)
                     {
-                        if (sample.Clipped && (!prev.Clipped || sample.ClipDistance < prev.ClipDistance))
+                        if (sample.Clipped && !prev.Clipped)
                         {
                             sample.Essential = sample.Essential || prev.Essential;
-                            sample.InteriorDepth = sample.InteriorDepth && prev.InteriorDepth;
+                            SampleScratch[write - 1] = sample;
+                        }
+                        else if (!sample.Clipped && prev.Clipped)
+                        {
+                            prev.Essential = prev.Essential || sample.Essential;
+                            SampleScratch[write - 1] = prev;
+                        }
+                        else if (sample.Clipped && (!prev.Clipped || sample.ClipDistance < prev.ClipDistance))
+                        {
+                            sample.Essential = sample.Essential || prev.Essential;
                             SampleScratch[write - 1] = sample;
                         }
                         else if (sample.Essential)
                         {
                             prev.Essential = true;
-                            prev.InteriorDepth = prev.InteriorDepth && sample.InteriorDepth;
                             SampleScratch[write - 1] = prev;
                         }
 
@@ -516,7 +1087,6 @@ namespace IronKingdoms.Combat
                     }
 
                     last.Essential = last.Essential || first.Essential;
-                    last.InteriorDepth = last.InteriorDepth && first.InteriorDepth;
                     SampleScratch[lastIndex] = last;
                     SampleScratch.RemoveAt(0);
                 }
@@ -561,56 +1131,88 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private static void BuildPrioritizedFallbackUpload(
+        /// <summary>
+        /// Open LUT bins only — clipped bins come from depth LUT / exit polygon samples.
+        /// </summary>
+        private static void InjectSparseOpenLutBins(
             float[] clipDistances,
             int lutSampleCount,
             float maxRadius,
-            List<float2> outDirections,
-            List<float> outUploadLengths,
-            int maxSegments)
+            float openThreshold,
+            int activeClipZoneCount)
         {
-            var openThreshold = maxRadius - DistanceEpsilonWorld;
-            for (var i = 0; i < lutSampleCount && outDirections.Count < maxSegments; i++)
-            {
-                var clipped = clipDistances[i] < openThreshold;
-                if (!clipped && !EssentialBinScratch[i])
-                {
-                    continue;
-                }
-
-                outDirections.Add(GetDirection2D(i, lutSampleCount));
-                outUploadLengths.Add(clipped ? clipDistances[i] : maxRadius + 1f);
-            }
-
-            if (outDirections.Count >= 2)
+            if (clipDistances == null || lutSampleCount < 1)
             {
                 return;
             }
 
-            var step = math.max(1, lutSampleCount / math.max(2, maxSegments));
-            for (var i = 0; i < lutSampleCount && outDirections.Count < maxSegments; i += step)
+            var multiZone = activeClipZoneCount >= 2;
+            var step = math.max(1, lutSampleCount / (multiZone ? 360 : 72));
+            for (var i = 0; i < lutSampleCount; i += step)
             {
-                var clipped = clipDistances[i] < openThreshold;
-                outDirections.Add(GetDirection2D(i, lutSampleCount));
-                outUploadLengths.Add(clipped ? clipDistances[i] : maxRadius + 1f);
+                if (clipDistances[i] >= openThreshold)
+                {
+                    var angle = IndexToAngle(i, lutSampleCount);
+                    AddSample(
+                        angle,
+                        GetDirection2D(i, lutSampleCount),
+                        maxRadius + 1f,
+                        clipped: false,
+                        essential: multiZone);
+                }
             }
         }
 
-        private static void BuildUniformFallbackUpload(
+        private static int CountClippedSamples(float openThreshold)
+        {
+            var count = 0;
+            for (var i = 0; i < SampleScratch.Count; i++)
+            {
+                if (SampleScratch[i].Clipped && SampleScratch[i].ClipDistance < openThreshold)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// When sparse edge selection misses forest depth, upload every limited LUT bin so the
+        /// shader still receives clipped segments (wedge lerp needs both clipped and open samples).
+        /// </summary>
+        private static void BuildDenseClippedLutFallbackUpload(
             float[] clipDistances,
             int lutSampleCount,
             float maxRadius,
-            List<float2> outDirections,
-            List<float> outUploadLengths,
-            int maxSegments)
+            float openThreshold)
         {
-            var step = math.max(1, lutSampleCount / math.max(2, maxSegments));
-            for (var i = 0; i < lutSampleCount && outDirections.Count < maxSegments; i += step)
+            if (clipDistances == null || lutSampleCount < 1)
             {
-                var clipped = clipDistances[i] < maxRadius - DistanceEpsilonWorld;
-                outDirections.Add(GetDirection2D(i, lutSampleCount));
-                outUploadLengths.Add(clipped ? clipDistances[i] : maxRadius + 1f);
+                return;
             }
+
+            for (var i = 0; i < lutSampleCount; i++)
+            {
+                var clip = clipDistances[i];
+                var clipped = clip < openThreshold;
+                AddSample(
+                    IndexToAngle(i, lutSampleCount),
+                    GetDirection2D(i, lutSampleCount),
+                    clipped ? clip : maxRadius + 1f,
+                    clipped,
+                    essential: clipped);
+            }
+        }
+
+        private static float IndexToAngle(int index, int sampleCount)
+        {
+            return (index / (float)sampleCount) * math.PI * 2f;
+        }
+
+        private static float2 GetDirection2D(int index, int sampleCount)
+        {
+            return CombatForestFogAngularTables.GetDirection2D(index, sampleCount);
         }
 
         private static void AddSample(
@@ -618,8 +1220,7 @@ namespace IronKingdoms.Combat
             float2 direction,
             float clipDistance,
             bool clipped,
-            bool essential = false,
-            bool interiorDepth = false)
+            bool essential = false)
         {
             if (angle < 0f)
             {
@@ -633,12 +1234,11 @@ namespace IronKingdoms.Combat
                 ClipDistance = clipDistance,
                 Clipped = clipped,
                 Essential = essential,
-                InteriorDepth = interiorDepth,
             });
         }
 
         /// <summary>
-        /// Wedge mesh uses footprint silhouette distances at boundaries; interior rays keep depth clip.
+        /// Upload length is the analytic LUT depth clip; thin forest may cap at polygon exit.
         /// </summary>
         private static float ResolveMeshUploadLength(
             AngularSample sample,
@@ -646,102 +1246,44 @@ namespace IronKingdoms.Combat
             float maxRadius,
             in CombatForestFogLutBuildContext buildContext)
         {
-            if (sample.InteriorDepth)
+            if (buildContext.RayStartedInsideForest)
             {
                 return sample.ClipDistance;
             }
 
-            var boundary = TryGetFootprintBoundaryDistance(
+            return CapThinForestExitClip(
                 flatEye,
                 sample.Direction,
+                sample.ClipDistance,
                 maxRadius,
                 buildContext);
-            if (boundary > 0f
-                && sample.ClipDistance > boundary + DistanceEpsilonWorld)
-            {
-                return boundary;
-            }
-
-            return sample.ClipDistance;
         }
 
-        private static float TryGetFootprintBoundaryDistance(
+        private static float CapThinForestExitClip(
             Vector3 flatEye,
             float2 direction2D,
+            float clipDistance,
             float maxRadius,
             in CombatForestFogLutBuildContext buildContext)
         {
+            if (clipDistance >= maxRadius - DistanceEpsilonWorld)
+            {
+                return clipDistance;
+            }
+
             var dirWorld = new Vector3(direction2D.x, 0f, direction2D.y);
-            if (dirWorld.sqrMagnitude <= 1e-8f || maxRadius <= 0.001f)
+            var exit = CombatForestFogClipper.TryGetFootprintExitForClipDistance(
+                flatEye,
+                dirWorld,
+                clipDistance,
+                maxRadius,
+                buildContext.DepthWorld);
+            if (exit > 0f)
             {
-                return -1f;
+                return math.min(clipDistance, exit);
             }
 
-            dirWorld.Normalize();
-            var best = -1f;
-            var activeZones = CombatZone.ActiveZones;
-            for (var z = 0; z < activeZones.Count; z++)
-            {
-                var zone = activeZones[z];
-                var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
-                {
-                    continue;
-                }
-
-                var isForest = feature.LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth;
-                var isCloudFog = feature.LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely;
-                if (isForest && !buildContext.ApplyForestClip)
-                {
-                    continue;
-                }
-
-                if (isCloudFog && !buildContext.ApplyBlockingClip)
-                {
-                    continue;
-                }
-
-                if (!isForest && !isCloudFog)
-                {
-                    continue;
-                }
-
-                var polygon = zone.GetComponent<CombatZonePolygonFootprint>();
-                if (polygon == null
-                    || !polygon.HasFootprint
-                    || !polygon.TryGetRayFootprintIntervalWorld(flatEye, dirWorld, out var enter, out var exit))
-                {
-                    continue;
-                }
-
-                var eyeInside = zone.ContainsPoint(flatEye);
-                var boundary = -1f;
-                if (eyeInside && exit > 0f && exit <= maxRadius)
-                {
-                    boundary = exit;
-                }
-                else if (!eyeInside && enter > 0f && enter <= maxRadius)
-                {
-                    boundary = enter;
-                }
-
-                if (boundary > 0f && (best < 0f || boundary < best))
-                {
-                    best = boundary;
-                }
-            }
-
-            return best;
-        }
-
-        private static float SampleClipAtAngle(
-            float angleRadians,
-            float maxRadius,
-            Vector3 eyeWorld,
-            in CombatForestFogLutBuildContext buildContext)
-        {
-            var directionWorld = AngleToDirectionWorld(angleRadians);
-            return SampleClipAlongDirection(directionWorld, maxRadius, eyeWorld, buildContext);
+            return clipDistance;
         }
 
         private static float SampleClipAlongDirection(
@@ -763,25 +1305,9 @@ namespace IronKingdoms.Combat
             return limit;
         }
 
-        private static float IndexToAngle(int index, int sampleCount)
-        {
-            return (index / (float)sampleCount) * math.PI * 2f;
-        }
-
-        private static float2 GetDirection2D(int index, int sampleCount)
-        {
-            return CombatForestFogAngularTables.GetDirection2D(index, sampleCount);
-        }
-
         private static float2 AngleToDirection2D(float angleRadians)
         {
             return new float2(math.cos(angleRadians), math.sin(angleRadians));
-        }
-
-        private static Vector3 AngleToDirectionWorld(float angleRadians)
-        {
-            var dir2 = AngleToDirection2D(angleRadians);
-            return new Vector3(dir2.x, 0f, dir2.y);
         }
     }
 }

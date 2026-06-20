@@ -301,41 +301,80 @@ namespace IronKingdoms.Combat
                     maxRadius,
                     originRadiusWorld,
                     depthWorld,
-                    CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, sampleDir, originRadiusWorld),
+                    CombatForestFogClipper.IsEyeInsideLimitedDepthForestForClip(flatEye, originRadiusWorld),
                     applyForestClip,
                     applyBlockingClip);
 
-                var sparseCount = 0;
-                if (CombatForestFogPassSettings.UseSparseTerrainUpload)
+                var activeClipZoneCount = CombatForestFogClipper.GetActiveClipZoneCount(
+                    applyForestClip,
+                    applyBlockingClip);
+
+                if (activeClipZoneCount >= 2)
                 {
-                    sparseCount = CombatForestFogTerrainSparseUploadBuilder.BuildUploadSegments(
+                    terrainClipDirections.Clear();
+                    terrainClipUploadDistances.Clear();
+                    var multiZoneDenseCount = CombatForestFogTerrainSparseUploadBuilder.BuildDenseLutFallbackUploadSegments(
                         AngularClipperLutScratch,
                         lutCount,
                         maxRadius,
                         eyeWorld,
                         buildContext,
-                        projection,
-                        applyForestClip,
-                        applyBlockingClip,
                         terrainClipDirections,
                         terrainClipUploadDistances,
                         sampleCount);
+
+                    if (multiZoneDenseCount >= 2
+                        && CombatForestFogTerrainSparseUploadBuilder.UploadHasClippedSegments(
+                            terrainClipUploadDistances,
+                            maxRadius))
+                    {
+                        return;
+                    }
+
+                    terrainClipDirections.Clear();
+                    terrainClipUploadDistances.Clear();
                 }
 
-                if (sparseCount >= 2)
+                var sparseCount = CombatForestFogTerrainSparseUploadBuilder.BuildUploadSegments(
+                    AngularClipperLutScratch,
+                    lutCount,
+                    maxRadius,
+                    eyeWorld,
+                    buildContext,
+                    projection,
+                    applyForestClip,
+                    applyBlockingClip,
+                    terrainClipDirections,
+                    terrainClipUploadDistances,
+                    sampleCount);
+
+                if (sparseCount >= 2
+                    && CombatForestFogTerrainSparseUploadBuilder.UploadHasClippedSegments(
+                        terrainClipUploadDistances,
+                        maxRadius))
                 {
                     return;
                 }
 
                 terrainClipDirections.Clear();
                 terrainClipUploadDistances.Clear();
-                for (var i = 0; i < lutCount; i++)
+                var denseCount = CombatForestFogTerrainSparseUploadBuilder.BuildDenseLutFallbackUploadSegments(
+                    AngularClipperLutScratch,
+                    lutCount,
+                    maxRadius,
+                    eyeWorld,
+                    buildContext,
+                    terrainClipDirections,
+                    terrainClipUploadDistances,
+                    sampleCount);
+
+                if (denseCount >= 2)
                 {
-                    var dir2 = CombatForestFogAngularTables.GetDirection2D(i, lutCount);
-                    var clipped = AngularClipperLutScratch[i] < maxRadius - DistanceEpsilonWorld;
-                    terrainClipDirections.Add(dir2);
-                    terrainClipUploadDistances.Add(clipped ? AngularClipperLutScratch[i] : maxRadius + 1f);
+                    return;
                 }
+
+                terrainClipDirections.Clear();
+                terrainClipUploadDistances.Clear();
             }
             finally
             {
@@ -534,6 +573,10 @@ namespace IronKingdoms.Combat
     internal static class CombatFogTerrainUploadQuery
     {
         private const float MaxClippedWrapGapRadians = math.PI * 0.75f;
+        /// <summary>
+        /// Clipped-to-clipped wrap spans above this are separate forest patches, not one edge.
+        /// </summary>
+        private const float MaxClippedToClippedWrapGapRadians = math.PI / 8f;
         private static readonly List<RaycastRevealer.SightSegment> SegmentScratch = new();
 
         public static float GetBoundaryDistance(
@@ -624,9 +667,15 @@ namespace IronKingdoms.Combat
                 return true;
             }
 
-            return ComputeSortedWrapGapRadians(
+            var gap = ComputeSortedWrapGapRadians(
                 NormalizeDirection(last.Direction),
-                NormalizeDirection(first.Direction)) <= MaxClippedWrapGapRadians;
+                NormalizeDirection(first.Direction));
+            if (gap > MaxClippedWrapGapRadians)
+            {
+                return false;
+            }
+
+            return gap <= MaxClippedToClippedWrapGapRadians;
         }
 
         private static float ComputeSortedWrapGapRadians(float2 lastDir, float2 firstDir)

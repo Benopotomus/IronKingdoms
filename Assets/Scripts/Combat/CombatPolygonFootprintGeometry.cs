@@ -13,33 +13,6 @@ namespace IronKingdoms.Combat
             return localVertices != null && localVertices.Count >= 3;
         }
 
-        /// <summary>
-        /// Builds a regular polygon on the XZ tabletop centered at local origin.
-        /// <paramref name="diameterInches"/> is the flat-to-flat diameter on the board plane.
-        /// </summary>
-        public static List<Vector2> BuildRegularPolygonLocalVertices(
-            float diameterInches,
-            int segmentCount,
-            float startAngleDegrees = 0f)
-        {
-            var vertices = new List<Vector2>(Mathf.Max(3, segmentCount));
-            if (segmentCount < 3 || diameterInches <= 0f)
-            {
-                return vertices;
-            }
-
-            var radiusWorld = CombatScale.InchesToWorldUnits(diameterInches * 0.5f);
-            var startRadians = startAngleDegrees * Mathf.Deg2Rad;
-            var stepRadians = Mathf.PI * 2f / segmentCount;
-            for (var i = 0; i < segmentCount; i++)
-            {
-                var angle = startRadians + stepRadians * i;
-                vertices.Add(new Vector2(Mathf.Cos(angle) * radiusWorld, Mathf.Sin(angle) * radiusWorld));
-            }
-
-            return vertices;
-        }
-
         public static bool ContainsPointLocal(Vector2 localPoint, IReadOnlyList<Vector2> localVertices)
         {
             if (!IsValidFootprint(localVertices))
@@ -79,6 +52,7 @@ namespace IronKingdoms.Combat
             }
 
             direction.Normalize();
+            var isCounterClockwise = SignedAreaLocal(localVertices) > 0f;
             var originInside = ContainsPointLocal(origin, localVertices);
             var bestEnter = float.MaxValue;
             var bestExit = float.MaxValue;
@@ -94,14 +68,25 @@ namespace IronKingdoms.Combat
 
                 var edge = b - a;
                 var cross = edge.x * direction.y - edge.y * direction.x;
-                if (cross > 0f)
+                if (Mathf.Approximately(cross, 0f))
+                {
+                    continue;
+                }
+
+                var crossingEntering = cross > 0f;
+                if (!isCounterClockwise)
+                {
+                    crossingEntering = !crossingEntering;
+                }
+
+                if (crossingEntering)
                 {
                     if (hitT < bestEnter)
                     {
                         bestEnter = hitT;
                     }
                 }
-                else if (cross < 0f)
+                else
                 {
                     if (hitT < bestExit)
                     {

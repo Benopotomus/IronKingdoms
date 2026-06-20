@@ -699,6 +699,77 @@ namespace IronKingdoms.Combat.Tests
             Assert.That(clip, Is.LessThan(maxDistance - 0.001f));
         }
 
+        [Test]
+        public void ClockwisePolygonForest_UsesSameDepthClipAsCounterClockwise()
+        {
+            zoneObject.SetActive(false);
+            auxiliaryZoneObject = new GameObject("ClockwisePolygonForest");
+            var polygonZone = auxiliaryZoneObject.AddComponent<CombatZone>();
+            SetPrivateField(polygonZone, "terrainFeature", forestFeature);
+            var footprint = auxiliaryZoneObject.AddComponent<CombatZonePolygonFootprint>();
+            footprint.SetLocalVertices(new[]
+            {
+                new Vector2(0f, CombatScale.InchesToWorldUnits(2f)),
+                new Vector2(CombatScale.InchesToWorldUnits(2f), -CombatScale.InchesToWorldUnits(2f)),
+                new Vector2(-CombatScale.InchesToWorldUnits(2f), -CombatScale.InchesToWorldUnits(2f)),
+            });
+            footprint.RegenerateGeometry();
+            auxiliaryZoneObject.SetActive(false);
+            auxiliaryZoneObject.SetActive(true);
+
+            Physics.SyncTransforms();
+            CombatForestFogClipper.InvalidateCache();
+            EnsureCacheMethod.Invoke(null, null);
+
+            var depthWorld = CombatScale.InchesToWorldUnits(3f);
+            var maxDistance = CombatScale.InchesToWorldUnits(30f);
+            var outsideOrigin = new Vector3(-CombatScale.InchesToWorldUnits(10f), 0f, 0f);
+            var direction = Vector3.right;
+
+            var clip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                outsideOrigin,
+                direction,
+                maxDistance,
+                depthWorld);
+
+            Assert.That(clip, Is.GreaterThan(CombatScale.InchesToWorldUnits(6f)));
+            Assert.That(clip, Is.LessThan(maxDistance - 0.001f));
+        }
+
+        [Test]
+        public void EyeOutsideForestNearEdge_OpenDirectionAwayFromTrees_StaysFullyOpen()
+        {
+            var collider = zoneObject.GetComponent<BoxCollider>();
+            collider.size = new Vector3(CombatScale.InchesToWorldUnits(8f), 2f, CombatScale.InchesToWorldUnits(8f));
+            collider.center = new Vector3(0f, 1f, 0f);
+            Physics.SyncTransforms();
+            CombatForestFogClipper.InvalidateCache();
+            EnsureCacheMethod.Invoke(null, null);
+
+            var depthWorld = CombatScale.InchesToWorldUnits(3f);
+            var maxDistance = CombatScale.InchesToWorldUnits(30f);
+            var eyeOutsideForest = new Vector3(CombatScale.InchesToWorldUnits(5f), 0f, 0f);
+
+            Assert.That(CombatForestFogClipper.IsInsideLimitedDepthForest(eyeOutsideForest, 0f), Is.False);
+
+            var clipOpen = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                eyeOutsideForest,
+                Vector3.right,
+                maxDistance,
+                depthWorld,
+                0f);
+            var clipTowardForest = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                eyeOutsideForest,
+                Vector3.left,
+                maxDistance,
+                depthWorld,
+                0f);
+
+            Assert.That(clipOpen, Is.GreaterThan(maxDistance - CombatScale.InchesToWorldUnits(1f)));
+            Assert.That(clipTowardForest, Is.LessThan(maxDistance - CombatScale.InchesToWorldUnits(1f)));
+            Assert.That(clipOpen, Is.GreaterThan(depthWorld + CombatScale.InchesToWorldUnits(0.5f)));
+        }
+
         private static float InvokePreciseClip(Vector3 origin, Vector3 direction, float maxDistance)
         {
             var result = PreciseClipMethod.Invoke(null, new object[] { origin, direction, maxDistance });

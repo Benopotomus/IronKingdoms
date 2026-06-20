@@ -19,9 +19,10 @@ namespace IronKingdoms.Combat
         public static int MaxShaderLutSamples { get; set; } = 720;
 
         /// <summary>
-        /// Lower wall/LUT cost while the pawn is moving; full fidelity when stationary.
+        /// Lower terrain LUT cost while moving. Off by default — coarser moving uploads can show a
+        /// circular depth-limit boundary instead of the full forest silhouette.
         /// </summary>
-        public static bool UseAdaptiveFidelityWhileMoving { get; set; } = true;
+        public static bool UseAdaptiveFidelityWhileMoving { get; set; }
 
         /// <summary>
         /// Phase-1 wall raycast step in degrees. Stock FOW pass 1 always uses this (never coarsened while moving).
@@ -51,18 +52,32 @@ namespace IronKingdoms.Combat
         /// </summary>
         public static bool UseSparseTerrainUpload { get; set; }
 
-        public static int ResolveLutSampleCount(bool isMoving)
+        public static int ResolveLutSampleCount(
+            bool isMoving,
+            bool requireFullTerrainFidelity = false,
+            int activeClipZoneCount = 0)
         {
-            if (isMoving && UseAdaptiveFidelityWhileMoving)
+            if (requireFullTerrainFidelity
+                || activeClipZoneCount >= 2
+                || !isMoving
+                || !UseAdaptiveFidelityWhileMoving)
             {
-                return MovingLutSamples;
+                return MaxShaderLutSamples;
             }
 
-            return MaxShaderLutSamples;
+            return MovingLutSamples;
         }
 
-        public static bool ShouldSkipTerrainPostFilters(bool isMoving)
+        public static bool ShouldSkipTerrainPostFilters(
+            bool isMoving,
+            bool requireFullTerrainFidelity = false,
+            int activeClipZoneCount = 0)
         {
+            if (requireFullTerrainFidelity || activeClipZoneCount >= 2)
+            {
+                return false;
+            }
+
             return isMoving
                 && UseAdaptiveFidelityWhileMoving
                 && MovingSkipTerrainPostFilters;

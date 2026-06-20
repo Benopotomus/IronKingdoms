@@ -38,6 +38,9 @@ namespace IronKingdoms.Combat
 
         public IReadOnlyList<Vector2> LocalVertices => localVertices;
         public bool HasFootprint => CombatPolygonFootprintGeometry.IsValidFootprint(localVertices);
+
+        public bool IsLocalFootprintCounterClockwise =>
+            HasFootprint && CombatPolygonFootprintGeometry.SignedAreaLocal(localVertices) > 0f;
         /// <summary>World Y of the XZ footprint plane (local origin).</summary>
         public float TabletopWorldY => transform.TransformPoint(Vector3.zero).y;
 
@@ -50,17 +53,6 @@ namespace IronKingdoms.Combat
             }
 
             InvalidateWorldPolygonCache();
-        }
-
-        /// <summary>
-        /// Replaces the footprint with a regular polygon cylinder outline (local XZ plane).
-        /// </summary>
-        public void SetRegularPolygonFootprint(float diameterInches, int segmentCount, float startAngleDegrees = 0f)
-        {
-            SetLocalVertices(CombatPolygonFootprintGeometry.BuildRegularPolygonLocalVertices(
-                diameterInches,
-                segmentCount,
-                startAngleDegrees));
         }
 
         public void SetLocalVerticesFromWorld(IReadOnlyList<Vector3> worldVertices)

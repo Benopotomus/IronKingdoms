@@ -115,6 +115,24 @@ namespace IronKingdoms.Combat
             return false;
         }
 
+        /// <summary>
+        /// Number of terrain zones in the current clip pass (forest and/or cloud).
+        /// </summary>
+        public static int GetActiveClipZoneCount(bool applyForestClip, bool applyBlockingClip)
+        {
+            EnsureCache();
+            var count = 0;
+            for (var i = 0; i < CachedZones.Count; i++)
+            {
+                if (IsZoneActiveForClipPass(CachedZones[i], applyForestClip, applyBlockingClip))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
         internal static void SetClipPassFilters(bool applyForestClip, bool applyBlockingClip)
         {
             applyForestClipPass = applyForestClip;
@@ -469,7 +487,7 @@ namespace IronKingdoms.Combat
                 return maxDistanceWorld;
             }
 
-            if (!RayStartsInsideForest(origin, planarDirection, originRadius)
+            if (!IsEyeInsideLimitedDepthForestForClip(origin, originRadius)
                 && !RayMayHitAnyCachedZoneAabb(origin, planarDirection, maxDistanceWorld))
             {
                 return maxDistanceWorld;
@@ -540,18 +558,24 @@ namespace IronKingdoms.Combat
         }
 
         /// <summary>
-        /// Per-ray: true when this sight line starts from inside forest — eye inside or
-        /// immediate forest contact along the ray. Fog visibility uses the eye only, not base width.
+        /// True when the eye position lies inside a limited-depth forest zone (optionally expanded by base radius).
+        /// Does not use per-ray grazing contact — that path belongs to the outside first-contact clipper.
         /// </summary>
+        public static bool IsEyeInsideLimitedDepthForestForClip(Vector3 origin, float originRadius = 0f)
+        {
+            return IsInsideLimitedDepthForest(origin, originRadius);
+        }
+
         /// <summary>
-        /// Shared per-eye inside-forest flag for LUT builds (uses the first LUT direction for edge contact).
+        /// Shared per-eye inside-forest flag for LUT builds and upload (eye containment only).
         /// </summary>
         public static bool ComputeRayStartedInsideForest(
             Vector3 origin,
             Vector3 sampleDirection,
             float originRadius = 0f)
         {
-            return RayStartsInsideForest(origin, sampleDirection, originRadius);
+            _ = sampleDirection;
+            return IsEyeInsideLimitedDepthForestForClip(origin, originRadius);
         }
 
         private static bool RayStartsInsideForest(
@@ -559,21 +583,8 @@ namespace IronKingdoms.Combat
             Vector3 planarDirection,
             float originRadius = 0f)
         {
-            _ = originRadius;
-            origin.y = 0f;
-            planarDirection.y = 0f;
-            if (planarDirection.sqrMagnitude > 1e-6f)
-            {
-                planarDirection.Normalize();
-            }
-
-            if (IsInsideAnyLimitedDepthZone(origin))
-            {
-                return true;
-            }
-
-            var step = CombatScale.InchesToWorldUnits(0.05f);
-            return IsInsideAnyLimitedDepthZone(origin + planarDirection * step);
+            _ = planarDirection;
+            return IsEyeInsideLimitedDepthForestForClip(origin, originRadius);
         }
 
         /// <summary>
@@ -802,13 +813,13 @@ namespace IronKingdoms.Combat
             float originRadius = 0f)
         {
             origin.y = 0f;
-            var rayStartedInsideForest = RayStartsInsideForest(origin, planarDirection, originRadius);
+            var eyeInsideForest = IsEyeInsideLimitedDepthForestForClip(origin, originRadius);
             return ComputeFirstContactDepthClipCandidate(
                 origin,
                 planarDirection,
                 maxDistanceWorld,
                 depthLimitWorld,
-                rayStartedInsideForest,
+                eyeInsideForest,
                 originRadius);
         }
 
@@ -817,7 +828,7 @@ namespace IronKingdoms.Combat
             Vector3 planarDirection,
             float maxDistanceWorld,
             float depthLimitWorld,
-            bool rayStartedInsideForest,
+            bool eyeInsideForest,
             float originRadius = 0f)
         {
             origin.y = 0f;
@@ -827,7 +838,7 @@ namespace IronKingdoms.Combat
             var startInsideEpsilon = CombatScale.InchesToWorldUnits(0.02f);
             var adjacentForestGapWorld = thinForestEpsilon + CombatScale.InchesToWorldUnits(0.25f);
 
-            if (!rayStartedInsideForest
+            if (!eyeInsideForest
                 && !RayMayHitAnyCachedZoneAabb(origin, planarDirection, maxDistanceWorld))
             {
                 return maxDistanceWorld;
@@ -835,7 +846,7 @@ namespace IronKingdoms.Combat
 
             // From inside forest: you may only see out when the exit edge is within the depth
             // limit of the unit — not an arbitrary 3" peek from deep in the trees.
-            if (rayStartedInsideForest)
+            if (eyeInsideForest)
             {
                 var exitFromUnit = FindForestExitDistanceAlongRay(
                     origin,
@@ -865,9 +876,14 @@ namespace IronKingdoms.Combat
 
                 // Exit within depth limit: see out past this patch, then march for any further
                 // forest contacts (outside approach uses first contact + 3" depth).
-                var originZone = TryGetLimitedDepthZoneAt(origin);
+                var originZone = TryGetZoneAtExitCrossing(
+                        origin,
+                        planarDirection,
+                        exitFromUnit,
+                        maxDistanceWorld)
+                    ?? TryGetInnermostLimitedDepthZoneAt(origin);
                 cursor = exitFromUnit + advanceEpsilon;
-                rayStartedInsideForest = false;
+                eyeInsideForest = false;
 
                 var nextEntry = FindNextForestEntryDistance(
                     origin,
@@ -885,7 +901,7 @@ namespace IronKingdoms.Combat
                     var nextProbe = origin + planarDirection * Mathf.Min(
                         maxDistanceWorld,
                         nextEntry + startInsideEpsilon);
-                    var nextZone = TryGetLimitedDepthZoneAt(nextProbe);
+                    var nextZone = TryGetInnermostLimitedDepthZoneAt(nextProbe);
 
                     if (originZone != null
                         && nextZone != null
@@ -984,7 +1000,7 @@ namespace IronKingdoms.Combat
             origin.y = 0f;
             originRadius = Mathf.Max(0f, originRadius);
             if (searchStart <= 0.001f
-                && RayStartsInsideForest(origin, planarDirection, originRadius))
+                && IsEyeInsideLimitedDepthForestForClip(origin, originRadius))
             {
                 return 0f;
             }
@@ -1044,7 +1060,116 @@ namespace IronKingdoms.Combat
 
         /// <summary>
         /// XZ tabletop ray interval through a zone footprint (polygon, disc, or oriented box).
+        /// Used by depth clip and terrain upload — keep callers on this path, not polygon-only queries.
         /// </summary>
+        internal static bool TryGetZoneRayFootprintIntervalWorld(
+            CombatZone zone,
+            Vector3 origin,
+            Vector3 planarDirection,
+            out float enterWorld,
+            out float exitWorld)
+        {
+            return TryGetForestZoneRayInterval(zone, origin, planarDirection, out enterWorld, out exitWorld);
+        }
+
+        /// <summary>
+        /// True when <paramref name="clipDistance"/> lies on this zone's ray interval (with depth slack).
+        /// Filters grazing hits from unrelated forests during multi-zone upload edge selection.
+        /// </summary>
+        internal static bool ClipDistanceRelatesToZoneFootprint(
+            CombatZone zone,
+            Vector3 origin,
+            Vector3 planarDirection,
+            float clipDistance,
+            float depthLimitWorld)
+        {
+            if (zone == null
+                || !TryGetZoneRayFootprintIntervalWorld(zone, origin, planarDirection, out var enter, out var exit))
+            {
+                return false;
+            }
+
+            var slack = CombatScale.InchesToWorldUnits(0.08f);
+            if (clipDistance + slack < enter)
+            {
+                return false;
+            }
+
+            return clipDistance - slack <= exit + depthLimitWorld;
+        }
+
+        /// <summary>
+        /// Exit edge for the forest patch that owns <paramref name="clipDistance"/> on this ray.
+        /// Ignores unrelated zones whose footprint only grazes the ray.
+        /// </summary>
+        internal static float TryGetFootprintExitForClipDistance(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float clipDistance,
+            float maxDistanceWorld,
+            float depthLimitWorld)
+        {
+            origin.y = 0f;
+            planarDirection.y = 0f;
+            if (planarDirection.sqrMagnitude <= 1e-8f
+                || maxDistanceWorld <= 0.001f
+                || clipDistance >= maxDistanceWorld - 0.001f)
+            {
+                return -1f;
+            }
+
+            planarDirection.Normalize();
+            var slack = CombatScale.InchesToWorldUnits(0.08f);
+            var bestEnter = -1f;
+            var bestExit = -1f;
+            var activeZones = CombatZone.ActiveZones;
+            for (var z = 0; z < activeZones.Count; z++)
+            {
+                var zone = activeZones[z];
+                var feature = zone?.TerrainFeature;
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
+                {
+                    continue;
+                }
+
+                if (!IsZoneActiveForClipPass(
+                        new ClipZone { LineOfSightMode = feature.LineOfSightMode },
+                        applyForestClipPass,
+                        applyBlockingClipPass))
+                {
+                    continue;
+                }
+
+                if (!TryGetZoneRayFootprintIntervalWorld(
+                        zone,
+                        origin,
+                        planarDirection,
+                        out var enter,
+                        out var exit))
+                {
+                    continue;
+                }
+
+                if (clipDistance + slack < enter || clipDistance - slack > exit + depthLimitWorld)
+                {
+                    continue;
+                }
+
+                if (enter > bestEnter)
+                {
+                    bestEnter = enter;
+                    bestExit = exit;
+                }
+            }
+
+            if (bestExit > slack && bestExit <= maxDistanceWorld)
+            {
+                return bestExit;
+            }
+
+            return -1f;
+        }
+
         private static bool TryGetForestZoneRayInterval(
             CombatZone zone,
             Vector3 origin,
@@ -1562,6 +1687,16 @@ namespace IronKingdoms.Combat
 
         private static CombatZone TryGetLimitedDepthZoneAt(Vector3 worldPoint)
         {
+            return TryGetInnermostLimitedDepthZoneAt(worldPoint);
+        }
+
+        /// <summary>
+        /// When several forests overlap, pick the smallest footprint so zone identity stays stable while moving.
+        /// </summary>
+        private static CombatZone TryGetInnermostLimitedDepthZoneAt(Vector3 worldPoint)
+        {
+            CombatZone bestZone = null;
+            var bestArea = float.MaxValue;
             var activeZones = CombatZone.ActiveZones;
             for (var i = 0; i < activeZones.Count; i++)
             {
@@ -1580,13 +1715,129 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                if (zone.ContainsPoint(worldPoint))
+                if (!zone.ContainsPoint(worldPoint))
+                {
+                    continue;
+                }
+
+                if (!TryGetZoneFootprintAreaWorld(zone, out var area) || area <= 1e-8f)
                 {
                     return zone;
                 }
+
+                if (area < bestArea)
+                {
+                    bestArea = area;
+                    bestZone = zone;
+                }
             }
 
-            return null;
+            return bestZone;
+        }
+
+        private static CombatZone TryGetZoneAtExitCrossing(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float exitDistance,
+            float maxDistanceWorld)
+        {
+            if (exitDistance <= 0.001f)
+            {
+                return null;
+            }
+
+            origin.y = 0f;
+            planarDirection.y = 0f;
+            if (planarDirection.sqrMagnitude <= 1e-8f)
+            {
+                return null;
+            }
+
+            planarDirection.Normalize();
+            var transitionEpsilon = CombatScale.InchesToWorldUnits(0.02f);
+            CombatZone match = null;
+            var bestExitDelta = float.MaxValue;
+            var activeZones = CombatZone.ActiveZones;
+            for (var i = 0; i < activeZones.Count; i++)
+            {
+                var zone = activeZones[i];
+                var feature = zone?.TerrainFeature;
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
+                {
+                    continue;
+                }
+
+                if (!IsZoneActiveForClipPass(
+                        new ClipZone { LineOfSightMode = feature.LineOfSightMode },
+                        applyForestClipPass,
+                        applyBlockingClipPass))
+                {
+                    continue;
+                }
+
+                if (!TryGetForestZoneRayInterval(zone, origin, planarDirection, out _, out var exitT))
+                {
+                    continue;
+                }
+
+                var exitDelta = Mathf.Abs(exitT - exitDistance);
+                if (exitDelta > transitionEpsilon || exitDelta >= bestExitDelta)
+                {
+                    continue;
+                }
+
+                var before = origin + planarDirection * Mathf.Max(0f, exitT - transitionEpsilon);
+                var after = origin + planarDirection * Mathf.Min(maxDistanceWorld, exitT + transitionEpsilon);
+                if (zone.ContainsPoint(before) && !zone.ContainsPoint(after))
+                {
+                    bestExitDelta = exitDelta;
+                    match = zone;
+                }
+            }
+
+            return match;
+        }
+
+        private static bool TryGetZoneFootprintAreaWorld(CombatZone zone, out float areaWorld)
+        {
+            areaWorld = 0f;
+            if (zone == null)
+            {
+                return false;
+            }
+
+            if (zone.TryGetPolygonFootprint(out var polygonFootprint)
+                && polygonFootprint.TryGetFootprintBounds(out var polygonBounds))
+            {
+                var size = polygonBounds.size;
+                areaWorld = Mathf.Abs(size.x * size.z);
+                return true;
+            }
+
+            if (!zone.TryGetFootprintCollider(out var collider) || collider == null)
+            {
+                return false;
+            }
+
+            if (collider is SphereCollider sphere)
+            {
+                var t = sphere.transform;
+                var scale = t.lossyScale;
+                var radius = sphere.radius * Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.z));
+                areaWorld = Mathf.PI * radius * radius;
+                return true;
+            }
+
+            if (collider is BoxCollider box)
+            {
+                var size = Vector3.Scale(box.size, box.transform.lossyScale);
+                areaWorld = Mathf.Abs(size.x * size.z);
+                return true;
+            }
+
+            var bounds = collider.bounds;
+            areaWorld = Mathf.Abs(bounds.size.x * bounds.size.z);
+            return true;
         }
 
         private static bool IsInsideAnyLimitedDepthZoneFast(Vector3 worldPoint)

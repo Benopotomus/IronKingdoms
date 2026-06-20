@@ -116,7 +116,7 @@ namespace IronKingdoms.Combat
                     maxSearchRadius,
                     originRadiusWorld,
                     depthWorld,
-                    CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, sampleDir, originRadiusWorld),
+                    CombatForestFogClipper.IsEyeInsideLimitedDepthForestForClip(flatEye, originRadiusWorld),
                     applyForestClip,
                     applyBlockingClip);
 
@@ -167,8 +167,16 @@ namespace IronKingdoms.Combat
                 // When the eye is inside forest, they destroy legitimate see-out wedges at the edge.
                 if (!buildContext.RayStartedInsideForest && !skipTerrainPostFilters)
                 {
+                    var activeZoneCount = CombatForestFogClipper.GetActiveClipZoneCount(
+                        applyForestClip,
+                        applyBlockingClip);
                     RemoveOutwardAngularSpikes(clipDistances, sampleCount, maxSearchRadius, PostFilterScratch);
-                    RemoveOpenBinsAdjacentToForestClip(clipDistances, sampleCount, maxSearchRadius, PostFilterScratch);
+                    RemoveOpenBinsAdjacentToForestClip(
+                        clipDistances,
+                        sampleCount,
+                        maxSearchRadius,
+                        PostFilterScratch,
+                        allowDualLimitedBridge: activeZoneCount <= 1);
                 }
             }
             finally
@@ -245,7 +253,7 @@ namespace IronKingdoms.Combat
                     maxSearchRadius,
                     originRadiusWorld,
                     depthWorld,
-                    CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, directionWorld, originRadiusWorld),
+                    CombatForestFogClipper.IsEyeInsideLimitedDepthForestForClip(flatEye, originRadiusWorld),
                     applyForestClip,
                     applyBlockingClip);
 
@@ -264,12 +272,14 @@ namespace IronKingdoms.Combat
         /// <summary>
         /// Any still-open bin touching a forest-limited bin inherits the shorter neighbor clip.
         /// Only used when the unit is outside forest — fixes thin leaks past circular edges.
+        /// Skipped when multiple terrain zones are active (would bridge separate forests).
         /// </summary>
         public static void RemoveOpenBinsAdjacentToForestClip(
             float[] clipDistances,
             int count,
             float maxSearchRadius,
-            float[] scratch = null)
+            float[] scratch = null,
+            bool allowDualLimitedBridge = true)
         {
             if (clipDistances == null || count < 3 || maxSearchRadius <= 0.001f)
             {
@@ -278,6 +288,7 @@ namespace IronKingdoms.Combat
 
             scratch ??= PostFilterScratch;
             var openThreshold = maxSearchRadius - CombatScale.InchesToWorldUnits(0.25f);
+            var samePatchClipSlack = CombatScale.InchesToWorldUnits(0.75f);
 
             for (var i = 0; i < count; i++)
             {
@@ -295,7 +306,15 @@ namespace IronKingdoms.Combat
 
                 if (prevLimited && nextLimited)
                 {
-                    scratch[i] = Mathf.Min(prev, next);
+                    if (!allowDualLimitedBridge
+                        || Mathf.Abs(prev - next) > samePatchClipSlack)
+                    {
+                        scratch[i] = curr;
+                    }
+                    else
+                    {
+                        scratch[i] = Mathf.Min(prev, next);
+                    }
                 }
                 else if (prevLimited)
                 {

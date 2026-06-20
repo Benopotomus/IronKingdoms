@@ -656,12 +656,24 @@ namespace IronKingdoms.Combat
             var eyeWorld = (Vector3)GetEyePosition();
             var eyeIntersectsForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, 0f);
             var eyeIntersectsCloud = CombatBlockingTerrainClipper.IsInsideBlockingTerrain(eyeWorld, 0f);
+            CombatForestFogClipper.EnsureCache();
+            var applyBlockingClip = ShouldApplyBlockingTerrainClipThisFrame();
+            var activeClipZoneCount = CombatForestFogClipper.GetActiveClipZoneCount(
+                applyForestClipThisFrame,
+                applyBlockingClip);
+            var requireFullTerrainFidelity = eyeIntersectsForest
+                || eyeIntersectsCloud
+                || activeClipZoneCount >= 2
+                || CombatForestFogClipper.AnyCachedZoneWithinReach(eyeWorld, TotalRevealerRadius);
             var collectDebugState = drawForestClipDebug && drawForestClipInGameView && !pawnIsMoving;
             var maxUploadSegments = FogOfWarWorld.instance != null
                 ? FogOfWarWorld.instance.MaxPossibleSegmentsPerRevealer
                 : NumberOfPoints;
 
-            var desiredLutSamples = CombatForestFogPassSettings.ResolveLutSampleCount(pawnIsMoving);
+            var desiredLutSamples = CombatForestFogPassSettings.ResolveLutSampleCount(
+                pawnIsMoving,
+                requireFullTerrainFidelity,
+                activeClipZoneCount);
             forestPostProcessor.BuildTerrainClipSegmentsForShader(
                 ViewPoints,
                 NumberOfPoints,
@@ -677,9 +689,12 @@ namespace IronKingdoms.Combat
                 maxUploadSegments,
                 collectDebugState,
                 applyForestClipThisFrame,
-                ShouldApplyBlockingTerrainClipThisFrame(),
+                applyBlockingClip,
                 desiredLutSamples,
-                CombatForestFogPassSettings.ShouldSkipTerrainPostFilters(pawnIsMoving));
+                CombatForestFogPassSettings.ShouldSkipTerrainPostFilters(
+                    pawnIsMoving,
+                    requireFullTerrainFidelity,
+                    activeClipZoneCount));
 
             if (drawWallBaselineProof)
             {
@@ -763,6 +778,14 @@ namespace IronKingdoms.Combat
         private bool ShouldSkipMovingLineOfSightUpdate()
         {
             if (!pawnIsMoving || !CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving)
+            {
+                return false;
+            }
+
+            // Stale LOS + coarse moving LUT collapses forest see-out into a fixed depth circle.
+            CombatForestFogClipper.EnsureCache();
+            if (CombatForestFogClipper.HasActiveForestFogZones
+                || CombatForestFogClipper.HasActiveCloudFogZones)
             {
                 return false;
             }

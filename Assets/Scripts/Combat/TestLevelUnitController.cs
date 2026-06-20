@@ -81,7 +81,7 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
         [SerializeField, Min(1)] private int maxFogRevealersPerFrame = 12;
         [SerializeField, Range(0.25f, 2f)] private float fogWallRaycastResolution = 1f;
-        [SerializeField] private bool fogAdaptiveFidelityWhileMoving = true;
+        [SerializeField] private bool fogAdaptiveFidelityWhileMoving;
         [SerializeField, Range(90, 720)] private int fogMovingLutSamples = 180;
         [SerializeField, Range(1, 4)] private int fogMovingLineOfSightUpdateInterval = 2;
         [SerializeField] private bool debugUseCrispFogRendering = true;
