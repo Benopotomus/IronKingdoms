@@ -15,12 +15,30 @@ namespace IronKingdoms.Editor
             CombatZonePolygonFootprintMeshPersistence.BakeSelectedPrefabs();
         }
 
-        [MenuItem("Iron Kingdoms/Tools/Bake Polygon Circle Forest Zone Prefab")]
-        private static void BakeCircleForestPrefabMenu()
+        [MenuItem("Iron Kingdoms/Tools/Bake Polygon Circle Forest Zone Prefab (3in)")]
+        private static void BakeCircleForest3InPrefabMenu()
         {
             CombatZonePolygonFootprintMeshPersistence.BakePrefabAtPath(
                 "Assets/Prefabs/Combat/PolygonCircleForestZone_3in.prefab");
             Debug.Log("Baked PolygonCircleForestZone_3in prefab visual mesh.");
+        }
+
+        [MenuItem("Iron Kingdoms/Tools/Bake All Polygon Circle Zone Prefabs")]
+        private static void BakeAllCircleZonePrefabsMenu()
+        {
+            BakePrefab("Assets/Prefabs/Combat/PolygonCircleForestZone_3in.prefab");
+            BakePrefab("Assets/Prefabs/Combat/PolygonCircleForestZone_4in.prefab");
+            BakePrefab("Assets/Prefabs/Combat/PolygonCircleForestZone_5in.prefab");
+            BakePrefab("Assets/Prefabs/Combat/PolygonCircleCloudZone_3in.prefab");
+            Debug.Log("Baked all polygon circle zone prefab visual meshes.");
+        }
+
+        private static void BakePrefab(string prefabPath)
+        {
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) != null)
+            {
+                CombatZonePolygonFootprintMeshPersistence.BakePrefabAtPath(prefabPath);
+            }
         }
     }
 
