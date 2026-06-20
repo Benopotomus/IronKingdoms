@@ -367,6 +367,7 @@ MonoBehaviour:
   debugShowWallBaselineProof: 0
   debugShowShaderUploadPolygons: 0
   debugShowFogTextureBoundary: 0
+  debugLogFogPerf: 1
   autoSpawnOnStart: 1
 --- !u!114 &300004
 MonoBehaviour:

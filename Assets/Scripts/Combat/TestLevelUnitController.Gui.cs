@@ -614,6 +614,24 @@ namespace IronKingdoms.Combat
                 MarkFogRevealerSettingsDirty();
             }
 
+            var logFogPerf = debugLogFogPerf;
+            var logFogPerfToggled = GUILayout.Toggle(logFogPerf, "Log fog perf to console (CombatBootstrap)");
+            if (logFogPerfToggled != logFogPerf)
+            {
+                debugLogFogPerf = logFogPerfToggled;
+                CombatForestFogPassSettings.EnablePerfLogging = logFogPerfToggled;
+                CombatFogPerfLogger.SetEnabled(logFogPerfToggled);
+            }
+
+            if (logFogPerfToggled)
+            {
+                GUILayout.Label("Console + Logs/CombatFogPerf-latest.txt");
+                if (GUILayout.Button("Flush fog perf report now"))
+                {
+                    CombatFogPerfLogger.FlushReportNow();
+                }
+            }
+
             var showProof = debugShowWallBaselineProof;
             var proofToggled = GUILayout.Toggle(showProof, "Show wall baseline proof (selected unit)");
             if (proofToggled != showProof)
@@ -675,9 +693,12 @@ namespace IronKingdoms.Combat
                     : CombatForestFogPassSettings.MaxShaderLutSamples;
                 var movingHz = CombatForestFogPassSettings.MovingLineOfSightTargetHz;
                 var movingHzLabel = movingHz > 0.001f ? $"{movingHz:0.#} Hz full LOS" : "every frame";
+                var terrainMode = revealerMoving && CombatForestFogPassSettings.UseWallRayDirectionsWhileMoving
+                    ? "wall-ray directions"
+                    : $"LUT {lutBins}";
                 GUILayout.Label(
                     revealerMoving && movingProfile
-                        ? $"Moving: wall {wallStep:0.##}° | LUT {lutBins} | {movingHzLabel}."
+                        ? $"Moving: wall {wallStep:0.##}° | terrain {terrainMode} | {movingHzLabel}."
                         : $"Stationary: wall {wallStep:0.##}° | LUT {CombatForestFogPassSettings.MaxShaderLutSamples}.");
                 GUILayout.Label("Cyan only aligns when the clip lands on the forest edge (thin patch).");
             }

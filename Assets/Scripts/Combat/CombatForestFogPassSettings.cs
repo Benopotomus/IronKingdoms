@@ -78,6 +78,15 @@ namespace IronKingdoms.Combat
             UnityEngine.Mathf.Clamp(rays, 1, FowMaxExtraRaysPerSubIteration);
 
         /// <summary>
+        /// Editor console perf reports for fog/LOS while pathing (see <see cref="CombatFogPerfLogger"/>).
+        /// </summary>
+        public static bool EnablePerfLogging { get; set; } = true;
+
+        public static float PerfLogIntervalSeconds { get; set; } = 2f;
+
+        public static bool PerfLogOnlyWhileMoving { get; set; } = true;
+
+        /// <summary>
         /// When true, terrain LUT + post-filters use the reduced moving budget while pathing.
         /// </summary>
         public static bool UseReducedTerrainLutWhileMoving { get; set; } = true;
@@ -93,10 +102,16 @@ namespace IronKingdoms.Combat
         public static bool MovingSkipTerrainPostFilters { get; set; } = true;
 
         /// <summary>
-        /// When true, reduced terrain LUT applies even near / inside forest or cloud zones while moving.
-        /// Turn off for sharper terrain edges at the cost of CPU.
+        /// While moving, sample forest/cloud clip on pass-1 wall ray directions (same grid as physics
+        /// walls) instead of a separate coarse LUT so terrain edges track walls smoothly.
         /// </summary>
-        public static bool AllowReducedTerrainLutNearZonesWhileMoving { get; set; } = true;
+        public static bool UseWallRayDirectionsWhileMoving { get; set; } = true;
+
+        /// <summary>
+        /// When true, reduced terrain LUT applies even near / inside forest or cloud zones while moving.
+        /// Ignored when <see cref="UseWallRayDirectionsWhileMoving"/> is on. Turn off for sharper LUT edges.
+        /// </summary>
+        public static bool AllowReducedTerrainLutNearZonesWhileMoving { get; set; }
 
         /// <summary>
         /// Legacy alias kept for debug GUI toggles.

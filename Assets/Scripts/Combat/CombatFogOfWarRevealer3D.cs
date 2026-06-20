@@ -409,21 +409,32 @@ namespace IronKingdoms.Combat
 
         public override void LineOfSightPhase1()
         {
+            CombatFogPerfLogger.NotifyPawnMoving(pawnIsMoving);
             skipMovingLineOfSightThisFrame = ShouldSkipMovingLineOfSightUpdate();
             if (skipMovingLineOfSightThisFrame)
             {
-                ApplyRevealerPositionOnly();
+                CombatFogPerfLogger.IncrementCounter("revealer.position_only");
+                using (CombatFogPerfLogger.Measure("revealer.phase1.position_only"))
+                {
+                    ApplyRevealerPositionOnly();
+                }
+
                 return;
             }
 
+            CombatFogPerfLogger.IncrementCounter("revealer.full_los");
             forestPostProcessor.ClearDebugState();
-            base.LineOfSightPhase1();
+            using (CombatFogPerfLogger.Measure("revealer.phase1.wall_rays"))
+            {
+                base.LineOfSightPhase1();
+            }
         }
 
         public override void LineOfSightPhase2()
         {
             if (skipMovingLineOfSightThisFrame)
             {
+                CombatFogPerfLogger.IncrementCounter("revealer.phase2_skipped");
                 return;
             }
 
@@ -438,7 +449,10 @@ namespace IronKingdoms.Combat
                 ClearForestDebug();
             }
 
-            base.LineOfSightPhase2();
+            using (CombatFogPerfLogger.Measure("revealer.phase2.wall_edges"))
+            {
+                base.LineOfSightPhase2();
+            }
 
             applyForestPassThisFrame = false;
             CaptureLineOfSightPose();
@@ -680,56 +694,66 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            CompletePhaseOneBeforeForestClip();
-
-            var eyeWorld = (Vector3)GetEyePosition();
-            var eyeIntersectsForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, 0f);
-            var eyeIntersectsCloud = CombatBlockingTerrainClipper.IsInsideBlockingTerrain(eyeWorld, 0f);
-            CombatForestFogClipper.EnsureCache();
-            var applyBlockingClip = ShouldApplyBlockingTerrainClipThisFrame();
-            var activeClipZoneCount = CombatForestFogClipper.GetActiveClipZoneCount(
-                applyForestClipThisFrame,
-                applyBlockingClip);
-            var requireFullTerrainFidelity = eyeIntersectsForest
-                || eyeIntersectsCloud
-                || activeClipZoneCount >= 2
-                || CombatForestFogClipper.AnyCachedZoneWithinReach(eyeWorld, TotalRevealerRadius);
-            if (pawnIsMoving
-                && CombatForestFogPassSettings.EnableMovingPerfProfile
-                && CombatForestFogPassSettings.AllowReducedTerrainLutNearZonesWhileMoving)
+            using (CombatFogPerfLogger.Measure("revealer.terrain.clip"))
             {
-                requireFullTerrainFidelity = false;
-            }
-            var collectDebugState = drawForestClipDebug && drawForestClipInGameView && !pawnIsMoving;
-            var maxUploadSegments = FogOfWarWorld.instance != null
-                ? FogOfWarWorld.instance.MaxPossibleSegmentsPerRevealer
-                : NumberOfPoints;
+                CompletePhaseOneBeforeForestClip();
 
-            var desiredLutSamples = CombatForestFogPassSettings.ResolveLutSampleCount(
-                pawnIsMoving,
-                requireFullTerrainFidelity,
-                activeClipZoneCount);
-            forestPostProcessor.BuildTerrainClipSegmentsForShader(
-                ViewPoints,
-                NumberOfPoints,
-                FirstIteration,
-                FirstIterationStepCount,
-                eyeWorld,
-                TotalRevealerRadius,
-                0f,
-                Projection,
-                eyeIntersectsForest,
-                eyeIntersectsCloud,
-                CircleIsComplete,
-                maxUploadSegments,
-                collectDebugState,
-                applyForestClipThisFrame,
-                applyBlockingClip,
-                desiredLutSamples,
-                CombatForestFogPassSettings.ShouldSkipTerrainPostFilters(
+                var eyeWorld = (Vector3)GetEyePosition();
+                var eyeIntersectsForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, 0f);
+                var eyeIntersectsCloud = CombatBlockingTerrainClipper.IsInsideBlockingTerrain(eyeWorld, 0f);
+                CombatForestFogClipper.EnsureCache();
+                var applyBlockingClip = ShouldApplyBlockingTerrainClipThisFrame();
+                var activeClipZoneCount = CombatForestFogClipper.GetActiveClipZoneCount(
+                    applyForestClipThisFrame,
+                    applyBlockingClip);
+                var requireFullTerrainFidelity = eyeIntersectsForest
+                    || eyeIntersectsCloud
+                    || activeClipZoneCount >= 2
+                    || CombatForestFogClipper.AnyCachedZoneWithinReach(eyeWorld, TotalRevealerRadius);
+                var collectDebugState = drawForestClipDebug && drawForestClipInGameView && !pawnIsMoving;
+                var maxUploadSegments = FogOfWarWorld.instance != null
+                    ? FogOfWarWorld.instance.MaxPossibleSegmentsPerRevealer
+                    : NumberOfPoints;
+
+                var useWallRayTerrainUpload = pawnIsMoving
+                    && CombatForestFogPassSettings.UseWallRayDirectionsWhileMoving;
+                var desiredLutSamples = CombatForestFogPassSettings.ResolveLutSampleCount(
                     pawnIsMoving,
                     requireFullTerrainFidelity,
-                    activeClipZoneCount));
+                    activeClipZoneCount);
+                forestPostProcessor.BuildTerrainClipSegmentsForShader(
+                    ViewPoints,
+                    NumberOfPoints,
+                    FirstIteration,
+                    FirstIterationStepCount,
+                    eyeWorld,
+                    TotalRevealerRadius,
+                    0f,
+                    Projection,
+                    eyeIntersectsForest,
+                    eyeIntersectsCloud,
+                    CircleIsComplete,
+                    maxUploadSegments,
+                    collectDebugState,
+                    applyForestClipThisFrame,
+                    applyBlockingClip,
+                    desiredLutSamples,
+                    CombatForestFogPassSettings.ShouldSkipTerrainPostFilters(
+                        pawnIsMoving,
+                        requireFullTerrainFidelity,
+                        activeClipZoneCount),
+                    useWallRayTerrainUpload);
+
+                CombatFogPerfLogger.SetContext("name", gameObject.name);
+                CombatFogPerfLogger.SetContext("moving", pawnIsMoving.ToString());
+                CombatFogPerfLogger.SetContext("phase1Rays", FirstIterationStepCount.ToString());
+                CombatFogPerfLogger.SetContext("wallSegs", NumberOfPoints.ToString());
+                CombatFogPerfLogger.SetContext("terrainSegs", forestPostProcessor.TerrainClipSegmentCount.ToString());
+                CombatFogPerfLogger.SetContext("terrainPath", useWallRayTerrainUpload ? "wall-ray" : "lut");
+                CombatFogPerfLogger.SetContext("extraIters", NumExtraIterations.ToString());
+            }
+
+            var eyeWorldForDebug = (Vector3)GetEyePosition();
 
             if (drawWallBaselineProof)
             {
@@ -737,7 +761,7 @@ namespace IronKingdoms.Combat
                     forestPostProcessor.WallPassSegments,
                     ViewPoints,
                     NumberOfPoints,
-                    eyeWorld,
+                    eyeWorldForDebug,
                     TotalRevealerRadius,
                     CircleIsComplete,
                     Projection);
@@ -753,7 +777,7 @@ namespace IronKingdoms.Combat
                     forestPostProcessor.TerrainClipDirections,
                     forestPostProcessor.TerrainClipUploadDistances,
                     forestPostProcessor.TerrainClipSegmentCount,
-                    eyeWorld,
+                    eyeWorldForDebug,
                     TotalRevealerRadius,
                     Projection,
                     forestPostProcessor.BridgedRayIndices);
@@ -762,25 +786,28 @@ namespace IronKingdoms.Combat
 
         protected override void ApplyData()
         {
-            RevealerDataStruct.RevealerPosition = RevealerPosition;
-            RevealerDataStruct.RevealerHeight = RevealerHeightPosition + ShaderEyeOffset;
-            RevealerDataStruct.NumSegments = NumberOfPoints;
+            using (CombatFogPerfLogger.Measure("revealer.gpu_upload"))
+            {
+                RevealerDataStruct.RevealerPosition = RevealerPosition;
+                RevealerDataStruct.RevealerHeight = RevealerHeightPosition + ShaderEyeOffset;
+                RevealerDataStruct.NumSegments = NumberOfPoints;
 
-            var terrainCount = forestPostProcessor.TerrainClipSegmentCount;
-            RevealerInfoStruct.NumTerrainClipSegments = terrainCount;
-            FogOfWarWorld.instance.UpdateRevealerInfo(RevealerGPUDataPosition, RevealerInfoStruct);
+                var terrainCount = forestPostProcessor.TerrainClipSegmentCount;
+                RevealerInfoStruct.NumTerrainClipSegments = terrainCount;
+                FogOfWarWorld.instance.UpdateRevealerInfo(RevealerGPUDataPosition, RevealerInfoStruct);
 
-            FogOfWarWorld.instance.UpdateRevealerData(
-                RevealerGPUDataPosition,
-                RevealerDataStruct,
-                NumberOfPoints,
-                OutputDirections,
-                OutputDistances,
-                terrainCount,
-                forestPostProcessor.TerrainClipDirections,
-                forestPostProcessor.TerrainClipUploadDistances);
+                FogOfWarWorld.instance.UpdateRevealerData(
+                    RevealerGPUDataPosition,
+                    RevealerDataStruct,
+                    NumberOfPoints,
+                    OutputDirections,
+                    OutputDistances,
+                    terrainCount,
+                    forestPostProcessor.TerrainClipDirections,
+                    forestPostProcessor.TerrainClipUploadDistances);
 
-            SparseRevealerGrid.UpdateRevealerBuckets(this, RevealerPosition);
+                SparseRevealerGrid.UpdateRevealerBuckets(this, RevealerPosition);
+            }
         }
 
         private void UpdateStationaryState()
@@ -814,6 +841,20 @@ namespace IronKingdoms.Combat
         private bool ShouldSkipMovingLineOfSightUpdate()
         {
             if (!pawnIsMoving || !CombatForestFogPassSettings.EnableMovingPerfProfile)
+            {
+                return false;
+            }
+
+            // Wall-ray terrain must recalc every frame; position-only uploads slide forest/cloud edges.
+            if (CombatForestFogPassSettings.UseWallRayDirectionsWhileMoving)
+            {
+                return false;
+            }
+
+            var eyeWorld = (Vector3)GetEyePosition();
+            if (CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, 0f)
+                || CombatBlockingTerrainClipper.IsInsideBlockingTerrain(eyeWorld, 0f)
+                || CombatForestFogClipper.AnyCachedZoneWithinReach(eyeWorld, TotalRevealerRadius))
             {
                 return false;
             }

@@ -243,6 +243,108 @@ namespace IronKingdoms.Combat
             return outDirections.Count;
         }
 
+        /// <summary>
+        /// Adds footprint corner/edge samples to an existing upload so straight zone edges stay fixed
+        /// while the revealer moves (wall-ray path uses this after dense phase-1 sampling).
+        /// </summary>
+        public static int MergePolygonEdgeSamplesIntoUpload(
+            Vector3 eyeWorld,
+            float maxRadius,
+            in CombatForestFogLutBuildContext buildContext,
+            bool applyForestClip,
+            bool applyBlockingClip,
+            List<float2> directions,
+            List<float> uploadLengths,
+            int maxSegments)
+        {
+            if (directions == null
+                || uploadLengths == null
+                || directions.Count < 2
+                || directions.Count != uploadLengths.Count
+                || maxRadius <= 0.001f
+                || maxSegments < 2)
+            {
+                return directions?.Count ?? 0;
+            }
+
+            var openThreshold = maxRadius - DistanceEpsilonWorld;
+            SampleScratch.Clear();
+            for (var i = 0; i < directions.Count; i++)
+            {
+                var dir2 = directions[i];
+                if (math.lengthsq(dir2) <= 1e-8f)
+                {
+                    continue;
+                }
+
+                dir2 = math.normalize(dir2);
+                var upload = uploadLengths[i];
+                var clipped = upload < openThreshold;
+                var angle = math.atan2(dir2.y, dir2.x);
+                if (angle < 0f)
+                {
+                    angle += math.PI * 2f;
+                }
+
+                AddSample(
+                    angle,
+                    dir2,
+                    clipped ? upload : maxRadius + 1f,
+                    clipped,
+                    essential: true);
+            }
+
+            InjectFootprintCorners(
+                eyeWorld,
+                maxRadius,
+                buildContext,
+                openThreshold,
+                applyForestClip,
+                applyBlockingClip,
+                clipDistances: null,
+                lutSampleCount: 2);
+            InjectPolygonEdgeSamples(
+                eyeWorld,
+                maxRadius,
+                buildContext,
+                openThreshold,
+                applyForestClip,
+                applyBlockingClip,
+                clipDistances: null,
+                lutSampleCount: 2);
+            SortAndDedupeSamples(openThreshold);
+            InsertEssentialOpenBreaksBetweenClippedIslands(
+                eyeWorld,
+                maxRadius,
+                openThreshold,
+                buildContext,
+                CombatForestFogClipper.GetActiveClipZoneCount(applyForestClip, applyBlockingClip));
+            SortAndDedupeSamples(openThreshold);
+
+            if (SampleScratch.Count > maxSegments)
+            {
+                DecimateSamplesToBudget(maxSegments);
+            }
+
+            TrimToUploadBudget(maxSegments);
+
+            directions.Clear();
+            uploadLengths.Clear();
+            var flatEye = eyeWorld;
+            flatEye.y = 0f;
+            for (var i = 0; i < SampleScratch.Count; i++)
+            {
+                var sample = SampleScratch[i];
+                directions.Add(sample.Direction);
+                uploadLengths.Add(
+                    sample.Clipped
+                        ? ResolveMeshUploadLength(sample, flatEye, maxRadius, buildContext)
+                        : maxRadius + 1f);
+            }
+
+            return directions.Count;
+        }
+
         private static void WriteSamplesToOutput(
             Vector3 flatEye,
             float maxRadius,

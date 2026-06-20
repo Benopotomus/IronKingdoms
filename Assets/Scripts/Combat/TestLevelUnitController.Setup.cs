@@ -137,6 +137,8 @@ namespace IronKingdoms.Combat
             FogOfWarWorld.SetFowEffectStrength(1f);
             fogOfWarWorld.SetFowTextureFilterMode(FilterMode.Point);
 
+            CombatFogWorldPerfHooks.EnsureAttached(fogOfWarWorld.gameObject);
+
             var displayTuning = fogOfWarWorld.GetComponent<CombatFogProjectionTuning>();
             if (displayTuning != null)
             {

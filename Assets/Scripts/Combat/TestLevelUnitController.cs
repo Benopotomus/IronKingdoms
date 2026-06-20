@@ -111,6 +111,8 @@ namespace IronKingdoms.Combat
         [SerializeField] private bool debugShowWallBaselineProof = false;
         [SerializeField] private bool debugShowShaderUploadPolygons = false;
         [SerializeField] private bool debugShowFogTextureBoundary = false;
+        [Tooltip("Logs aggregated fog/LOS timings to the console every ~2s while moving. Copy the [CombatFogPerf] block.")]
+        [SerializeField] private bool debugLogFogPerf = true;
         [SerializeField] private bool autoSpawnOnStart = true;
         private MatchArmySpawner matchArmySpawner;
 
@@ -205,6 +207,12 @@ namespace IronKingdoms.Combat
             CombatForestFogPassSettings.MovingSkipTerrainPostFilters = fogSkipTerrainPostFiltersWhileMoving;
             CombatForestFogPassSettings.AllowReducedTerrainLutNearZonesWhileMoving =
                 fogAllowReducedLutNearTerrainWhileMoving;
+            CombatForestFogPassSettings.EnablePerfLogging = debugLogFogPerf;
+            CombatForestFogPassSettings.PerfLogIntervalSeconds = 2f;
+            CombatForestFogPassSettings.PerfLogOnlyWhileMoving = true;
+            CombatFogPerfLogger.ReportIntervalSeconds = CombatForestFogPassSettings.PerfLogIntervalSeconds;
+            CombatFogPerfLogger.ReportOnlyWhileMoving = CombatForestFogPassSettings.PerfLogOnlyWhileMoving;
+            CombatFogPerfLogger.SetEnabled(debugLogFogPerf);
         }
 
         private void Start()
