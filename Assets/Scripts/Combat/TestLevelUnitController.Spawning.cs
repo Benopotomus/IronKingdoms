@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using FOW;
 using Pathfinding;
+using System;
 using UnityEngine;
 
 namespace IronKingdoms.Combat
@@ -22,18 +23,38 @@ namespace IronKingdoms.Combat
         /// <summary>Stage: clear prior pawns and spawn both armies at configured anchors.</summary>
         public void SpawnArmies()
         {
+            CombatStartupLog.Log(
+                $"SpawnArmies begin: playerDefs={playerUnits?.Count ?? 0}, enemyDefs={enemyUnits?.Count ?? 0}, "
+                + $"playerAnchor={(playerSpawnAnchor != null ? playerSpawnAnchor.name : "null")}, "
+                + $"enemyAnchor={(enemySpawnAnchor != null ? enemySpawnAnchor.name : "null")}.");
+
             ClearSpawnedUnits();
-            SpawnArmy(playerUnits, playerSpawnAnchor, playerRuntimeUnits, true, new Color(0.2f, 0.5f, 1f));
-            SpawnArmy(enemyUnits, enemySpawnAnchor, enemyRuntimeUnits, false, new Color(1f, 0.3f, 0.3f));
+            SpawnArmy(playerUnits, playerSpawnAnchor, playerRuntimeUnits, true, new Color(0.2f, 0.5f, 1f), "Player");
+            SpawnArmy(enemyUnits, enemySpawnAnchor, enemyRuntimeUnits, false, new Color(1f, 0.3f, 0.3f), "Enemy");
             losDirtyVersion++;
+
+            CombatStartupLog.Log(
+                $"SpawnArmies done: spawned player={playerRuntimeUnits.Count}, enemy={enemyRuntimeUnits.Count}.");
         }
 
         /// <summary>Stage: sync fog revealers and model visibility after all units exist.</summary>
         public void InitializeMatchVisibility()
         {
-            RefreshAllPlayerFogVisionRules();
-            MarkPlayerFogRevealerActivationDirty();
-            UpdateUnitNavmeshCutActivation(GetPathingUnitForNavmeshClearance());
+            CombatStartupLog.Log(
+                $"InitializeMatchVisibility begin: playerRuntime={playerRuntimeUnits.Count}, "
+                + $"fogWorld={(fogOfWarWorld != null ? fogOfWarWorld.name : "null")}.");
+            try
+            {
+                RefreshAllPlayerFogVisionRules();
+                MarkPlayerFogRevealerActivationDirty();
+                UpdateUnitNavmeshCutActivation(GetPathingUnitForNavmeshClearance());
+                CombatStartupLog.Log("InitializeMatchVisibility done.");
+            }
+            catch (Exception ex)
+            {
+                CombatStartupLog.LogException("InitializeMatchVisibility", ex);
+                throw;
+            }
         }
 
         private void RefreshAllPlayerFogVisionRules()
@@ -49,9 +70,20 @@ namespace IronKingdoms.Combat
         /// <summary>Stage: activate the first player turn once armies and visibility are ready.</summary>
         public void BeginMatch()
         {
-            StartPlayerTurn();
-            MarkPlayerFogRevealerActivationDirty();
-            ForceSyncPlayerFogRevealerActivation();
+            CombatStartupLog.Log("BeginMatch begin.");
+            try
+            {
+                StartPlayerTurn();
+                MarkPlayerFogRevealerActivationDirty();
+                ForceSyncPlayerFogRevealerActivation();
+                CombatStartupLog.Log(
+                    $"BeginMatch done. activeTurn={activeTurnSide}, matchPhase={CombatMatchSetup.CurrentPhase}.");
+            }
+            catch (Exception ex)
+            {
+                CombatStartupLog.LogException("BeginMatch", ex);
+                throw;
+            }
         }
 
         private void ForceSyncPlayerFogRevealerActivation()
@@ -70,10 +102,17 @@ namespace IronKingdoms.Combat
 
         public bool IsMatchReady => CombatMatchSetup.CurrentPhase == CombatMatchSetupPhase.Ready;
 
+        public int PlayerRuntimeUnitCount => playerRuntimeUnits.Count;
+
+        public int EnemyRuntimeUnitCount => enemyRuntimeUnits.Count;
+
         public void SetSpawnAnchors(Transform playerAnchor, Transform enemyAnchor)
         {
             playerSpawnAnchor = playerAnchor;
             enemySpawnAnchor = enemyAnchor;
+            CombatStartupLog.Log(
+                $"SetSpawnAnchors: player={(playerAnchor != null ? $"{playerAnchor.name} @ {playerAnchor.position}" : "null")}, "
+                + $"enemy={(enemyAnchor != null ? $"{enemyAnchor.name} @ {enemyAnchor.position}" : "null")}.");
         }
 
         /// <summary>
@@ -81,36 +120,75 @@ namespace IronKingdoms.Combat
         /// Call this from <see cref="CombatMapSetup"/> before the map scene has finished loading
         /// so that units are not spawned before their spawn-point anchors are resolved.
         /// </summary>
+        public void LogSpawnDiagnostics(string context)
+        {
+            CombatStartupLog.Log(
+                $"{context}: phase={CombatMatchSetup.CurrentPhase}, "
+                + $"playerDefs={playerUnits?.Count ?? 0}, enemyDefs={enemyUnits?.Count ?? 0}, "
+                + $"playerSpawned={playerRuntimeUnits.Count}, enemySpawned={enemyRuntimeUnits.Count}, "
+                + $"playerAnchor={(playerSpawnAnchor != null ? $"{playerSpawnAnchor.name} @ {playerSpawnAnchor.position}" : "null")}, "
+                + $"enemyAnchor={(enemySpawnAnchor != null ? $"{enemySpawnAnchor.name} @ {enemySpawnAnchor.position}" : "null")}.");
+        }
+
         public void DisableAutoSpawn()
         {
             autoSpawnOnStart = false;
         }
 
-        private void SpawnArmy(List<UnitTypeDefinition> units, Transform anchor, List<Unit> destination, bool isPlayerControlled, Color color)
+        private void SpawnArmy(
+            List<UnitTypeDefinition> units,
+            Transform anchor,
+            List<Unit> destination,
+            bool isPlayerControlled,
+            Color color,
+            string armyLabel)
         {
             if (units == null)
             {
+                CombatStartupLog.LogWarning($"SpawnArmy skipped '{armyLabel}': unit list is null.");
+                return;
+            }
+
+            if (units.Count == 0)
+            {
+                CombatStartupLog.LogWarning($"SpawnArmy skipped '{armyLabel}': unit list is empty.");
                 return;
             }
 
             EnsureMatchArmySpawnerAssigned();
             var placements = matchArmySpawner.BuildPlacements(units, anchor, spawnSpacing);
+            CombatStartupLog.Log($"SpawnArmy '{armyLabel}': {placements.Count} placement(s) from {units.Count} definition(s).");
+
             for (var i = 0; i < placements.Count; i++)
             {
                 var unitDefinition = placements[i].UnitDefinition;
+                if (unitDefinition == null)
+                {
+                    CombatStartupLog.LogWarning($"SpawnArmy '{armyLabel}' slot {i}: null UnitTypeDefinition.");
+                    continue;
+                }
+
                 unitDefinition.Stats.EnsureAdvantageDefaults();
                 unitDefinition.Stats.EnsureAbilityDefaults();
                 var pawnScale = unitDefinition.Stats.modelSize.GetPawnScale();
                 var spawnPos = placements[i].Position;
 
                 GameObject pawn;
-                if (unitDefinition.VisualPrefab != null)
+                try
                 {
-                    pawn = Instantiate(unitDefinition.VisualPrefab, spawnPos, Quaternion.identity, transform);
+                    if (unitDefinition.VisualPrefab != null)
+                    {
+                        pawn = Instantiate(unitDefinition.VisualPrefab, spawnPos, Quaternion.identity, transform);
+                    }
+                    else
+                    {
+                        pawn = BuildProceduralPawn(pawnScale, spawnPos);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    pawn = BuildProceduralPawn(pawnScale, spawnPos);
+                    CombatStartupLog.LogException($"SpawnArmy '{armyLabel}' instantiate '{unitDefinition.DisplayName}'", ex);
+                    continue;
                 }
 
                 pawn.name = $"{unitDefinition.DisplayName} ({(isPlayerControlled ? "Player" : "Enemy")})";
@@ -137,19 +215,32 @@ namespace IronKingdoms.Combat
                 var unit = unitPawn.Bind(unitDefinition, isPlayerControlled);
                 if (unit == null)
                 {
+                    CombatStartupLog.LogWarning(
+                        $"SpawnArmy '{armyLabel}' slot {i}: UnitPawn.Bind returned null for '{unitDefinition.DisplayName}'.");
                     Destroy(pawn);
                     continue;
                 }
 
                 if (isPlayerControlled)
                 {
-                    ConfigurePlayerFogRevealer(pawn, pawnCollider, unit);
+                    try
+                    {
+                        ConfigurePlayerFogRevealer(pawn, pawnCollider, unit);
+                    }
+                    catch (Exception ex)
+                    {
+                        CombatStartupLog.LogException(
+                            $"SpawnArmy '{armyLabel}' fog revealer '{unitDefinition.DisplayName}'",
+                            ex);
+                    }
                 }
 
                 unit.VisionRulesChanged += HandleUnitVisionRulesChanged;
                 unit.SnapToNavmesh(navPathBuilder);
                 destination.Add(unit);
                 allRuntimeUnits.Add(unit);
+                CombatStartupLog.Log(
+                    $"SpawnArmy '{armyLabel}' slot {i}: spawned '{unitDefinition.DisplayName}' @ {spawnPos}.");
             }
         }
 
@@ -206,8 +297,10 @@ namespace IronKingdoms.Combat
             // ResolveEdge runs on raw physics first; forest subtractively trims open visibility afterward.
             revealer.ResolveEdge = true;
             revealer.OcclusionQuality = RaycastRevealer.RaycastRevealerOcclusionQualityPreset.Custom;
-            // 0.5 degrees per ray is enough for forest depth clipping and keeps raycast cost manageable.
-            revealer.RaycastResolution = 0.5f;
+            // Wall baseline raycasts (independent of the 720-bin forest terrain LUT).
+            revealer.RaycastResolution = CombatForestFogPassSettings.WallRaycastResolutionDegrees;
+            revealer.ConfigureStationaryWallRaycastResolution(CombatForestFogPassSettings.WallRaycastResolutionDegrees);
+            revealer.ConfigureStationaryWallQuality(resolveEdge: true, addCorners: true);
             // Forest depth is applied after stock edge resolve in CombatFogOfWarRevealer3D.
             revealer.NumExtraIterations = 0;
             revealer.NumExtraRaysOnIteration = 0;

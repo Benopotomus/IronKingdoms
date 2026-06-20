@@ -26,57 +26,77 @@ namespace IronKingdoms.Combat
             var previousLogging = LogPhases;
             LogPhases = logPhases;
 
-            try
+            if (controller == null)
             {
-                if (controller == null)
+                SetPhase(CombatMatchSetupPhase.Failed);
+                CombatStartupLog.LogError("RunFromSceneLoad failed: no unit controller assigned.");
+                LogPhases = previousLogging;
+                yield break;
+            }
+
+            CombatStartupLog.Log($"RunFromSceneLoad begin (map='{combatMapSceneName}', controller='{controller.name}').");
+
+            SetPhase(CombatMatchSetupPhase.LoadingMap);
+            var mapScene = SceneManager.GetSceneByName(combatMapSceneName);
+            if (!mapScene.IsValid() || !mapScene.isLoaded)
+            {
+                if (string.IsNullOrWhiteSpace(combatMapSceneName))
                 {
                     SetPhase(CombatMatchSetupPhase.Failed);
-                    Debug.LogError("Combat match setup failed: no unit controller assigned.");
+                    CombatStartupLog.LogError("RunFromSceneLoad failed: combat map scene name is not configured.");
+                    LogPhases = previousLogging;
                     yield break;
                 }
 
-                SetPhase(CombatMatchSetupPhase.LoadingMap);
-                var mapScene = SceneManager.GetSceneByName(combatMapSceneName);
-                if (!mapScene.IsValid() || !mapScene.isLoaded)
+                var loadOperation = SceneManager.LoadSceneAsync(combatMapSceneName, LoadSceneMode.Additive);
+                if (loadOperation == null)
                 {
-                    if (string.IsNullOrWhiteSpace(combatMapSceneName))
-                    {
-                        SetPhase(CombatMatchSetupPhase.Failed);
-                        Debug.LogError("Combat match setup failed: combat map scene name is not configured.");
-                        yield break;
-                    }
-
-                    var loadOperation = SceneManager.LoadSceneAsync(combatMapSceneName, LoadSceneMode.Additive);
-                    if (loadOperation == null)
-                    {
-                        SetPhase(CombatMatchSetupPhase.Failed);
-                        Debug.LogError($"Combat match setup failed: could not load scene '{combatMapSceneName}'.");
-                        yield break;
-                    }
-
-                    while (!loadOperation.isDone)
-                    {
-                        yield return null;
-                    }
-
-                    mapScene = SceneManager.GetSceneByName(combatMapSceneName);
+                    SetPhase(CombatMatchSetupPhase.Failed);
+                    CombatStartupLog.LogError($"RunFromSceneLoad failed: could not load scene '{combatMapSceneName}'.");
+                    LogPhases = previousLogging;
+                    yield break;
                 }
 
+                while (!loadOperation.isDone)
+                {
+                    yield return null;
+                }
+
+                mapScene = SceneManager.GetSceneByName(combatMapSceneName);
+            }
+
+            CombatStartupLog.Log(
+                $"Map scene loaded: valid={mapScene.IsValid()}, name='{mapScene.name}', rootCount={(mapScene.IsValid() ? mapScene.rootCount : 0)}.");
+
+            var postLoadFailed = false;
+            try
+            {
                 SetPhase(CombatMatchSetupPhase.PreparingNavigation);
                 EnsureNavigationReady(controller);
 
                 SetPhase(CombatMatchSetupPhase.RegisteringMapScene);
                 CombatMapSceneProvider.RegisterMapScene(mapScene);
+                LogActiveCombatZones("after map registration");
 
                 SetPhase(CombatMatchSetupPhase.ResolvingSpawnAnchors);
                 ApplySpawnAnchors(mapScene, controller);
-
-                yield return RunMatchPhases(controller);
             }
-            finally
+            catch (Exception ex)
+            {
+                SetPhase(CombatMatchSetupPhase.Failed);
+                CombatStartupLog.LogException("RunFromSceneLoad", ex);
+                postLoadFailed = true;
+            }
+
+            if (postLoadFailed)
             {
                 LogPhases = previousLogging;
+                yield break;
             }
+
+            yield return RunMatchPhases(controller);
+
+            LogPhases = previousLogging;
         }
 
         public static IEnumerator RunMatchPhases(TestLevelUnitController controller)
@@ -84,26 +104,46 @@ namespace IronKingdoms.Combat
             if (controller == null)
             {
                 SetPhase(CombatMatchSetupPhase.Failed);
-                Debug.LogError("Combat match setup failed: no unit controller assigned.");
+                CombatStartupLog.LogError("RunMatchPhases failed: no unit controller assigned.");
                 yield break;
             }
 
-            SetPhase(CombatMatchSetupPhase.BuildingVisualizers);
-            controller.PrepareMatchVisualizers();
+            CombatStartupLog.Log("RunMatchPhases begin.");
+
+            if (!TryRunPhase(CombatMatchSetupPhase.BuildingVisualizers, () => controller.PrepareMatchVisualizers()))
+            {
+                yield break;
+            }
+
             yield return null;
 
-            SetPhase(CombatMatchSetupPhase.SpawningArmies);
-            controller.SpawnArmies();
+            if (!TryRunPhase(CombatMatchSetupPhase.SpawningArmies, () =>
+                {
+                    controller.LogSpawnDiagnostics("before SpawnArmies");
+                    controller.SpawnArmies();
+                    controller.LogSpawnDiagnostics("after SpawnArmies");
+                }))
+            {
+                yield break;
+            }
+
             yield return null;
 
-            SetPhase(CombatMatchSetupPhase.InitializingVisibility);
-            controller.InitializeMatchVisibility();
+            if (!TryRunPhase(CombatMatchSetupPhase.InitializingVisibility, () => controller.InitializeMatchVisibility()))
+            {
+                yield break;
+            }
+
             yield return null;
 
-            SetPhase(CombatMatchSetupPhase.BeginningMatch);
-            controller.BeginMatch();
+            if (!TryRunPhase(CombatMatchSetupPhase.BeginningMatch, () => controller.BeginMatch()))
+            {
+                yield break;
+            }
 
             SetPhase(CombatMatchSetupPhase.Ready);
+            CombatStartupLog.Log(
+                $"RunMatchPhases complete. Player units={controller.PlayerRuntimeUnitCount}, enemy units={controller.EnemyRuntimeUnitCount}.");
         }
 
         public static void RunMatchPhasesImmediate(TestLevelUnitController controller)
@@ -111,23 +151,78 @@ namespace IronKingdoms.Combat
             if (controller == null)
             {
                 SetPhase(CombatMatchSetupPhase.Failed);
-                Debug.LogError("Combat match setup failed: no unit controller assigned.");
+                CombatStartupLog.LogError("RunMatchPhasesImmediate failed: no unit controller assigned.");
                 return;
             }
 
-            SetPhase(CombatMatchSetupPhase.BuildingVisualizers);
-            controller.PrepareMatchVisualizers();
+            CombatStartupLog.Log("RunMatchPhasesImmediate begin.");
 
-            SetPhase(CombatMatchSetupPhase.SpawningArmies);
-            controller.SpawnArmies();
+            if (!TryRunPhase(CombatMatchSetupPhase.BuildingVisualizers, () => controller.PrepareMatchVisualizers()))
+            {
+                return;
+            }
 
-            SetPhase(CombatMatchSetupPhase.InitializingVisibility);
-            controller.InitializeMatchVisibility();
+            if (!TryRunPhase(CombatMatchSetupPhase.SpawningArmies, () =>
+                {
+                    controller.LogSpawnDiagnostics("before SpawnArmies");
+                    controller.SpawnArmies();
+                    controller.LogSpawnDiagnostics("after SpawnArmies");
+                }))
+            {
+                return;
+            }
 
-            SetPhase(CombatMatchSetupPhase.BeginningMatch);
-            controller.BeginMatch();
+            if (!TryRunPhase(CombatMatchSetupPhase.InitializingVisibility, () => controller.InitializeMatchVisibility()))
+            {
+                return;
+            }
+
+            if (!TryRunPhase(CombatMatchSetupPhase.BeginningMatch, () => controller.BeginMatch()))
+            {
+                return;
+            }
 
             SetPhase(CombatMatchSetupPhase.Ready);
+            CombatStartupLog.Log(
+                $"RunMatchPhasesImmediate complete. Player units={controller.PlayerRuntimeUnitCount}, enemy units={controller.EnemyRuntimeUnitCount}.");
+        }
+
+        private static bool TryRunPhase(CombatMatchSetupPhase phase, Action action)
+        {
+            SetPhase(phase);
+            try
+            {
+                action();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                SetPhase(CombatMatchSetupPhase.Failed);
+                CombatStartupLog.LogException(phase.ToString(), ex);
+                return false;
+            }
+        }
+
+        private static void LogActiveCombatZones(string context)
+        {
+            var zones = CombatZone.ActiveZones;
+            var limitedDepth = 0;
+            var polygon = 0;
+            for (var i = 0; i < zones.Count; i++)
+            {
+                var zone = zones[i];
+                if (zone?.TerrainFeature?.LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth)
+                {
+                    limitedDepth++;
+                    if (zone.TryGetComponent<CombatZonePolygonFootprint>(out var footprint) && footprint.HasFootprint)
+                    {
+                        polygon++;
+                    }
+                }
+            }
+
+            CombatStartupLog.Log(
+                $"{context}: active CombatZones={zones.Count}, limitedDepth={limitedDepth}, polygonFootprints={polygon}.");
         }
 
         private static void SetPhase(CombatMatchSetupPhase phase)
@@ -206,10 +301,14 @@ namespace IronKingdoms.Combat
             if (playerSpawn != null && enemySpawn != null)
             {
                 controller.SetSpawnAnchors(playerSpawn, enemySpawn);
+                CombatStartupLog.Log(
+                    $"Spawn anchors resolved: player='{playerSpawn.name}' @ {playerSpawn.position}, enemy='{enemySpawn.name}' @ {enemySpawn.position}.");
                 return;
             }
 
-            Debug.LogWarning("Combat map scene did not provide both player and enemy spawn points.");
+            CombatStartupLog.LogWarning(
+                $"Spawn anchors missing (player={(playerSpawn != null ? playerSpawn.name : "null")}, enemy={(enemySpawn != null ? enemySpawn.name : "null")}). "
+                + "Using serialized anchors on the unit controller if present.");
         }
     }
 }

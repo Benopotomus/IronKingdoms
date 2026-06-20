@@ -46,7 +46,8 @@ namespace IronKingdoms.Combat
 
         public void DrawEffectiveFogBoundaryAroundRevealer(
             CombatFogOfWarRevealer3D revealer,
-            Color boundaryColor)
+            Color boundaryColor,
+            bool drawForestFootprints = true)
         {
             if (lineParent == null || revealer == null)
             {
@@ -76,13 +77,28 @@ namespace IronKingdoms.Combat
                 originGround,
                 maxSearchRadius,
                 0f,
-                revealer.ShouldApplyTerrainFeatureClipForFog(),
+                revealer.ShouldApplyForestClipThisFrame(),
+                revealer.ShouldApplyBlockingTerrainClipThisFrame(),
                 FogOfWarRevealer3D.Projection,
                 effectiveContourPoints);
 
             ApplyContourLoop(effectiveContourLine, effectiveContourPoints, boundaryColor);
-            BuildForestFootprintSegments(drawY, footprintSegments);
-            ApplyFootprintSegments(new Color(0.2f, 0.85f, 1f, 0.9f));
+            if (drawForestFootprints)
+            {
+                BuildForestFootprintSegments(drawY, footprintSegments);
+                ApplyFootprintSegments(new Color(0.2f, 0.85f, 1f, 0.9f));
+            }
+            else
+            {
+                for (var i = 0; i < footprintLinePool.Count; i++)
+                {
+                    if (footprintLinePool[i] != null)
+                    {
+                        footprintLinePool[i].positionCount = 0;
+                        footprintLinePool[i].enabled = false;
+                    }
+                }
+            }
         }
 
         private void BuildForestFootprintSegments(float drawY, List<(Vector3 start, Vector3 end)> segments)

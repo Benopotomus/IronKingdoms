@@ -361,6 +361,12 @@ MonoBehaviour:
   fogWorldBoundsSize: {x: 24, y: 24}
   fogExploredShroudVisibility: 0.35
   fogVisionEdgeSoftenDistance: 0.75
+  maxFogRevealersPerFrame: 12
+  debugUseCrispFogRendering: 1
+  debugUseForestFogPass: 1
+  debugShowWallBaselineProof: 0
+  debugShowShaderUploadPolygons: 0
+  debugShowFogTextureBoundary: 0
   autoSpawnOnStart: 1
 --- !u!114 &300004
 MonoBehaviour:
@@ -376,6 +382,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   combatMapSceneName: CombatMapScene
   unitController: {fileID: 300003}
+  logSetupPhases: 1
 --- !u!1 &400000
 GameObject:
   m_ObjectHideFlags: 0

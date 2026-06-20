@@ -589,7 +589,7 @@ namespace IronKingdoms.Combat
             }
 
             const float panelWidth = 360f;
-            const float panelHeight = 328f;
+            const float panelHeight = 352f;
             var areaY = RosterAreaY + RosterAreaHeight + 8f;
             GUILayout.BeginArea(
                 new Rect(RosterAreaX, areaY, panelWidth, panelHeight),
@@ -603,6 +603,15 @@ namespace IronKingdoms.Combat
                 CombatForestFogPassSettings.UseForestPass = toggled;
                 debugUseForestFogPass = toggled;
                 MarkFogRevealerSettingsDirty();
+                RefreshAllFogRevealersAfterForestPassToggle();
+            }
+
+            var adaptiveFidelity = CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving;
+            var adaptiveToggled = GUILayout.Toggle(adaptiveFidelity, "Lower fog cost while moving");
+            if (adaptiveToggled != adaptiveFidelity)
+            {
+                CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving = adaptiveToggled;
+                fogAdaptiveFidelityWhileMoving = adaptiveToggled;
             }
 
             var showProof = debugShowWallBaselineProof;
@@ -625,7 +634,7 @@ namespace IronKingdoms.Combat
                 MarkFogRevealerSettingsDirty();
             }
 
-            GUILayout.Label(toggled
+            GUILayout.Label(CombatForestFogPassSettings.UseForestPass
                 ? "Mode: baseline polygon + added forest verts"
                 : "Mode: baseline stock FOW");
 
@@ -648,11 +657,27 @@ namespace IronKingdoms.Combat
                 }
             }
 
+            var revealer = GetFogRevealer(selectedUnit);
+
             if (fogTextureToggled)
             {
                 GUILayout.Label("Yellow loop = effective fog boundary (baseline + terrain upload).");
                 GUILayout.Label("Cyan outline = forest zone footprint (reference only).");
-                GUILayout.Label("Yellow should match the on-screen fog edge on open ground.");
+                GUILayout.Label("Yellow is the target fog boundary (baseline + forest/cloud clip).");
+                GUILayout.Label("Rendered fog should match the yellow line on open ground.");
+                var movingProfile = CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving;
+                var revealerMoving = revealer != null && revealer.IsPawnMoving;
+                var wallStep = revealerMoving && movingProfile
+                    ? CombatForestFogPassSettings.MovingWallRaycastResolutionDegrees
+                    : CombatForestFogPassSettings.WallRaycastResolutionDegrees;
+                var lutBins = revealerMoving && movingProfile
+                    ? CombatForestFogPassSettings.MovingLutSamples
+                    : CombatForestFogPassSettings.MaxShaderLutSamples;
+                var updateInterval = CombatForestFogPassSettings.MovingLineOfSightUpdateInterval;
+                GUILayout.Label(
+                    movingProfile
+                        ? $"Wall step: {wallStep:0.##}° | LUT: {lutBins} bins | update every {updateInterval} frame(s){(revealerMoving ? " (moving)" : " (stationary)")}."
+                        : $"Wall raycast step: {wallStep:0.##}° (terrain LUT: {lutBins} bins).");
                 GUILayout.Label("Cyan only aligns when the clip lands on the forest edge (thin patch).");
             }
 
@@ -662,7 +687,6 @@ namespace IronKingdoms.Combat
                 GUILayout.Label("Yellow ticks = uploaded wall hits (must match magenta).");
             }
 
-            var revealer = GetFogRevealer(selectedUnit);
             if (proofToggled && selectedUnit == null)
             {
                 GUILayout.Label("Select a unit to verify wall baseline.");

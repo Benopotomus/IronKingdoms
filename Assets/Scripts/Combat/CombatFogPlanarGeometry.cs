@@ -196,5 +196,60 @@ namespace IronKingdoms.Combat
             var t = Mathf.Clamp01(Vector2.Dot(point - segmentStart, segment) / lengthSq);
             return segmentStart + segment * t;
         }
+
+        /// <summary>
+        /// Conservative slab test: true when a horizontal ray may hit the XZ AABB within maxDistance.
+        /// </summary>
+        public static bool RayMayHitHorizontalAabb(
+            Vector2 origin,
+            Vector2 direction,
+            float maxDistance,
+            float minX,
+            float maxX,
+            float minZ,
+            float maxZ)
+        {
+            if (maxDistance <= 0f)
+            {
+                return false;
+            }
+
+            var dirX = direction.x;
+            var dirZ = direction.y;
+            var tMin = 0f;
+            var tMax = maxDistance;
+
+            if (!SlabAxis(origin.x, dirX, minX, maxX, ref tMin, ref tMax))
+            {
+                return false;
+            }
+
+            if (!SlabAxis(origin.y, dirZ, minZ, maxZ, ref tMin, ref tMax))
+            {
+                return false;
+            }
+
+            return tMax >= 0f && tMin <= maxDistance;
+        }
+
+        private static bool SlabAxis(float origin, float direction, float min, float max, ref float tMin, ref float tMax)
+        {
+            if (Mathf.Abs(direction) <= 1e-8f)
+            {
+                return origin >= min && origin <= max;
+            }
+
+            var inv = 1f / direction;
+            var t1 = (min - origin) * inv;
+            var t2 = (max - origin) * inv;
+            if (t1 > t2)
+            {
+                (t1, t2) = (t2, t1);
+            }
+
+            tMin = Mathf.Max(tMin, t1);
+            tMax = Mathf.Min(tMax, t2);
+            return tMin <= tMax;
+        }
     }
 }

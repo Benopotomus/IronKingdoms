@@ -6,14 +6,32 @@ using UnityEngine;
 namespace IronKingdoms.Combat
 {
     /// <summary>
-    /// Yellow debug contour: baseline wall polygon + analytic forest/cloud clipper per direction.
+    /// Authoritative effective fog boundary: baseline wall polygon + analytic forest/cloud clip per direction.
+    /// Yellow debug reads the GPU upload from the same LOS pass (no second LUT build).
     /// </summary>
     internal static class CombatFogEffectiveBoundarySampler
     {
         private const float DistanceEpsilonWorld = 0.01f;
 
+        public static int ContourSampleCount => CombatForestFogAngularClipperLut.SampleCount;
+
         private static readonly List<RaycastRevealer.SightSegment> BaselineSegmentsScratch = new();
-        private static readonly float[] TerrainClipScratch = new float[CombatForestFogAngularClipperLut.SampleCount];
+
+        /// <summary>
+        /// Terrain LUT bins uploaded to the fog shader — matches yellow contour resolution when budget allows.
+        /// </summary>
+        public static int ResolveTerrainLutUploadCount(
+            int baselineSegmentCount,
+            int maxUploadSegments,
+            int desiredSampleCount = -1)
+        {
+            var terrainBudget = math.max(0, maxUploadSegments - baselineSegmentCount);
+            var desiredCount = math.min(
+                desiredSampleCount > 0 ? desiredSampleCount : ContourSampleCount,
+                CombatForestFogPassSettings.MaxShaderLutSamples);
+            desiredCount = math.min(desiredCount, ContourSampleCount);
+            return math.min(desiredCount, terrainBudget);
+        }
 
         public static void BuildEffectiveFogBoundaryContour(
             CombatFogOfWarRevealer3D revealer,
@@ -21,7 +39,8 @@ namespace IronKingdoms.Combat
             Vector3 originGround,
             float maxSearchRadius,
             float originRadiusWorld,
-            bool applyTerrainClip,
+            bool applyForestClip,
+            bool applyBlockingClip,
             FogOfWarRevealer3D.PlaneProjection projection,
             List<Vector3> contourPoints)
         {
@@ -44,24 +63,43 @@ namespace IronKingdoms.Combat
                 maxSearchRadius,
                 BaselineSegmentsScratch);
 
-            if (applyTerrainClip)
+            var terrainDistances = revealer.TerrainClipUploadDistances;
+            var terrainCount = revealer.TerrainClipUploadSegmentCount;
+            var useUploadedTerrain = terrainCount >= 2
+                && terrainDistances != null
+                && terrainDistances.Length >= terrainCount;
+
+            if (!useUploadedTerrain && (applyForestClip || applyBlockingClip))
             {
-                CombatForestFogAngularClipperLut.BuildSmoothedClipDistances(
+                BuildAndUploadFallbackContour(
+                    revealer,
                     eyeWorld,
+                    originGround,
                     maxSearchRadius,
                     originRadiusWorld,
+                    applyForestClip,
+                    applyBlockingClip,
                     projection,
-                    TerrainClipScratch);
+                    circleIsComplete,
+                    extraRadius,
+                    contourPoints);
+                return;
             }
 
-            var sampleCount = CombatForestFogAngularClipperLut.SampleCount;
+            var sampleCount = useUploadedTerrain
+                ? terrainCount
+                : ContourSampleCount;
+
             for (var i = 0; i < sampleCount; i++)
             {
-                var angle = (i / (float)sampleCount) * Mathf.PI * 2f;
-                var queryDir = math.normalize(new float2(Mathf.Cos(angle), Mathf.Sin(angle)));
-                var direction = CombatFogProjection.Direction2DToWorld(queryDir, projection);
+                var queryDir = CombatForestFogAngularTables.GetDirection2D(i, sampleCount);
+                var direction = useUploadedTerrain
+                    ? CombatFogProjection.Direction2DToWorld(queryDir, projection)
+                    : CombatForestFogAngularTables.GetDirectionWorldXZ(i, sampleCount);
 
-                var terrainClip = applyTerrainClip ? TerrainClipScratch[i] : maxSearchRadius;
+                var terrainClip = useUploadedTerrain
+                    ? terrainDistances[i]
+                    : maxSearchRadius;
                 var limit = SampleEffectiveBoundaryDistance(
                     BaselineSegmentsScratch,
                     queryDir,
@@ -70,6 +108,45 @@ namespace IronKingdoms.Combat
                     circleIsComplete,
                     terrainClip);
 
+                contourPoints.Add(originGround + (direction * limit));
+            }
+        }
+
+        private static void BuildAndUploadFallbackContour(
+            CombatFogOfWarRevealer3D revealer,
+            Vector3 eyeWorld,
+            Vector3 originGround,
+            float maxSearchRadius,
+            float originRadiusWorld,
+            bool applyForestClip,
+            bool applyBlockingClip,
+            FogOfWarRevealer3D.PlaneProjection projection,
+            bool circleIsComplete,
+            float extraRadius,
+            List<Vector3> contourPoints)
+        {
+            var scratch = new float[ContourSampleCount];
+            CombatForestFogAngularClipperLut.BuildSmoothedClipDistances(
+                eyeWorld,
+                maxSearchRadius,
+                originRadiusWorld,
+                projection,
+                scratch,
+                ContourSampleCount,
+                applyForestClip,
+                applyBlockingClip);
+
+            for (var i = 0; i < ContourSampleCount; i++)
+            {
+                var queryDir = CombatForestFogAngularTables.Directions2D[i];
+                var direction = CombatForestFogAngularTables.DirectionsWorldXZ[i];
+                var limit = SampleEffectiveBoundaryDistance(
+                    BaselineSegmentsScratch,
+                    queryDir,
+                    maxSearchRadius,
+                    extraRadius,
+                    circleIsComplete,
+                    scratch[i]);
                 contourPoints.Add(originGround + (direction * limit));
             }
         }

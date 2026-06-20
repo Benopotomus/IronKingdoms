@@ -125,6 +125,25 @@ namespace IronKingdoms.Combat
 
         public static bool HasActiveZones => CachedZones.Count > 0;
 
+        public static bool AnyCachedZoneWithinReach(Vector3 worldPoint, float reachWorld)
+        {
+            EnsureCache();
+            if (CachedZones.Count == 0 || reachWorld <= 0.001f)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < CachedZones.Count; i++)
+            {
+                if (CachedZones[i].IntersectsDisc(worldPoint, reachWorld))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public static void InvalidateCache()
         {
             LastCacheFrame = -1;

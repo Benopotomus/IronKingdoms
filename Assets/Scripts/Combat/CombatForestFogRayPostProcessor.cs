@@ -60,7 +60,11 @@ namespace IronKingdoms.Combat
             bool baseIntersectsCloud,
             bool circleIsComplete,
             int maxUploadSegments,
-            bool collectDebugState)
+            bool collectDebugState,
+            bool applyForestClip,
+            bool applyBlockingClip,
+            int desiredLutSampleCount = -1,
+            bool skipTerrainPostFilters = false)
         {
             bridgedRayIndices.Clear();
             terrainClipDirections.Clear();
@@ -77,30 +81,39 @@ namespace IronKingdoms.Combat
             SnapshotWallPass(viewPoints, baselineSegmentCount);
 
             var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
-            for (var i = 0; i < stepCount; i++)
+            if (collectDebugState)
             {
-                terrainClipDistances.Add(maxRadius);
+                for (var i = 0; i < stepCount; i++)
+                {
+                    terrainClipDistances.Add(maxRadius);
+                }
+
+                ComputeForestClipDistances(
+                    firstIteration,
+                    stepCount,
+                    eyeWorld,
+                    maxRadius,
+                    originRadiusWorld,
+                    depthWorld,
+                    baseIntersectsForest,
+                    baseIntersectsCloud,
+                    projection);
             }
 
-            ComputeForestClipDistances(
-                firstIteration,
-                stepCount,
-                eyeWorld,
-                maxRadius,
-                originRadiusWorld,
-                depthWorld,
-                baseIntersectsForest,
-                baseIntersectsCloud,
-                projection);
-
-            var terrainBudget = math.max(0, maxUploadSegments - baselineSegmentCount);
+            var lutSampleCount = CombatFogEffectiveBoundarySampler.ResolveTerrainLutUploadCount(
+                baselineSegmentCount,
+                maxUploadSegments,
+                desiredLutSampleCount);
             UploadAngularClipperLutForShader(
                 eyeWorld,
                 maxRadius,
                 originRadiusWorld,
                 depthWorld,
                 projection,
-                terrainBudget);
+                lutSampleCount,
+                applyForestClip,
+                applyBlockingClip,
+                skipTerrainPostFilters);
 
             var report = new CombatForestFogWallBaselineReport
             {
@@ -128,13 +141,31 @@ namespace IronKingdoms.Combat
                     report.TerrainClippedOpenRayCount++;
                 }
             }
-
             report.WallViolationCount = 0;
             report.MaxWallViolationDistanceWorld = 0f;
             LastWallBaselineReport = report;
 
-            terrainClipDirectionsArray = terrainClipDirections.ToArray();
-            terrainClipUploadDistancesArray = terrainClipUploadDistances.ToArray();
+            CopyTerrainClipUploadArrays();
+        }
+
+        private void CopyTerrainClipUploadArrays()
+        {
+            var count = terrainClipDirections.Count;
+            if (terrainClipDirectionsArray.Length != count)
+            {
+                terrainClipDirectionsArray = new float2[count];
+            }
+
+            if (terrainClipUploadDistancesArray.Length != count)
+            {
+                terrainClipUploadDistancesArray = new float[count];
+            }
+
+            for (var i = 0; i < count; i++)
+            {
+                terrainClipDirectionsArray[i] = terrainClipDirections[i];
+                terrainClipUploadDistancesArray[i] = terrainClipUploadDistances[i];
+            }
         }
 
         public CombatForestFogWallBaselineReport BuildBaselineOnlyReport(
@@ -241,25 +272,31 @@ namespace IronKingdoms.Combat
             float originRadiusWorld,
             float depthWorld,
             FogOfWarRevealer3D.PlaneProjection projection,
-            int terrainBudget)
+            int sampleCount,
+            bool applyForestClip = true,
+            bool applyBlockingClip = true,
+            bool skipTerrainPostFilters = false)
         {
-            var sampleCount = math.min(CombatForestFogAngularClipperLut.SampleCount, terrainBudget);
             if (sampleCount < 2)
             {
                 return;
             }
 
+            var scratchLength = math.min(CombatForestFogAngularClipperLut.SampleCount, AngularClipperLutScratch.Length);
             CombatForestFogAngularClipperLut.BuildSmoothedClipDistances(
                 eyeWorld,
                 maxRadius,
                 originRadiusWorld,
                 projection,
-                AngularClipperLutScratch);
+                AngularClipperLutScratch,
+                math.min(sampleCount, scratchLength),
+                applyForestClip,
+                applyBlockingClip,
+                skipTerrainPostFilters);
 
             for (var i = 0; i < sampleCount; i++)
             {
-                var angle = (i / (float)sampleCount) * math.PI * 2f;
-                var dir2 = new float2(math.cos(angle), math.sin(angle));
+                var dir2 = CombatForestFogAngularTables.GetDirection2D(i, sampleCount);
 
                 terrainClipDirections.Add(dir2);
                 terrainClipUploadDistances.Add(AngularClipperLutScratch[i]);

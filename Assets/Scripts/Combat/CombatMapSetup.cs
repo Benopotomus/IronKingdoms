@@ -22,9 +22,15 @@ namespace IronKingdoms.Combat
         private void Awake()
         {
             var targetController = unitController != null ? unitController : GetComponent<TestLevelUnitController>();
+            CombatStartupLog.Log(
+                $"CombatMapSetup.Awake on '{name}': mapScene='{combatMapSceneName}', controller={(targetController != null ? targetController.name : "null")}.");
             if (targetController != null)
             {
                 targetController.DisableAutoSpawn();
+            }
+            else
+            {
+                CombatStartupLog.LogError("CombatMapSetup has no TestLevelUnitController reference.");
             }
 
             StartCoroutine(RunSetup(targetController));
@@ -32,10 +38,15 @@ namespace IronKingdoms.Combat
 
         private IEnumerator RunSetup(TestLevelUnitController targetController)
         {
+            CombatStartupLog.Log("CombatMapSetup.RunSetup coroutine started.");
             yield return CombatMatchSetup.RunFromSceneLoad(
                 targetController,
                 combatMapSceneName,
                 logSetupPhases);
+            CombatStartupLog.Log(
+                $"CombatMapSetup.RunSetup finished. phase={CombatMatchSetup.CurrentPhase}, "
+                + $"playerUnits={(targetController != null ? targetController.PlayerRuntimeUnitCount : 0)}, "
+                + $"enemyUnits={(targetController != null ? targetController.EnemyRuntimeUnitCount : 0)}.");
         }
     }
 }

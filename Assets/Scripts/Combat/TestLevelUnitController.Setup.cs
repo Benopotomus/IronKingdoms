@@ -94,7 +94,8 @@ namespace IronKingdoms.Combat
             // Combat samples the fog texture directly; there are no FogOfWarHider components to update per revealer.
             fogOfWarWorld.HidersUseFogTexture = true;
             var previousMaxSegments = fogOfWarWorld.MaxPossibleSegmentsPerRevealer;
-            fogOfWarWorld.MaxPossibleSegmentsPerRevealer = Mathf.Max(previousMaxSegments, 512);
+            // Baseline wall verts + 720-bin terrain LUT (must match yellow debug contour).
+            fogOfWarWorld.MaxPossibleSegmentsPerRevealer = Mathf.Max(previousMaxSegments, 2048);
             fogOfWarWorld.SightExtraAmount = 0f;
             fogOfWarWorld.PixelateFog = false;
             fogOfWarWorld.RoundRevealerPosition = false;
@@ -104,7 +105,6 @@ namespace IronKingdoms.Combat
             fogOfWarWorld.RevealerFadeIn = false;
             fogOfWarWorld.RevealerFadeOut = false;
             fogOfWarWorld.InitialFogExplorationValue = 0f;
-            fogOfWarWorld.MaxPossibleSegmentsPerRevealer = 1000;
             fogOfWarWorld.UseConstantBlur = false;
             fogOfWarWorld.FogType = debugUseCrispFogRendering
                 ? FogOfWarWorld.FogOfWarType.Hard

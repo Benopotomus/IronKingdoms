@@ -662,6 +662,43 @@ namespace IronKingdoms.Combat.Tests
             Assert.That(clipIntoForest, Is.LessThan(maxDistance - CombatScale.InchesToWorldUnits(1f)));
         }
 
+        [Test]
+        public void PolygonForestTriangle_UsesSameClipRulesAsBoxForest()
+        {
+            zoneObject.SetActive(false);
+            auxiliaryZoneObject = new GameObject("PolygonForest");
+            var polygonZone = auxiliaryZoneObject.AddComponent<CombatZone>();
+            SetPrivateField(polygonZone, "terrainFeature", forestFeature);
+            var footprint = auxiliaryZoneObject.AddComponent<CombatZonePolygonFootprint>();
+            footprint.SetLocalVertices(new[]
+            {
+                new Vector2(-CombatScale.InchesToWorldUnits(2f), -CombatScale.InchesToWorldUnits(2f)),
+                new Vector2(CombatScale.InchesToWorldUnits(2f), -CombatScale.InchesToWorldUnits(2f)),
+                new Vector2(0f, CombatScale.InchesToWorldUnits(2f))
+            });
+            footprint.RegenerateGeometry();
+            auxiliaryZoneObject.SetActive(false);
+            auxiliaryZoneObject.SetActive(true);
+
+            Physics.SyncTransforms();
+            CombatForestFogClipper.InvalidateCache();
+            EnsureCacheMethod.Invoke(null, null);
+
+            var depthWorld = CombatScale.InchesToWorldUnits(3f);
+            var maxDistance = CombatScale.InchesToWorldUnits(30f);
+            var outsideOrigin = new Vector3(-CombatScale.InchesToWorldUnits(10f), 0f, 0f);
+            var direction = Vector3.right;
+
+            var clip = CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
+                outsideOrigin,
+                direction,
+                maxDistance,
+                depthWorld);
+
+            Assert.That(clip, Is.GreaterThan(CombatScale.InchesToWorldUnits(6f)));
+            Assert.That(clip, Is.LessThan(maxDistance - 0.001f));
+        }
+
         private static float InvokePreciseClip(Vector3 origin, Vector3 direction, float maxDistance)
         {
             var result = PreciseClipMethod.Invoke(null, new object[] { origin, direction, maxDistance });

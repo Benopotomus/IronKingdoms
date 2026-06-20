@@ -80,6 +80,11 @@ namespace IronKingdoms.Combat
         [SerializeField, Range(0.05f, 1f)] private float fogExploredShroudVisibility = 0.35f;
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
         [SerializeField, Min(1)] private int maxFogRevealersPerFrame = 12;
+        [SerializeField, Range(0.25f, 2f)] private float fogWallRaycastResolution = 1f;
+        [SerializeField] private bool fogAdaptiveFidelityWhileMoving = true;
+        [SerializeField, Range(0.5f, 3f)] private float fogMovingWallRaycastResolution = 3f;
+        [SerializeField, Range(90, 720)] private int fogMovingLutSamples = 180;
+        [SerializeField, Range(1, 4)] private int fogMovingLineOfSightUpdateInterval = 2;
         [SerializeField] private bool debugUseCrispFogRendering = true;
         [SerializeField] private bool debugUseForestFogPass = true;
         [SerializeField] private bool debugShowWallBaselineProof = false;
@@ -150,6 +155,7 @@ namespace IronKingdoms.Combat
 
         private void Awake()
         {
+            CombatStartupLog.Log($"Awake on '{name}'. autoSpawnOnStart={autoSpawnOnStart}.");
             EnsureCameraManagerAssigned();
             EnsureNavPathBuilderAssigned();
             EnsureMatchArmySpawnerAssigned();
@@ -158,15 +164,23 @@ namespace IronKingdoms.Combat
             ConfigureFogOfWarWorld();
             EnsureFogOfWarCameraEffectAssigned();
             CombatForestFogPassSettings.UseForestPass = debugUseForestFogPass;
+            CombatForestFogPassSettings.WallRaycastResolutionDegrees = fogWallRaycastResolution;
+            CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving = fogAdaptiveFidelityWhileMoving;
+            CombatForestFogPassSettings.MovingWallRaycastResolutionDegrees = fogMovingWallRaycastResolution;
+            CombatForestFogPassSettings.MovingLutSamples = fogMovingLutSamples;
+            CombatForestFogPassSettings.MovingLineOfSightUpdateInterval = fogMovingLineOfSightUpdateInterval;
         }
 
         private void Start()
         {
             if (!autoSpawnOnStart)
             {
+                CombatStartupLog.Log(
+                    $"Start on '{name}': autoSpawnOnStart=false (expecting CombatMapSetup or manual spawn). phase={CombatMatchSetup.CurrentPhase}.");
                 return;
             }
 
+            CombatStartupLog.Log($"Start on '{name}': launching RunMatchPhases coroutine (no additive map load).");
             StartCoroutine(CombatMatchSetup.RunMatchPhases(this));
         }
 
@@ -249,9 +263,15 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            if (revealer.IsPawnMoving && (Time.frameCount & 1) == 0)
+            {
+                return;
+            }
+
             fogTextureBoundaryDrawer.DrawEffectiveFogBoundaryAroundRevealer(
                 revealer,
-                boundaryColor: new Color(1f, 0.85f, 0.1f, 1f));
+                boundaryColor: new Color(1f, 0.85f, 0.1f, 1f),
+                drawForestFootprints: !revealer.IsPawnMoving);
         }
 
         private void MarkPlayerFogRevealerActivationDirty()
@@ -1696,6 +1716,22 @@ namespace IronKingdoms.Combat
                 return;
             }
 
+            FlushFogGpuUploadsAndRenderTexture();
+        }
+
+        private void FlushFogGpuUploadsAndRenderTexture()
+        {
+            var fow = FogOfWarWorld.instance;
+            if (fow == null || fow.FOWSamplingMode != FogOfWarWorld.FogSampleMode.Texture)
+            {
+                return;
+            }
+
+            if (fow.UseStagedGPUUploads)
+            {
+                fow.FlushStagedRevealerData();
+            }
+
             fow.RenderFogTexture();
         }
 
@@ -1726,6 +1762,7 @@ namespace IronKingdoms.Combat
             var fow = FogOfWarWorld.instance;
             if (fow == null || fow.IsInPhasedUpdate)
             {
+                MarkFogRevealerSettingsDirty();
                 return;
             }
 
@@ -1746,10 +1783,7 @@ namespace IronKingdoms.Combat
                 revealer.ManualCalculateLineOfSight();
             }
 
-            if (fow.FOWSamplingMode == FogOfWarWorld.FogSampleMode.Texture)
-            {
-                fow.RenderFogTexture();
-            }
+            FlushFogGpuUploadsAndRenderTexture();
         }
 
         private bool IsSpottedByAnyPlayerUnit(Unit target)

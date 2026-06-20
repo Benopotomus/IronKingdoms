@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -31,8 +32,35 @@ namespace IronKingdoms.Combat
         }
 
         private static readonly List<ClipZone> CachedZones = new();
-        private static readonly List<ClipInterval> IntervalScratch = new();
+        [ThreadStatic] private static List<ClipInterval> _intervalScratch;
+        [ThreadStatic] private static List<Vector3> _footprintCornerScratch;
         private static int LastCacheFrame = -1;
+
+        private static List<ClipInterval> IntervalScratch
+        {
+            get
+            {
+                if (_intervalScratch == null)
+                {
+                    _intervalScratch = new List<ClipInterval>(16);
+                }
+
+                return _intervalScratch;
+            }
+        }
+
+        private static List<Vector3> FootprintCornerScratch
+        {
+            get
+            {
+                if (_footprintCornerScratch == null)
+                {
+                    _footprintCornerScratch = new List<Vector3>(16);
+                }
+
+                return _footprintCornerScratch;
+            }
+        }
 
         public static bool HasActiveZones => CachedZones.Count > 0;
 
@@ -212,6 +240,22 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
+                if (zone != null
+                    && zone.TryGetPolygonFootprint(out var polygonFootprint)
+                    && polygonFootprint.TryGetFootprintBounds(out var polygonBounds))
+                {
+                    CachedZones.Add(new ClipZone
+                    {
+                        Zone = zone,
+                        MinX = polygonBounds.min.x,
+                        MaxX = polygonBounds.max.x,
+                        MinZ = polygonBounds.min.z,
+                        MaxZ = polygonBounds.max.z,
+                        DepthLimitWorld = CombatScale.InchesToWorldUnits(feature.LineOfSightPassThroughDepthInches)
+                    });
+                    continue;
+                }
+
                 var collider = zone.GetComponent<Collider>();
                 if (collider == null || !collider.enabled)
                 {
@@ -337,6 +381,12 @@ namespace IronKingdoms.Combat
                 return maxDistanceWorld;
             }
 
+            if (!RayStartsInsideForest(origin, planarDirection, originRadius)
+                && !RayMayHitAnyCachedZoneAabb(origin, planarDirection, maxDistanceWorld))
+            {
+                return maxDistanceWorld;
+            }
+
             // Walk forest segments along the ray so separate zones (e.g. square vs
             // circular) each contribute clips even when the eye is inside another forest.
             return ComputeFirstContactDepthClipCandidate(
@@ -345,6 +395,33 @@ namespace IronKingdoms.Combat
                 maxDistanceWorld,
                 depthLimitWorld,
                 originRadius);
+        }
+
+        /// <summary>
+        /// LUT hot path: skips redundant cache/inside checks when the build context is shared per eye.
+        /// </summary>
+        internal static float GetFirstContactDepthClipDistanceWorld(
+            in CombatForestFogLutBuildContext ctx,
+            Vector3 planarDirection)
+        {
+            if (ctx.MaxSearchRadius <= 0.001f || ctx.DepthWorld <= 0.001f || !ctx.HasForest)
+            {
+                return ctx.MaxSearchRadius;
+            }
+
+            if (!ctx.RayStartedInsideForest
+                && !RayMayHitAnyCachedZoneAabb(ctx.FlatEye, planarDirection, ctx.MaxSearchRadius))
+            {
+                return ctx.MaxSearchRadius;
+            }
+
+            return ComputeFirstContactDepthClipCandidate(
+                ctx.FlatEye,
+                planarDirection,
+                ctx.MaxSearchRadius,
+                ctx.DepthWorld,
+                ctx.RayStartedInsideForest,
+                ctx.OriginRadiusWorld);
         }
 
         public static float GetFirstContactDepthClipDistanceWorld(
@@ -378,6 +455,17 @@ namespace IronKingdoms.Combat
         /// Per-ray: true when this sight line starts from inside forest — eye inside or
         /// immediate forest contact along the ray. Fog visibility uses the eye only, not base width.
         /// </summary>
+        /// <summary>
+        /// Shared per-eye inside-forest flag for LUT builds (uses the first LUT direction for edge contact).
+        /// </summary>
+        public static bool ComputeRayStartedInsideForest(
+            Vector3 origin,
+            Vector3 sampleDirection,
+            float originRadius = 0f)
+        {
+            return RayStartsInsideForest(origin, sampleDirection, originRadius);
+        }
+
         private static bool RayStartsInsideForest(
             Vector3 origin,
             Vector3 planarDirection,
@@ -651,6 +739,12 @@ namespace IronKingdoms.Combat
             var startInsideEpsilon = CombatScale.InchesToWorldUnits(0.02f);
             var adjacentForestGapWorld = thinForestEpsilon + CombatScale.InchesToWorldUnits(0.25f);
 
+            if (!rayStartedInsideForest
+                && !RayMayHitAnyCachedZoneAabb(origin, planarDirection, maxDistanceWorld))
+            {
+                return maxDistanceWorld;
+            }
+
             // From inside forest: you may only see out when the exit edge is within the depth
             // limit of the unit — not an arbitrary 3" peek from deep in the trees.
             if (rayStartedInsideForest)
@@ -807,33 +901,21 @@ namespace IronKingdoms.Combat
                 return 0f;
             }
 
-            var marchedEntry = MarchFirstForestEntryDistance(
-                origin,
-                planarDirection,
-                searchStart,
-                maxDistanceWorld);
             var analytic = TryFindNextForestEntryDistanceAnalytic(
                 origin,
                 planarDirection,
                 searchStart,
                 maxDistanceWorld);
-
-            if (marchedEntry >= 0f && analytic >= 0f)
-            {
-                return Mathf.Min(marchedEntry, analytic);
-            }
-
-            if (marchedEntry >= 0f)
-            {
-                return marchedEntry;
-            }
-
             if (analytic >= 0f)
             {
                 return analytic;
             }
 
-            return -1f;
+            return MarchFirstForestEntryDistance(
+                origin,
+                planarDirection,
+                searchStart,
+                maxDistanceWorld);
         }
 
         /// <summary>
@@ -873,8 +955,7 @@ namespace IronKingdoms.Combat
         }
 
         /// <summary>
-        /// XZ tabletop ray interval through a zone footprint (disc or oriented box).
-        /// Returns false when the collider type needs polygon edge fallback.
+        /// XZ tabletop ray interval through a zone footprint (polygon, disc, or oriented box).
         /// </summary>
         private static bool TryGetForestZoneRayInterval(
             CombatZone zone,
@@ -885,7 +966,7 @@ namespace IronKingdoms.Combat
         {
             enterT = -1f;
             exitT = -1f;
-            if (zone == null || !zone.TryGetFootprintCollider(out var collider))
+            if (zone == null)
             {
                 return false;
             }
@@ -898,6 +979,17 @@ namespace IronKingdoms.Combat
             }
 
             planarDirection.Normalize();
+
+            if (zone.TryGetPolygonFootprint(out var polygonFootprint)
+                && polygonFootprint.TryGetRayFootprintIntervalWorld(origin, planarDirection, out enterT, out exitT))
+            {
+                return true;
+            }
+
+            if (!zone.TryGetFootprintCollider(out var collider))
+            {
+                return false;
+            }
 
             if (collider is SphereCollider sphere)
             {
@@ -955,12 +1047,6 @@ namespace IronKingdoms.Combat
 
             if (!TryGetForestZoneRayInterval(zone, origin, planarDirection, out var enterT, out var exitT))
             {
-                if (zone.TryGetFootprintCollider(out var collider)
-                    && (collider is SphereCollider || collider is BoxCollider))
-                {
-                    return true;
-                }
-
                 return false;
             }
 
@@ -1015,12 +1101,10 @@ namespace IronKingdoms.Combat
             var transitionEpsilon = CombatScale.InchesToWorldUnits(0.02f);
             var best = float.MaxValue;
 
-            var activeZones = CombatZone.ActiveZones;
-            for (var z = 0; z < activeZones.Count; z++)
+            for (var z = 0; z < CachedZones.Count; z++)
             {
-                var zone = activeZones[z];
-                var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                var zone = CachedZones[z].Zone;
+                if (zone == null)
                 {
                     continue;
                 }
@@ -1038,8 +1122,9 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var corners = new System.Collections.Generic.List<Vector3>(8);
-                zone.CollectFootprintCorners(corners);
+                FootprintCornerScratch.Clear();
+                zone.CollectFootprintCorners(FootprintCornerScratch);
+                var corners = FootprintCornerScratch;
                 if (corners.Count < 3)
                 {
                     continue;
@@ -1184,8 +1269,9 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var corners = new System.Collections.Generic.List<Vector3>(8);
-                zone.CollectFootprintCorners(corners);
+                FootprintCornerScratch.Clear();
+                zone.CollectFootprintCorners(FootprintCornerScratch);
+                var corners = FootprintCornerScratch;
                 if (corners.Count < 3)
                 {
                     continue;
@@ -1398,6 +1484,78 @@ namespace IronKingdoms.Combat
                 }
 
                 if (zone.Zone != null && zone.Zone.ContainsPoint(worldPoint))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        internal static bool RayMayHitAnyCachedZoneAabbPublic(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld)
+        {
+            return RayMayHitAnyCachedZoneAabb(origin, planarDirection, maxDistanceWorld);
+        }
+
+        internal static bool AnyCachedZoneWithinReach(Vector3 worldPoint, float reachWorld)
+        {
+            EnsureCache();
+            if (CachedZones.Count == 0 || reachWorld <= 0.001f)
+            {
+                return false;
+            }
+
+            var px = worldPoint.x;
+            var pz = worldPoint.z;
+            var reachSq = reachWorld * reachWorld;
+            for (var i = 0; i < CachedZones.Count; i++)
+            {
+                var zone = CachedZones[i];
+                var cx = Mathf.Clamp(px, zone.MinX, zone.MaxX);
+                var cz = Mathf.Clamp(pz, zone.MinZ, zone.MaxZ);
+                var dx = px - cx;
+                var dz = pz - cz;
+                if (dx * dx + dz * dz <= reachSq)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool RayMayHitAnyCachedZoneAabb(
+            Vector3 origin,
+            Vector3 planarDirection,
+            float maxDistanceWorld)
+        {
+            if (CachedZones.Count == 0 || maxDistanceWorld <= 0.001f)
+            {
+                return false;
+            }
+
+            var origin2 = new Vector2(origin.x, origin.z);
+            var direction2 = new Vector2(planarDirection.x, planarDirection.z);
+            if (direction2.sqrMagnitude <= 1e-8f)
+            {
+                return false;
+            }
+
+            direction2.Normalize();
+            for (var i = 0; i < CachedZones.Count; i++)
+            {
+                var zone = CachedZones[i];
+                if (CombatFogPlanarGeometry.RayMayHitHorizontalAabb(
+                        origin2,
+                        direction2,
+                        maxDistanceWorld,
+                        zone.MinX,
+                        zone.MaxX,
+                        zone.MinZ,
+                        zone.MaxZ))
                 {
                     return true;
                 }

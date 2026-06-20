@@ -65,6 +65,8 @@ namespace IronKingdoms.Combat
                     baselineDirections,
                     baselineUploadLengths,
                     baselineCount,
+                    terrainUploadLengths,
+                    terrainCount,
                     sourceEyeWorld,
                     totalRevealerRadius,
                     circleIsComplete,
@@ -257,6 +259,8 @@ namespace IronKingdoms.Combat
             float2[] directions,
             float[] uploadLengths,
             int count,
+            float[] terrainUploadLengths,
+            int terrainCount,
             Vector3 sourceEyeWorld,
             float totalRevealerRadius,
             bool circleIsComplete,
@@ -266,6 +270,13 @@ namespace IronKingdoms.Combat
             {
                 return;
             }
+
+            var extraRadius = FogOfWarWorld.instance != null
+                ? FogOfWarWorld.instance.SightExtraAmount
+                : 0f;
+            var useUploadedTerrain = terrainCount >= 2
+                && terrainUploadLengths != null
+                && terrainUploadLengths.Length >= terrainCount;
 
             var segments = new List<RaycastRevealer.SightSegment>(count);
             for (var i = 0; i < count; i++)
@@ -294,19 +305,32 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            const int sampleCount = 360;
+            var sampleCount = useUploadedTerrain
+                ? terrainCount
+                : CombatForestFogAngularClipperLut.SampleCount;
+
             for (var i = 0; i < sampleCount; i++)
             {
-                var angle = (i / (float)sampleCount) * math.PI * 2f;
-                var queryDir = math.normalize(new float2(math.cos(angle), math.sin(angle)));
+                var queryDir = CombatForestFogAngularTables.GetDirection2D(i, sampleCount);
                 var boundaryDistance = CombatFogSparsePolygonQuery.GetBoundaryDistance(
                     segments,
                     queryDir,
                     totalRevealerRadius,
-                    circleIsComplete);
+                    circleIsComplete,
+                    extraRadius);
                 if (boundaryDistance > totalRevealerRadius + 0.5f)
                 {
-                    continue;
+                    boundaryDistance = totalRevealerRadius;
+                }
+
+                if (useUploadedTerrain)
+                {
+                    boundaryDistance = math.min(boundaryDistance, terrainUploadLengths[i]);
+                }
+
+                if (boundaryDistance > totalRevealerRadius - DistanceEpsilonWorld)
+                {
+                    boundaryDistance = totalRevealerRadius;
                 }
 
                 effectiveBoundaryPointsWorld.Add(

@@ -17,6 +17,7 @@ namespace IronKingdoms.Combat
         [SerializeField] private CombatZoneType legacyZoneType = CombatZoneType.None;
 
         private Collider zoneCollider;
+        private CombatZonePolygonFootprint polygonFootprint;
 
         public static IReadOnlyList<CombatZone> ActiveZones => ActiveZoneRegistry;
         public CombatTerrainFeatureDefinition TerrainFeature => terrainFeature;
@@ -43,6 +44,7 @@ namespace IronKingdoms.Combat
 
         private void Awake()
         {
+            ResolvePolygonFootprint();
             ResolveCollider();
             EnsureLegacyTerrainFeatureResolved();
         }
@@ -50,9 +52,33 @@ namespace IronKingdoms.Combat
         private void OnEnable()
         {
             zoneCollider = null;
+            polygonFootprint = null;
+            ResolvePolygonFootprint();
             EnsureRegistered();
             CombatForestFogClipper.InvalidateCache();
             CombatBlockingTerrainClipper.InvalidateCache();
+
+            if (TryGetPolygonFootprint(out var footprint))
+            {
+                CombatStartupLog.Log(
+                    $"CombatZone '{name}' enabled with polygon footprint: vertices={footprint.LocalVertices.Count}, "
+                    + $"hasFootprint={footprint.HasFootprint}, pos={transform.position}.");
+            }
+        }
+
+        public bool TryGetPolygonFootprint(out CombatZonePolygonFootprint footprint)
+        {
+            ResolvePolygonFootprint();
+            footprint = polygonFootprint;
+            return footprint != null && footprint.HasFootprint;
+        }
+
+        private void ResolvePolygonFootprint()
+        {
+            if (polygonFootprint == null)
+            {
+                polygonFootprint = GetComponent<CombatZonePolygonFootprint>();
+            }
         }
 
         /// <summary>
@@ -85,6 +111,23 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
+            const int segmentSampleCount = 8;
+
+            var polygon = polygonFootprint;
+            if (polygon != null && polygon.HasFootprint)
+            {
+                for (var i = 0; i <= segmentSampleCount; i++)
+                {
+                    var t = i / (float)segmentSampleCount;
+                    if (polygon.ContainsPointWorld(Vector3.Lerp(start, end, t)))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
             ResolveCollider();
             if (zoneCollider == null || !zoneCollider.enabled)
             {
@@ -100,7 +143,6 @@ namespace IronKingdoms.Combat
                 return CombatLineOfSight.SegmentIntersectsCircle(start, end, center, radius);
             }
 
-            const int segmentSampleCount = 8;
             for (var i = 0; i <= segmentSampleCount; i++)
             {
                 var t = i / (float)segmentSampleCount;
@@ -119,6 +161,13 @@ namespace IronKingdoms.Combat
         /// </summary>
         public void CollectFootprintCorners(List<Vector3> corners)
         {
+            var polygon = polygonFootprint;
+            if (polygon != null && polygon.HasFootprint)
+            {
+                polygon.CollectWorldFootprintCorners(corners);
+                return;
+            }
+
             ResolveCollider();
             if (zoneCollider == null || !zoneCollider.enabled)
             {
@@ -150,6 +199,12 @@ namespace IronKingdoms.Combat
             if (!isActiveAndEnabled)
             {
                 return false;
+            }
+
+            var polygon = polygonFootprint;
+            if (polygon != null && polygon.HasFootprint)
+            {
+                return polygon.ContainsPointWorld(worldPoint);
             }
 
             ResolveCollider();
@@ -205,6 +260,32 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
+            var polygon = polygonFootprint;
+            if (polygon != null && polygon.HasFootprint)
+            {
+                if (radius <= 0.001f)
+                {
+                    return polygon.ContainsPointWorld(center);
+                }
+
+                if (polygon.ContainsPointWorld(center))
+                {
+                    return true;
+                }
+
+                for (var i = 0; i < UnitContainmentSampleCount; i++)
+                {
+                    var angle = (Mathf.PI * 2f * i) / UnitContainmentSampleCount;
+                    var edgePoint = center + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
+                    if (polygon.ContainsPointWorld(edgePoint))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
             ResolveCollider();
             if (zoneCollider == null || !zoneCollider.enabled)
             {
@@ -226,6 +307,12 @@ namespace IronKingdoms.Combat
 
         private void ResolveCollider()
         {
+            if (TryGetPolygonFootprint(out var polygon) && polygon.HasFootprint)
+            {
+                zoneCollider = null;
+                return;
+            }
+
             if (zoneCollider != null)
             {
                 zoneCollider.isTrigger = true;
