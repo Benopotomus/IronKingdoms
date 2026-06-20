@@ -24,18 +24,14 @@ namespace IronKingdoms.Combat
         public static bool UseAdaptiveFidelityWhileMoving { get; set; } = true;
 
         /// <summary>
-        /// Phase-1 wall raycast step in degrees when stationary.
+        /// Phase-1 wall raycast step in degrees. Stock FOW pass 1 always uses this (never coarsened while moving).
         /// Lower = sharper walls but more physics raycasts (720 at 0.5°, 360 at 1.0°).
         /// </summary>
         public static float WallRaycastResolutionDegrees { get; set; } = 1f;
 
         /// <summary>
-        /// Coarser wall raycasts while moving (120 rays at 3°).
-        /// </summary>
-        public static float MovingWallRaycastResolutionDegrees { get; set; } = 3f;
-
-        /// <summary>
         /// Fewer terrain LUT bins while moving; restored to MaxShaderLutSamples when stopped.
+        /// Pass 1 (stock FOW walls) is unchanged while moving.
         /// </summary>
         public static int MovingLutSamples { get; set; } = 180;
 
@@ -45,29 +41,9 @@ namespace IronKingdoms.Combat
         public static int MovingLineOfSightUpdateInterval { get; set; } = 2;
 
         /// <summary>
-        /// Skip FindEdges binary search on walls while moving.
-        /// </summary>
-        public static bool MovingSkipWallEdgeResolve { get; set; } = true;
-
-        /// <summary>
-        /// Skip extra corner wall segments while moving.
-        /// </summary>
-        public static bool MovingSkipWallCorners { get; set; } = true;
-
-        /// <summary>
         /// Skip angular terrain post-filters while moving.
         /// </summary>
         public static bool MovingSkipTerrainPostFilters { get; set; } = true;
-
-        public static float ResolveWallRaycastResolutionDegrees(bool isMoving)
-        {
-            if (isMoving && UseAdaptiveFidelityWhileMoving)
-            {
-                return MovingWallRaycastResolutionDegrees;
-            }
-
-            return WallRaycastResolutionDegrees;
-        }
 
         public static int ResolveLutSampleCount(bool isMoving)
         {

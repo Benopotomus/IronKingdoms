@@ -85,9 +85,6 @@ namespace IronKingdoms.Combat
         private bool applyForestClipThisFrame;
         private bool forestPassRanThisFrame;
         private bool pawnIsMoving;
-        private float stationaryWallRaycastResolution = 1f;
-        private bool stationaryResolveEdge = true;
-        private bool stationaryAddCorners = true;
         private int movingLineOfSightFrameCounter;
         private bool skipMovingLineOfSightThisFrame;
 
@@ -144,25 +141,6 @@ namespace IronKingdoms.Combat
         public bool IsContributionStateSatisfied()
         {
             return wantsLocalFogContribution == IsRegistered;
-        }
-
-        public void ConfigureStationaryWallRaycastResolution(float degrees)
-        {
-            stationaryWallRaycastResolution = Mathf.Max(0.25f, degrees);
-            if (!pawnIsMoving)
-            {
-                ApplyAdaptivePerformanceProfile();
-            }
-        }
-
-        public void ConfigureStationaryWallQuality(bool resolveEdge, bool addCorners)
-        {
-            stationaryResolveEdge = resolveEdge;
-            stationaryAddCorners = addCorners;
-            if (!pawnIsMoving)
-            {
-                ApplyAdaptivePerformanceProfile();
-            }
         }
 
         public void ConfigureForUnit(Unit unit)
@@ -403,7 +381,6 @@ namespace IronKingdoms.Combat
 
         public override void LineOfSightPhase1()
         {
-            ApplyAdaptivePerformanceProfile();
             skipMovingLineOfSightThisFrame = ShouldSkipMovingLineOfSightUpdate();
             if (skipMovingLineOfSightThisFrame)
             {
@@ -780,37 +757,6 @@ namespace IronKingdoms.Combat
             else if (!CurrentlyStaticRevealer)
             {
                 SetRevealerAsStatic(true);
-            }
-        }
-
-        private void ApplyAdaptivePerformanceProfile()
-        {
-            if (!CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving)
-            {
-                return;
-            }
-
-            var useMovingProfile = pawnIsMoving;
-            var targetResolution = CombatForestFogPassSettings.ResolveWallRaycastResolutionDegrees(useMovingProfile);
-            if (!Mathf.Approximately(RaycastResolution, targetResolution))
-            {
-                RaycastResolution = targetResolution;
-            }
-
-            var targetResolveEdge = useMovingProfile && CombatForestFogPassSettings.MovingSkipWallEdgeResolve
-                ? false
-                : stationaryResolveEdge;
-            if (ResolveEdge != targetResolveEdge)
-            {
-                ResolveEdge = targetResolveEdge;
-            }
-
-            var targetAddCorners = useMovingProfile && CombatForestFogPassSettings.MovingSkipWallCorners
-                ? false
-                : stationaryAddCorners;
-            if (AddCorners != targetAddCorners)
-            {
-                AddCorners = targetAddCorners;
             }
         }
 

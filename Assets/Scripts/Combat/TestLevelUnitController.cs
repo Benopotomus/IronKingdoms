@@ -82,7 +82,6 @@ namespace IronKingdoms.Combat
         [SerializeField, Min(1)] private int maxFogRevealersPerFrame = 12;
         [SerializeField, Range(0.25f, 2f)] private float fogWallRaycastResolution = 1f;
         [SerializeField] private bool fogAdaptiveFidelityWhileMoving = true;
-        [SerializeField, Range(0.5f, 3f)] private float fogMovingWallRaycastResolution = 3f;
         [SerializeField, Range(90, 720)] private int fogMovingLutSamples = 180;
         [SerializeField, Range(1, 4)] private int fogMovingLineOfSightUpdateInterval = 2;
         [SerializeField] private bool debugUseCrispFogRendering = true;
@@ -166,7 +165,6 @@ namespace IronKingdoms.Combat
             CombatForestFogPassSettings.UseForestPass = debugUseForestFogPass;
             CombatForestFogPassSettings.WallRaycastResolutionDegrees = fogWallRaycastResolution;
             CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving = fogAdaptiveFidelityWhileMoving;
-            CombatForestFogPassSettings.MovingWallRaycastResolutionDegrees = fogMovingWallRaycastResolution;
             CombatForestFogPassSettings.MovingLutSamples = fogMovingLutSamples;
             CombatForestFogPassSettings.MovingLineOfSightUpdateInterval = fogMovingLineOfSightUpdateInterval;
         }

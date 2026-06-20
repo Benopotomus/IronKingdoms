@@ -93,6 +93,9 @@ namespace IronKingdoms.Combat
             }
 
             const float distanceEpsilon = 0.01f;
+            var extraRadius = FogOfWarWorld.instance != null
+                ? FogOfWarWorld.instance.SightExtraAmount
+                : 0f;
             for (var i = 0; i < combinedCount; i++)
             {
                 ref var segment = ref combinedViewPoints[i];
@@ -106,7 +109,8 @@ namespace IronKingdoms.Combat
                     wallPassSegments,
                     dir2,
                     maxRadius,
-                    circleIsComplete);
+                    circleIsComplete,
+                    extraRadius);
                 var wallBlocks = wallDistance <= maxRadius - distanceEpsilon;
                 if (!wallBlocks)
                 {

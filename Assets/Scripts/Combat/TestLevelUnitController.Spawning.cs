@@ -299,8 +299,6 @@ namespace IronKingdoms.Combat
             revealer.OcclusionQuality = RaycastRevealer.RaycastRevealerOcclusionQualityPreset.Custom;
             // Wall baseline raycasts (independent of the 720-bin forest terrain LUT).
             revealer.RaycastResolution = CombatForestFogPassSettings.WallRaycastResolutionDegrees;
-            revealer.ConfigureStationaryWallRaycastResolution(CombatForestFogPassSettings.WallRaycastResolutionDegrees);
-            revealer.ConfigureStationaryWallQuality(resolveEdge: true, addCorners: true);
             // Forest depth is applied after stock edge resolve in CombatFogOfWarRevealer3D.
             revealer.NumExtraIterations = 0;
             revealer.NumExtraRaysOnIteration = 0;

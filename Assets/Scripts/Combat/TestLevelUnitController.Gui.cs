@@ -667,16 +667,14 @@ namespace IronKingdoms.Combat
                 GUILayout.Label("Rendered fog should match the yellow line on open ground.");
                 var movingProfile = CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving;
                 var revealerMoving = revealer != null && revealer.IsPawnMoving;
-                var wallStep = revealerMoving && movingProfile
-                    ? CombatForestFogPassSettings.MovingWallRaycastResolutionDegrees
-                    : CombatForestFogPassSettings.WallRaycastResolutionDegrees;
+                var wallStep = CombatForestFogPassSettings.WallRaycastResolutionDegrees;
                 var lutBins = revealerMoving && movingProfile
                     ? CombatForestFogPassSettings.MovingLutSamples
                     : CombatForestFogPassSettings.MaxShaderLutSamples;
                 var updateInterval = CombatForestFogPassSettings.MovingLineOfSightUpdateInterval;
                 GUILayout.Label(
                     movingProfile
-                        ? $"Wall step: {wallStep:0.##}° | LUT: {lutBins} bins | update every {updateInterval} frame(s){(revealerMoving ? " (moving)" : " (stationary)")}."
+                        ? $"Wall step: {wallStep:0.##}° (stock FOW) | LUT: {lutBins} bins | update every {updateInterval} frame(s){(revealerMoving ? " (moving)" : " (stationary)")}."
                         : $"Wall raycast step: {wallStep:0.##}° (terrain LUT: {lutBins} bins).");
                 GUILayout.Label("Cyan only aligns when the clip lands on the forest edge (thin patch).");
             }
