@@ -606,12 +606,12 @@ namespace IronKingdoms.Combat
                 RefreshAllFogRevealersAfterForestPassToggle();
             }
 
-            var adaptiveFidelity = CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving;
-            var adaptiveToggled = GUILayout.Toggle(adaptiveFidelity, "Lower fog cost while moving");
-            if (adaptiveToggled != adaptiveFidelity)
+            var movingPerf = fogEnableMovingPerfProfile;
+            var movingPerfToggled = GUILayout.Toggle(movingPerf, "Moving fog perf profile (CombatBootstrap)");
+            if (movingPerfToggled != movingPerf)
             {
-                CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving = adaptiveToggled;
-                fogAdaptiveFidelityWhileMoving = adaptiveToggled;
+                fogEnableMovingPerfProfile = movingPerfToggled;
+                MarkFogRevealerSettingsDirty();
             }
 
             var showProof = debugShowWallBaselineProof;
@@ -665,17 +665,20 @@ namespace IronKingdoms.Combat
                 GUILayout.Label("Cyan outline = forest zone footprint (reference only).");
                 GUILayout.Label("Yellow is the target fog boundary (baseline + forest/cloud clip).");
                 GUILayout.Label("Rendered fog should match the yellow line on open ground.");
-                var movingProfile = CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving;
+                var movingProfile = CombatForestFogPassSettings.EnableMovingPerfProfile;
                 var revealerMoving = revealer != null && revealer.IsPawnMoving;
-                var wallStep = CombatForestFogPassSettings.WallRaycastResolutionDegrees;
-                var lutBins = revealerMoving && movingProfile
-                    ? CombatForestFogPassSettings.MovingLutSamples
+                var wallStep = revealerMoving && movingProfile
+                    ? CombatForestFogPassSettings.ResolveWallRaycastResolutionDegrees(true)
+                    : CombatForestFogPassSettings.WallRaycastResolutionDegrees;
+                var lutBins = revealerMoving && movingProfile && CombatForestFogPassSettings.UseReducedTerrainLutWhileMoving
+                    ? CombatForestFogPassSettings.MovingTerrainLutSamples
                     : CombatForestFogPassSettings.MaxShaderLutSamples;
-                var updateInterval = CombatForestFogPassSettings.MovingLineOfSightUpdateInterval;
+                var movingHz = CombatForestFogPassSettings.MovingLineOfSightTargetHz;
+                var movingHzLabel = movingHz > 0.001f ? $"{movingHz:0.#} Hz full LOS" : "every frame";
                 GUILayout.Label(
-                    movingProfile
-                        ? $"Wall step: {wallStep:0.##}° (stock FOW) | LUT: {lutBins} bins | update every {updateInterval} frame(s){(revealerMoving ? " (moving)" : " (stationary)")}."
-                        : $"Wall raycast step: {wallStep:0.##}° (terrain LUT: {lutBins} bins).");
+                    revealerMoving && movingProfile
+                        ? $"Moving: wall {wallStep:0.##}° | LUT {lutBins} | {movingHzLabel}."
+                        : $"Stationary: wall {wallStep:0.##}° | LUT {CombatForestFogPassSettings.MaxShaderLutSamples}.");
                 GUILayout.Label("Cyan only aligns when the clip lands on the forest edge (thin patch).");
             }
 

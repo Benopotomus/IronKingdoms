@@ -80,10 +80,32 @@ namespace IronKingdoms.Combat
         [SerializeField, Range(0.05f, 1f)] private float fogExploredShroudVisibility = 0.35f;
         [SerializeField, Min(0.05f)] private float fogVisionEdgeSoftenDistance = 0.75f;
         [SerializeField, Min(1)] private int maxFogRevealersPerFrame = 12;
+
+        [Header("Fog — Stationary")]
         [SerializeField, Range(0.25f, 2f)] private float fogWallRaycastResolution = 1f;
-        [SerializeField] private bool fogAdaptiveFidelityWhileMoving;
-        [SerializeField, Range(90, 720)] private int fogMovingLutSamples = 180;
-        [SerializeField, Range(1, 4)] private int fogMovingLineOfSightUpdateInterval = 2;
+
+        [Header("Fog — Moving Performance")]
+        [Tooltip("Master switch for throttled LOS, coarser wall rays, and reduced terrain LUT while pathing.")]
+        [SerializeField] private bool fogEnableMovingPerfProfile = true;
+        [Tooltip("Full wall+terrain LOS rate while moving. 0 = every frame. 30 ≈ half the raycast/LUT cost at 60 FPS.")]
+        [SerializeField, Range(0f, 60f)] private float fogMovingLineOfSightTargetHz = 30f;
+        [Tooltip("Used only when Target Hz is 0. Skip N-1 of every N frames.")]
+        [SerializeField, Range(1, 8)] private int fogMovingLineOfSightFrameInterval = 2;
+        [Tooltip("Uses a wider wall ray step while moving. Keep off unless you need more CPU; enable edge refinement below if you turn this on.")]
+        [SerializeField] private bool fogUseCoarserWallRaysWhileMoving;
+        [SerializeField, Range(0.5f, 4f)] private float fogMovingWallRaycastResolution = 2f;
+        [Tooltip("Subdivide coarse moving wall rays at hit/miss transitions so corners still line up.")]
+        [SerializeField] private bool fogUseMovingWallEdgeRefinement = true;
+        [SerializeField, Range(0, 4)] private int fogMovingWallExtraIterations = 2;
+        [Tooltip("Stock FOW sub-iteration buffers hold at most 5 extra rays per pass.")]
+        [SerializeField, Range(1, 5)] private int fogMovingWallExtraRaysPerIteration = 3;
+        [SerializeField] private bool fogUseReducedTerrainLutWhileMoving = true;
+        [SerializeField, Range(60, 720)] private int fogMovingTerrainLutSamples = 120;
+        [SerializeField] private bool fogSkipTerrainPostFiltersWhileMoving = true;
+        [Tooltip("When on, reduced LUT applies inside/near forest and cloud while moving (much cheaper).")]
+        [SerializeField] private bool fogAllowReducedLutNearTerrainWhileMoving = true;
+
+        [Header("Fog — Debug")]
         [SerializeField] private bool debugUseCrispFogRendering = true;
         [SerializeField] private bool debugUseForestFogPass = true;
         [SerializeField] private bool debugShowWallBaselineProof = false;
@@ -162,11 +184,27 @@ namespace IronKingdoms.Combat
             EnsureFogOfWarWorldAssigned();
             ConfigureFogOfWarWorld();
             EnsureFogOfWarCameraEffectAssigned();
+            ApplyFogPassSettingsFromBootstrap();
+        }
+
+        private void ApplyFogPassSettingsFromBootstrap()
+        {
             CombatForestFogPassSettings.UseForestPass = debugUseForestFogPass;
             CombatForestFogPassSettings.WallRaycastResolutionDegrees = fogWallRaycastResolution;
-            CombatForestFogPassSettings.UseAdaptiveFidelityWhileMoving = fogAdaptiveFidelityWhileMoving;
-            CombatForestFogPassSettings.MovingLutSamples = fogMovingLutSamples;
-            CombatForestFogPassSettings.MovingLineOfSightUpdateInterval = fogMovingLineOfSightUpdateInterval;
+            CombatForestFogPassSettings.EnableMovingPerfProfile = fogEnableMovingPerfProfile;
+            CombatForestFogPassSettings.MovingLineOfSightTargetHz = fogMovingLineOfSightTargetHz;
+            CombatForestFogPassSettings.MovingLineOfSightUpdateInterval = fogMovingLineOfSightFrameInterval;
+            CombatForestFogPassSettings.UseMovingWallRaycastResolution = fogUseCoarserWallRaysWhileMoving;
+            CombatForestFogPassSettings.MovingWallRaycastResolutionDegrees = fogMovingWallRaycastResolution;
+            CombatForestFogPassSettings.UseMovingWallEdgeRefinement = fogUseMovingWallEdgeRefinement;
+            CombatForestFogPassSettings.MovingWallExtraIterations = fogMovingWallExtraIterations;
+            CombatForestFogPassSettings.MovingWallExtraRaysPerIteration =
+                CombatForestFogPassSettings.ClampMovingWallExtraRaysPerIteration(fogMovingWallExtraRaysPerIteration);
+            CombatForestFogPassSettings.UseReducedTerrainLutWhileMoving = fogUseReducedTerrainLutWhileMoving;
+            CombatForestFogPassSettings.MovingTerrainLutSamples = fogMovingTerrainLutSamples;
+            CombatForestFogPassSettings.MovingSkipTerrainPostFilters = fogSkipTerrainPostFiltersWhileMoving;
+            CombatForestFogPassSettings.AllowReducedTerrainLutNearZonesWhileMoving =
+                fogAllowReducedLutNearTerrainWhileMoving;
         }
 
         private void Start()
@@ -231,6 +269,7 @@ namespace IronKingdoms.Combat
                 if (fogRevealerSettingsDirty)
                 {
                     fogRevealerSettingsDirty = false;
+                    ApplyFogPassSettingsFromBootstrap();
                     RefreshAllFogRevealersAfterForestPassToggle();
                 }
             }
@@ -1055,6 +1094,11 @@ namespace IronKingdoms.Combat
                     unit.ActiveMovementStep = MovementStepOption.None;
                     break;
                 }
+
+                if (!unit.MoveTarget.HasValue)
+                {
+                    NotifyFogRevealerMovementEnded(unit);
+                }
             }
         }
 
@@ -1627,6 +1671,15 @@ namespace IronKingdoms.Combat
             if (revealer != null && revealer.isActiveAndEnabled)
             {
                 revealer.NotifyPawnMoved();
+            }
+        }
+
+        private static void NotifyFogRevealerMovementEnded(Unit unit)
+        {
+            var revealer = GetFogRevealer(unit);
+            if (revealer != null && revealer.isActiveAndEnabled)
+            {
+                revealer.NotifyPawnMovementEnded();
             }
         }
 
