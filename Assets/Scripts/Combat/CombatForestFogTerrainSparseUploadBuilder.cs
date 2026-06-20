@@ -258,16 +258,9 @@ namespace IronKingdoms.Combat
             bool applyBlockingClip)
         {
             CornerScratch.Clear();
-            if (applyForestClip)
+            if (applyForestClip || applyBlockingClip)
             {
-                var forestCorners = new List<Vector3>();
-                CombatForestFogClipper.CollectLimitedDepthZoneCornersWorld(forestCorners);
-                CornerScratch.AddRange(forestCorners);
-            }
-
-            if (applyBlockingClip)
-            {
-                CombatBlockingTerrainClipper.CollectBlockingZoneCornersWorld(CornerScratch);
+                CombatForestFogClipper.CollectLimitedDepthZoneCornersWorld(CornerScratch);
             }
 
             var flatEye = eyeWorld;
@@ -330,19 +323,24 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
+                {
+                    continue;
+                }
+
                 var isForest = feature.LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth;
-                var isBlocking = feature.LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely;
+                var isCloudFog = feature.LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely;
                 if (isForest && !applyForestClip)
                 {
                     continue;
                 }
 
-                if (isBlocking && !applyBlockingClip)
+                if (isCloudFog && !applyBlockingClip)
                 {
                     continue;
                 }
 
-                if (!isForest && !isBlocking)
+                if (!isForest && !isCloudFog)
                 {
                     continue;
                 }
@@ -686,24 +684,24 @@ namespace IronKingdoms.Combat
             {
                 var zone = activeZones[z];
                 var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null)
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
                 {
                     continue;
                 }
 
                 var isForest = feature.LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth;
-                var isBlocking = feature.LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely;
+                var isCloudFog = feature.LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely;
                 if (isForest && !buildContext.ApplyForestClip)
                 {
                     continue;
                 }
 
-                if (isBlocking && !buildContext.ApplyBlockingClip)
+                if (isCloudFog && !buildContext.ApplyBlockingClip)
                 {
                     continue;
                 }
 
-                if (!isForest && !isBlocking)
+                if (!isForest && !isCloudFog)
                 {
                     continue;
                 }
@@ -760,17 +758,6 @@ namespace IronKingdoms.Combat
                     CombatForestFogClipper.GetFirstContactDepthClipDistanceWorld(
                         buildContext,
                         directionWorld));
-            }
-
-            if (buildContext.HasBlocking)
-            {
-                limit = Mathf.Min(
-                    limit,
-                    CombatBlockingTerrainClipper.GetFogClipDistanceWorld(
-                        flatEye,
-                        directionWorld,
-                        maxRadius,
-                        buildContext.OriginRadiusWorld));
             }
 
             return limit;

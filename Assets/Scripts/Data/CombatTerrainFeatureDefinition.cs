@@ -40,6 +40,15 @@ namespace IronKingdoms.Combat
 
         public bool LimitsLineOfSightDepth => lineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth;
 
+        /// <summary>
+        /// Fog reveal uses first-contact + pass-through depth (e.g. forest and cloud).
+        /// Unit targeting may still treat clouds as fully blocking via <see cref="LineOfSightMode"/>.
+        /// </summary>
+        public bool UsesPassThroughFogClip =>
+            lineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth
+            || (lineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely
+                && lineOfSightPassThroughDepthInches > 0.001f);
+
         private void OnValidate()
         {
             if (string.IsNullOrWhiteSpace(featureId))

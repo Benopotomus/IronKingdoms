@@ -113,7 +113,7 @@ namespace IronKingdoms.Combat
             }
 
             CombatForestFogClipper.EnsureCache();
-            return CombatForestFogClipper.HasActiveZones;
+            return CombatForestFogClipper.HasActiveForestFogZones;
         }
 
         public bool ShouldApplyBlockingTerrainClipThisFrame()
@@ -123,8 +123,8 @@ namespace IronKingdoms.Combat
                 return false;
             }
 
-            CombatBlockingTerrainClipper.EnsureCache();
-            return CombatBlockingTerrainClipper.HasActiveZones;
+            CombatForestFogClipper.EnsureCache();
+            return CombatForestFogClipper.HasActiveCloudFogZones;
         }
 
         public bool MatchesUnitVisionRules(Unit unit)

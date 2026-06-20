@@ -56,7 +56,6 @@ namespace IronKingdoms.Combat
             }
 
             CombatForestFogClipper.EnsureCache();
-            CombatBlockingTerrainClipper.EnsureCache();
 
             return SampleClipDistanceWorldCached(
                 eyeWorld,
@@ -91,88 +90,90 @@ namespace IronKingdoms.Combat
             }
 
             CombatForestFogClipper.EnsureCache();
-            CombatBlockingTerrainClipper.EnsureCache();
+            CombatForestFogClipper.SetClipPassFilters(applyForestClip, applyBlockingClip);
 
-            var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
-            var halfAngle = NeighborHalfAngleRadiansForCount(sampleCount);
-            var useMedianSmoothing = CombatForestFogPassSettings.UseAngularMedianSmoothing;
-
-            if (!applyForestClip && !applyBlockingClip)
+            try
             {
+                var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
+                var halfAngle = NeighborHalfAngleRadiansForCount(sampleCount);
+                var useMedianSmoothing = CombatForestFogPassSettings.UseAngularMedianSmoothing;
+
+                if (!applyForestClip && !applyBlockingClip)
+                {
+                    for (var i = 0; i < sampleCount; i++)
+                    {
+                        clipDistances[i] = maxSearchRadius;
+                    }
+
+                    return;
+                }
+
+                var flatEye = eyeWorld;
+                flatEye.y = 0f;
+                var sampleDir = CombatForestFogAngularTables.GetDirectionWorldXZ(0, sampleCount);
+                var buildContext = new CombatForestFogLutBuildContext(
+                    flatEye,
+                    maxSearchRadius,
+                    originRadiusWorld,
+                    depthWorld,
+                    CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, sampleDir, originRadiusWorld),
+                    applyForestClip,
+                    applyBlockingClip);
+
+                if (!buildContext.HasForest)
+                {
+                    for (var i = 0; i < sampleCount; i++)
+                    {
+                        clipDistances[i] = maxSearchRadius;
+                    }
+
+                    return;
+                }
+
+                var terrainInReach = buildContext.RayStartedInsideForest
+                    || CombatForestFogClipper.AnyCachedZoneWithinReach(buildContext.FlatEye, maxSearchRadius);
+                if (!terrainInReach)
+                {
+                    for (var i = 0; i < sampleCount; i++)
+                    {
+                        clipDistances[i] = maxSearchRadius;
+                    }
+
+                    return;
+                }
+
                 for (var i = 0; i < sampleCount; i++)
                 {
-                    clipDistances[i] = maxSearchRadius;
+                    var directionWorld = CombatForestFogAngularTables.GetDirectionWorldXZ(i, sampleCount);
+                    if (!buildContext.RayStartedInsideForest
+                        && !CombatForestFogClipper.RayMayHitAnyCachedZoneAabbPublic(
+                            buildContext.FlatEye,
+                            directionWorld,
+                            buildContext.MaxSearchRadius))
+                    {
+                        clipDistances[i] = maxSearchRadius;
+                        continue;
+                    }
+
+                    clipDistances[i] = SampleClipDistanceWorldCached(
+                        buildContext,
+                        i,
+                        sampleCount,
+                        halfAngle,
+                        useMedianSmoothing);
                 }
 
-                return;
-            }
-
-            var flatEye = eyeWorld;
-            flatEye.y = 0f;
-            var sampleDir = CombatForestFogAngularTables.GetDirectionWorldXZ(0, sampleCount);
-            var buildContext = new CombatForestFogLutBuildContext(
-                flatEye,
-                maxSearchRadius,
-                originRadiusWorld,
-                depthWorld,
-                CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, sampleDir, originRadiusWorld),
-                applyForestClip,
-                applyBlockingClip);
-
-            if (!buildContext.HasForest && !buildContext.HasBlocking)
-            {
-                for (var i = 0; i < sampleCount; i++)
+                // Post-filters that pull open bins inward are for outside-the-forest leaks only.
+                // When the eye is inside forest, they destroy legitimate see-out wedges at the edge.
+                if (!buildContext.RayStartedInsideForest && !skipTerrainPostFilters)
                 {
-                    clipDistances[i] = maxSearchRadius;
+                    RemoveOutwardAngularSpikes(clipDistances, sampleCount, maxSearchRadius, PostFilterScratch);
+                    RemoveOpenBinsAdjacentToForestClip(clipDistances, sampleCount, maxSearchRadius, PostFilterScratch);
                 }
-
-                return;
             }
-
-            var forestInReach = !buildContext.HasForest
-                || buildContext.RayStartedInsideForest
-                || CombatForestFogClipper.AnyCachedZoneWithinReach(buildContext.FlatEye, maxSearchRadius);
-            var blockingInReach = !buildContext.HasBlocking
-                || CombatBlockingTerrainClipper.AnyCachedZoneWithinReach(flatEye, maxSearchRadius);
-            if (!forestInReach && !blockingInReach)
+            finally
             {
-                for (var i = 0; i < sampleCount; i++)
-                {
-                    clipDistances[i] = maxSearchRadius;
-                }
-
-                return;
-            }
-
-            for (var i = 0; i < sampleCount; i++)
-            {
-                var directionWorld = CombatForestFogAngularTables.GetDirectionWorldXZ(i, sampleCount);
-                if (!buildContext.RayStartedInsideForest
-                    && buildContext.HasForest
-                    && !CombatForestFogClipper.RayMayHitAnyCachedZoneAabbPublic(
-                        buildContext.FlatEye,
-                        directionWorld,
-                        buildContext.MaxSearchRadius)
-                    && !buildContext.HasBlocking)
-                {
-                    clipDistances[i] = maxSearchRadius;
-                    continue;
-                }
-
-                clipDistances[i] = SampleClipDistanceWorldCached(
-                    buildContext,
-                    i,
-                    sampleCount,
-                    halfAngle,
-                    useMedianSmoothing);
-            }
-
-            // Post-filters that pull open bins inward are for outside-the-forest leaks only.
-            // When the eye is inside forest, they destroy legitimate see-out wedges at the edge.
-            if (!buildContext.RayStartedInsideForest && !skipTerrainPostFilters)
-            {
-                RemoveOutwardAngularSpikes(clipDistances, sampleCount, maxSearchRadius, PostFilterScratch);
-                RemoveOpenBinsAdjacentToForestClip(clipDistances, sampleCount, maxSearchRadius, PostFilterScratch);
+                CombatForestFogClipper.ResetClipPassFilters();
             }
         }
 
@@ -215,25 +216,6 @@ namespace IronKingdoms.Combat
                             directionWorld));
             }
 
-            if (ctx.HasBlocking)
-            {
-                limit = Mathf.Min(
-                    limit,
-                    useMedianSmoothing
-                        ? CombatBlockingTerrainClipper.GetFogClipDistanceWorldSmoothed(
-                            ctx.FlatEye,
-                            directionWorld,
-                            ctx.MaxSearchRadius,
-                            ctx.OriginRadiusWorld,
-                            rayStartedInsideOverride: ctx.RayStartedInsideForest,
-                            neighborHalfAngleRadians)
-                        : CombatBlockingTerrainClipper.GetFogClipDistanceWorld(
-                            ctx.FlatEye,
-                            directionWorld,
-                            ctx.MaxSearchRadius,
-                            ctx.OriginRadiusWorld));
-            }
-
             return limit;
         }
 
@@ -244,33 +226,39 @@ namespace IronKingdoms.Combat
             float originRadiusWorld,
             float neighborHalfAngleRadians,
             bool useMedianSmoothing,
-            bool hasForest = true,
-            bool hasBlocking = true,
+            bool applyForestClip = true,
+            bool applyBlockingClip = true,
             float depthWorld = -1f)
         {
             if (depthWorld < 0f)
             {
                 depthWorld = CombatForestFogDepth.ResolveDepthWorld();
-                hasForest = depthWorld > 0.001f && CombatForestFogClipper.HasActiveZones;
-                hasBlocking = CombatBlockingTerrainClipper.HasActiveZones;
             }
 
-            var flatEye = eyeWorld;
-            flatEye.y = 0f;
-            var ctx = new CombatForestFogLutBuildContext(
-                flatEye,
-                maxSearchRadius,
-                originRadiusWorld,
-                depthWorld,
-                CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, directionWorld, originRadiusWorld),
-                hasForest,
-                hasBlocking);
+            CombatForestFogClipper.SetClipPassFilters(applyForestClip, applyBlockingClip);
+            try
+            {
+                var flatEye = eyeWorld;
+                flatEye.y = 0f;
+                var ctx = new CombatForestFogLutBuildContext(
+                    flatEye,
+                    maxSearchRadius,
+                    originRadiusWorld,
+                    depthWorld,
+                    CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, directionWorld, originRadiusWorld),
+                    applyForestClip,
+                    applyBlockingClip);
 
-            return SampleClipDistanceWorldCached(
-                ctx,
-                directionWorld,
-                neighborHalfAngleRadians,
-                useMedianSmoothing);
+                return SampleClipDistanceWorldCached(
+                    ctx,
+                    directionWorld,
+                    neighborHalfAngleRadians,
+                    useMedianSmoothing);
+            }
+            finally
+            {
+                CombatForestFogClipper.ResetClipPassFilters();
+            }
         }
 
         /// <summary>

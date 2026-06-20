@@ -23,8 +23,9 @@ namespace IronKingdoms.Combat
             RayStartedInsideForest = rayStartedInsideForest;
             ApplyForestClip = applyForestClip;
             ApplyBlockingClip = applyBlockingClip;
-            HasForest = applyForestClip && depthWorld > 0.001f && CombatForestFogClipper.HasActiveZones;
-            HasBlocking = applyBlockingClip && CombatBlockingTerrainClipper.HasActiveZones;
+            HasForest = depthWorld > 0.001f
+                && CombatForestFogClipper.HasActiveZonesForClipPass(applyForestClip, applyBlockingClip);
+            HasBlocking = false;
         }
 
         public Vector3 FlatEye { get; }

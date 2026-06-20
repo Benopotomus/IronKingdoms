@@ -24,6 +24,7 @@ namespace IronKingdoms.Combat
         private struct ClipZone
         {
             public CombatZone Zone;
+            public CombatTerrainLineOfSightMode LineOfSightMode;
             public float MinX;
             public float MaxX;
             public float MinZ;
@@ -35,6 +36,8 @@ namespace IronKingdoms.Combat
         [ThreadStatic] private static List<ClipInterval> _intervalScratch;
         [ThreadStatic] private static List<Vector3> _footprintCornerScratch;
         private static int LastCacheFrame = -1;
+        private static bool applyForestClipPass = true;
+        private static bool applyBlockingClipPass = true;
 
         private static List<ClipInterval> IntervalScratch
         {
@@ -64,6 +67,81 @@ namespace IronKingdoms.Combat
 
         public static bool HasActiveZones => CachedZones.Count > 0;
 
+        public static bool HasActiveForestFogZones
+        {
+            get
+            {
+                EnsureCache();
+                for (var i = 0; i < CachedZones.Count; i++)
+                {
+                    if (CachedZones[i].LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+
+        public static bool HasActiveCloudFogZones
+        {
+            get
+            {
+                EnsureCache();
+                for (var i = 0; i < CachedZones.Count; i++)
+                {
+                    if (CachedZones[i].LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+
+        public static bool HasActiveZonesForClipPass(bool applyForestClip, bool applyBlockingClip)
+        {
+            EnsureCache();
+            for (var i = 0; i < CachedZones.Count; i++)
+            {
+                if (IsZoneActiveForClipPass(CachedZones[i], applyForestClip, applyBlockingClip))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        internal static void SetClipPassFilters(bool applyForestClip, bool applyBlockingClip)
+        {
+            applyForestClipPass = applyForestClip;
+            applyBlockingClipPass = applyBlockingClip;
+        }
+
+        internal static void ResetClipPassFilters()
+        {
+            applyForestClipPass = true;
+            applyBlockingClipPass = true;
+        }
+
+        private static bool IsZoneActiveForClipPass(in ClipZone zone, bool applyForestClip, bool applyBlockingClip)
+        {
+            return zone.LineOfSightMode switch
+            {
+                CombatTerrainLineOfSightMode.LimitedDepth => applyForestClip,
+                CombatTerrainLineOfSightMode.BlocksCompletely => applyBlockingClip,
+                _ => false,
+            };
+        }
+
+        private static bool IsZoneActiveForClipPass(in ClipZone zone)
+        {
+            return IsZoneActiveForClipPass(zone, applyForestClipPass, applyBlockingClipPass);
+        }
+
         /// <summary>
         /// Planar corners of every active limited-depth zone footprint (XZ at collider center Y).
         /// </summary>
@@ -77,7 +155,15 @@ namespace IronKingdoms.Combat
             {
                 var zone = activeZones[i];
                 var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
+                {
+                    continue;
+                }
+
+                if (!IsZoneActiveForClipPass(
+                        new ClipZone { LineOfSightMode = feature.LineOfSightMode },
+                        applyForestClipPass,
+                        applyBlockingClipPass))
                 {
                     continue;
                 }
@@ -140,7 +226,7 @@ namespace IronKingdoms.Combat
             {
                 var zone = activeZones[i];
                 var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
                 {
                     continue;
                 }
@@ -168,7 +254,7 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < activeZones.Count; i++)
             {
                 var feature = activeZones[i]?.TerrainFeature;
-                if (feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                if (feature == null || !feature.UsesPassThroughFogClip)
                 {
                     continue;
                 }
@@ -235,7 +321,7 @@ namespace IronKingdoms.Combat
             {
                 var zone = activeZones[i];
                 var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
                 {
                     continue;
                 }
@@ -247,6 +333,7 @@ namespace IronKingdoms.Combat
                     CachedZones.Add(new ClipZone
                     {
                         Zone = zone,
+                        LineOfSightMode = feature.LineOfSightMode,
                         MinX = polygonBounds.min.x,
                         MaxX = polygonBounds.max.x,
                         MinZ = polygonBounds.min.z,
@@ -266,6 +353,7 @@ namespace IronKingdoms.Combat
                 CachedZones.Add(new ClipZone
                 {
                     Zone = zone,
+                    LineOfSightMode = feature.LineOfSightMode,
                     MinX = bounds.min.x,
                     MaxX = bounds.max.x,
                     MinZ = bounds.min.z,
@@ -1103,7 +1191,13 @@ namespace IronKingdoms.Combat
 
             for (var z = 0; z < CachedZones.Count; z++)
             {
-                var zone = CachedZones[z].Zone;
+                var cachedZone = CachedZones[z];
+                if (!IsZoneActiveForClipPass(cachedZone))
+                {
+                    continue;
+                }
+
+                var zone = cachedZone.Zone;
                 if (zone == null)
                 {
                     continue;
@@ -1251,7 +1345,15 @@ namespace IronKingdoms.Combat
             {
                 var zone = activeZones[z];
                 var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
+                {
+                    continue;
+                }
+
+                if (!IsZoneActiveForClipPass(
+                        new ClipZone { LineOfSightMode = feature.LineOfSightMode },
+                        applyForestClipPass,
+                        applyBlockingClipPass))
                 {
                     continue;
                 }
@@ -1436,7 +1538,15 @@ namespace IronKingdoms.Combat
             {
                 var zone = activeZones[i];
                 var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
+                {
+                    continue;
+                }
+
+                if (!IsZoneActiveForClipPass(
+                        new ClipZone { LineOfSightMode = feature.LineOfSightMode },
+                        applyForestClipPass,
+                        applyBlockingClipPass))
                 {
                     continue;
                 }
@@ -1457,7 +1567,15 @@ namespace IronKingdoms.Combat
             {
                 var zone = activeZones[i];
                 var feature = zone?.TerrainFeature;
-                if (zone == null || feature == null || feature.LineOfSightMode != CombatTerrainLineOfSightMode.LimitedDepth)
+                if (zone == null || feature == null || !feature.UsesPassThroughFogClip)
+                {
+                    continue;
+                }
+
+                if (!IsZoneActiveForClipPass(
+                        new ClipZone { LineOfSightMode = feature.LineOfSightMode },
+                        applyForestClipPass,
+                        applyBlockingClipPass))
                 {
                     continue;
                 }
@@ -1478,6 +1596,11 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < CachedZones.Count; i++)
             {
                 var zone = CachedZones[i];
+                if (!IsZoneActiveForClipPass(zone))
+                {
+                    continue;
+                }
+
                 if (x < zone.MinX || x > zone.MaxX || z < zone.MinZ || z > zone.MaxZ)
                 {
                     continue;
@@ -1514,6 +1637,11 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < CachedZones.Count; i++)
             {
                 var zone = CachedZones[i];
+                if (!IsZoneActiveForClipPass(zone))
+                {
+                    continue;
+                }
+
                 var cx = Mathf.Clamp(px, zone.MinX, zone.MaxX);
                 var cz = Mathf.Clamp(pz, zone.MinZ, zone.MaxZ);
                 var dx = px - cx;
@@ -1548,6 +1676,11 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < CachedZones.Count; i++)
             {
                 var zone = CachedZones[i];
+                if (!IsZoneActiveForClipPass(zone))
+                {
+                    continue;
+                }
+
                 if (CombatFogPlanarGeometry.RayMayHitHorizontalAabb(
                         origin2,
                         direction2,

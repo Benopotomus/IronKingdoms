@@ -252,12 +252,7 @@ namespace IronKingdoms.Combat
                     maxRadius,
                     depthWorld,
                     originRadiusWorld);
-                var blockingClip = CombatBlockingTerrainClipper.GetFogClipDistanceWorld(
-                    eyeWorld,
-                    dir3,
-                    maxRadius,
-                    originRadiusWorld);
-                clipDistances[i] = Mathf.Min(forestClip, blockingClip);
+                clipDistances[i] = forestClip;
             }
         }
 
@@ -295,48 +290,56 @@ namespace IronKingdoms.Combat
                 applyBlockingClip,
                 skipTerrainPostFilters);
 
-            var flatEye = eyeWorld;
-            flatEye.y = 0f;
-            var sampleDir = CombatForestFogAngularTables.GetDirectionWorldXZ(0, lutCount);
-            var buildContext = new CombatForestFogLutBuildContext(
-                flatEye,
-                maxRadius,
-                originRadiusWorld,
-                depthWorld,
-                CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, sampleDir, originRadiusWorld),
-                applyForestClip,
-                applyBlockingClip);
-
-            var sparseCount = 0;
-            if (CombatForestFogPassSettings.UseSparseTerrainUpload)
+            CombatForestFogClipper.SetClipPassFilters(applyForestClip, applyBlockingClip);
+            try
             {
-                sparseCount = CombatForestFogTerrainSparseUploadBuilder.BuildUploadSegments(
-                    AngularClipperLutScratch,
-                    lutCount,
+                var flatEye = eyeWorld;
+                flatEye.y = 0f;
+                var sampleDir = CombatForestFogAngularTables.GetDirectionWorldXZ(0, lutCount);
+                var buildContext = new CombatForestFogLutBuildContext(
+                    flatEye,
                     maxRadius,
-                    eyeWorld,
-                    buildContext,
-                    projection,
+                    originRadiusWorld,
+                    depthWorld,
+                    CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, sampleDir, originRadiusWorld),
                     applyForestClip,
-                    applyBlockingClip,
-                    terrainClipDirections,
-                    terrainClipUploadDistances,
-                    sampleCount);
-            }
+                    applyBlockingClip);
 
-            if (sparseCount >= 2)
-            {
-                return;
-            }
+                var sparseCount = 0;
+                if (CombatForestFogPassSettings.UseSparseTerrainUpload)
+                {
+                    sparseCount = CombatForestFogTerrainSparseUploadBuilder.BuildUploadSegments(
+                        AngularClipperLutScratch,
+                        lutCount,
+                        maxRadius,
+                        eyeWorld,
+                        buildContext,
+                        projection,
+                        applyForestClip,
+                        applyBlockingClip,
+                        terrainClipDirections,
+                        terrainClipUploadDistances,
+                        sampleCount);
+                }
 
-            terrainClipDirections.Clear();
-            terrainClipUploadDistances.Clear();
-            for (var i = 0; i < lutCount; i++)
+                if (sparseCount >= 2)
+                {
+                    return;
+                }
+
+                terrainClipDirections.Clear();
+                terrainClipUploadDistances.Clear();
+                for (var i = 0; i < lutCount; i++)
+                {
+                    var dir2 = CombatForestFogAngularTables.GetDirection2D(i, lutCount);
+                    var clipped = AngularClipperLutScratch[i] < maxRadius - DistanceEpsilonWorld;
+                    terrainClipDirections.Add(dir2);
+                    terrainClipUploadDistances.Add(clipped ? AngularClipperLutScratch[i] : maxRadius + 1f);
+                }
+            }
+            finally
             {
-                var dir2 = CombatForestFogAngularTables.GetDirection2D(i, lutCount);
-                var clipped = AngularClipperLutScratch[i] < maxRadius - DistanceEpsilonWorld;
-                terrainClipDirections.Add(dir2);
-                terrainClipUploadDistances.Add(clipped ? AngularClipperLutScratch[i] : maxRadius + 1f);
+                CombatForestFogClipper.ResetClipPassFilters();
             }
         }
 
