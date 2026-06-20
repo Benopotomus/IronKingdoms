@@ -86,20 +86,39 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var sampleCount = useUploadedTerrain
-                ? terrainCount
-                : ContourSampleCount;
+            var sampleCount = ContourSampleCount;
 
             for (var i = 0; i < sampleCount; i++)
             {
                 var queryDir = CombatForestFogAngularTables.GetDirection2D(i, sampleCount);
-                var direction = useUploadedTerrain
-                    ? CombatFogProjection.Direction2DToWorld(queryDir, projection)
-                    : CombatForestFogAngularTables.GetDirectionWorldXZ(i, sampleCount);
+                var direction = CombatForestFogAngularTables.GetDirectionWorldXZ(i, sampleCount);
 
-                var terrainClip = useUploadedTerrain
-                    ? terrainDistances[i]
-                    : maxSearchRadius;
+                var analyticTerrainClip = maxSearchRadius;
+                if (applyForestClip || applyBlockingClip)
+                {
+                    analyticTerrainClip = CombatForestFogAngularClipperLut.SampleClipDistanceWorld(
+                        eyeWorld,
+                        queryDir,
+                        maxSearchRadius,
+                        originRadiusWorld,
+                        projection);
+                }
+
+                var terrainClip = analyticTerrainClip;
+                if (useUploadedTerrain)
+                {
+                    terrainClip = Mathf.Min(
+                        analyticTerrainClip,
+                        CombatFogTerrainUploadQuery.GetBoundaryDistance(
+                            revealer.TerrainClipUploadDirections,
+                            terrainDistances,
+                            terrainCount,
+                            queryDir,
+                            maxSearchRadius,
+                            circleIsComplete,
+                            extraRadius));
+                }
+
                 var limit = SampleEffectiveBoundaryDistance(
                     BaselineSegmentsScratch,
                     queryDir,

@@ -65,6 +65,7 @@ namespace IronKingdoms.Combat
                     baselineDirections,
                     baselineUploadLengths,
                     baselineCount,
+                    terrainDirections,
                     terrainUploadLengths,
                     terrainCount,
                     sourceEyeWorld,
@@ -259,6 +260,7 @@ namespace IronKingdoms.Combat
             float2[] directions,
             float[] uploadLengths,
             int count,
+            float2[] terrainDirections,
             float[] terrainUploadLengths,
             int terrainCount,
             Vector3 sourceEyeWorld,
@@ -275,6 +277,7 @@ namespace IronKingdoms.Combat
                 ? FogOfWarWorld.instance.SightExtraAmount
                 : 0f;
             var useUploadedTerrain = terrainCount >= 2
+                && terrainDirections != null
                 && terrainUploadLengths != null
                 && terrainUploadLengths.Length >= terrainCount;
 
@@ -305,9 +308,7 @@ namespace IronKingdoms.Combat
                 return;
             }
 
-            var sampleCount = useUploadedTerrain
-                ? terrainCount
-                : CombatForestFogAngularClipperLut.SampleCount;
+            var sampleCount = CombatForestFogAngularClipperLut.SampleCount;
 
             for (var i = 0; i < sampleCount; i++)
             {
@@ -325,7 +326,16 @@ namespace IronKingdoms.Combat
 
                 if (useUploadedTerrain)
                 {
-                    boundaryDistance = math.min(boundaryDistance, terrainUploadLengths[i]);
+                    boundaryDistance = math.min(
+                        boundaryDistance,
+                        CombatFogTerrainUploadQuery.GetBoundaryDistance(
+                            terrainDirections,
+                            terrainUploadLengths,
+                            terrainCount,
+                            queryDir,
+                            totalRevealerRadius,
+                            circleIsComplete,
+                            extraRadius));
                 }
 
                 if (boundaryDistance > totalRevealerRadius - DistanceEpsilonWorld)

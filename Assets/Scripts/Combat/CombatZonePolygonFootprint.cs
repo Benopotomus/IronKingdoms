@@ -17,11 +17,13 @@ namespace IronKingdoms.Combat
         private const string VisualChildName = "Visual";
 
         [SerializeField] private List<Vector2> localVertices = new();
-        [SerializeField] private float colliderCenterLocalY = 1.27f;
+        [SerializeField] private float colliderCenterLocalY = 0f;
         [SerializeField] private float colliderHeight = 2.54f;
         [SerializeField] private float visualThickness = 0.05f;
         [SerializeField] private Material visualMaterial;
-
+#if UNITY_EDITOR
+        [SerializeField, HideInInspector] private bool footprintPlaneMigrated;
+#endif
         private readonly List<int> triangleScratch = new();
         private readonly List<int> visualTriangleScratch = new();
         private readonly List<Vector2> cachedWorldPolygon = new();
@@ -35,7 +37,8 @@ namespace IronKingdoms.Combat
 
         public IReadOnlyList<Vector2> LocalVertices => localVertices;
         public bool HasFootprint => CombatPolygonFootprintGeometry.IsValidFootprint(localVertices);
-        public float TabletopWorldY => transform.TransformPoint(new Vector3(0f, colliderCenterLocalY, 0f)).y;
+        /// <summary>World Y of the XZ footprint plane (local origin).</summary>
+        public float TabletopWorldY => transform.TransformPoint(Vector3.zero).y;
 
         public void SetLocalVertices(IReadOnlyList<Vector2> vertices)
         {
@@ -87,8 +90,7 @@ namespace IronKingdoms.Combat
             var tabletopY = TabletopWorldY;
             for (var i = 0; i < localVertices.Count; i++)
             {
-                var local = new Vector3(localVertices[i].x, colliderCenterLocalY, localVertices[i].y);
-                var world = transform.TransformPoint(local);
+                var world = LocalVertexToWorld(i);
                 world.y = tabletopY;
                 corners.Add(world);
             }
@@ -165,10 +167,34 @@ namespace IronKingdoms.Combat
 
             for (var i = 0; i < localVertices.Count; i++)
             {
-                var local = new Vector3(localVertices[i].x, colliderCenterLocalY, localVertices[i].y);
-                var world = transform.TransformPoint(local);
+                var world = LocalVertexToWorld(i);
                 cachedWorldPolygon.Add(new Vector2(world.x, world.z));
             }
+        }
+
+        private Vector3 LocalVertexToWorld(int index)
+        {
+            var vertex = localVertices[index];
+            return transform.TransformPoint(new Vector3(vertex.x, 0f, vertex.y));
+        }
+
+        private void MigrateLegacyFootprintPlaneIfNeeded()
+        {
+            if (colliderCenterLocalY <= 0.001f)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            if (footprintPlaneMigrated)
+            {
+                return;
+            }
+
+            footprintPlaneMigrated = true;
+#endif
+            transform.position += transform.TransformVector(new Vector3(0f, colliderCenterLocalY, 0f));
+            colliderCenterLocalY = 0f;
         }
 
         private int ComputeWorldPolygonKey()
@@ -186,6 +212,7 @@ namespace IronKingdoms.Combat
 
         private void OnEnable()
         {
+            MigrateLegacyFootprintPlaneIfNeeded();
             RemoveInvalidPolygonCollider();
             EnsureVisualMeshIfNeeded();
         }
@@ -221,11 +248,13 @@ namespace IronKingdoms.Combat
             isRegeneratingGeometry = true;
             try
             {
+                MigrateLegacyFootprintPlaneIfNeeded();
                 RemoveInvalidPolygonCollider();
                 InvalidateWorldPolygonCache();
                 var visualMeshInstance = BuildVisualMesh();
 
                 var visual = GetOrCreateVisualChild();
+                visual.localScale = Vector3.one;
                 var meshFilter = EnsureMeshFilter(visual);
                 var meshRenderer = EnsureMeshRenderer(visual);
                 meshFilter.sharedMesh = visualMeshInstance;
@@ -264,8 +293,7 @@ namespace IronKingdoms.Combat
             var tabletopY = TabletopWorldY;
             for (var i = 0; i < localVertices.Count; i++)
             {
-                var local = new Vector3(localVertices[i].x, colliderCenterLocalY, localVertices[i].y);
-                var world = transform.TransformPoint(local);
+                var world = LocalVertexToWorld(i);
                 minX = Mathf.Min(minX, world.x);
                 maxX = Mathf.Max(maxX, world.x);
                 minZ = Mathf.Min(minZ, world.z);
@@ -357,9 +385,18 @@ namespace IronKingdoms.Combat
 
         private Mesh BuildVisualMesh()
         {
-            if (!CombatPolygonFootprintGeometry.TryTriangulateSimplePolygonLocal(localVertices, triangleScratch))
+            triangleScratch.Clear();
+            if (CombatPolygonFootprintGeometry.IsConvexFootprintLocal(localVertices))
             {
-                triangleScratch.Clear();
+                for (var i = 1; i < localVertices.Count - 1; i++)
+                {
+                    triangleScratch.Add(0);
+                    triangleScratch.Add(i);
+                    triangleScratch.Add(i + 1);
+                }
+            }
+            else if (!CombatPolygonFootprintGeometry.TryTriangulateSimplePolygonLocal(localVertices, triangleScratch))
+            {
                 for (var i = 1; i < localVertices.Count - 1; i++)
                 {
                     triangleScratch.Add(0);
@@ -368,9 +405,8 @@ namespace IronKingdoms.Combat
                 }
             }
 
-            var halfHeight = colliderHeight * 0.5f;
-            var bottomY = colliderCenterLocalY - halfHeight;
-            var topY = colliderCenterLocalY + halfHeight;
+            var bottomY = 0f;
+            var topY = colliderHeight;
             var vertexCount = localVertices.Count;
 
             if (visualMesh == null)
@@ -412,7 +448,8 @@ namespace IronKingdoms.Combat
             for (var i = 0; i < vertexCount; i++)
             {
                 var next = (i + 1) % vertexCount;
-                AddQuad(visualTriangleScratch, i, next, next + vertexCount, i + vertexCount);
+                // CCW footprint in XZ: outward side normals need bottom→top→next-top winding.
+                AddQuad(visualTriangleScratch, i, i + vertexCount, next + vertexCount, next);
             }
 
             visualMesh.SetVertices(vertices);

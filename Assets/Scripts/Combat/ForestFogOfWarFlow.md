@@ -29,8 +29,8 @@ The key rule is first contact plus depth: open ground before forest does not con
 1. `LineOfSightPhase1()` calls `base.LineOfSightPhase1()` (physics raycasts only).
 2. `LineOfSightPhase2()` calls `base.LineOfSightPhase2()` (SortData, FindEdges, SetData).
 3. Pass-1 `ViewPoints` upload to the GPU as the baseline wall polygon — unchanged by forest code.
-4. `OnAfterResolveEdges()` appends a separate terrain LUT (forest/cloud analytic clip) after the baseline segments.
-5. The fog shader applies baseline wall wedges first, then `MinTerrainClipIntoDistance` only tightens open ground.
+4. `OnAfterResolveEdges()` builds a sparse terrain polygon (edge-refined + footprint corners) and appends it after baseline segments.
+5. The fog shader applies baseline wall wedges first, then terrain wedges/chords (same rules as walls — not angular LUT lerp).
 
 Forest never modifies phase-1 ray buffers or wall FindEdges output.
 
@@ -49,6 +49,7 @@ Wall handling remains in the imported FOW base path:
 
 - `CombatForestFogClipper`: find forest entries/exits and compute per-ray clip distance.
 - `CombatForestFogDepth`: resolve the shared depth value used by clipping.
-- `CombatForestFogRayPostProcessor`: build terrain LUT upload after stock pass 1 completes; never edits wall segments.
+- `CombatForestFogRayPostProcessor`: build sparse terrain upload after stock pass 1 completes; never edits wall segments.
+- `CombatForestFogTerrainSparseUploadBuilder`: refine open/clipped transitions and inject polygon corners into terrain upload segments.
 - `CombatForestFogDebugContour`: store and draw debug-only forest contour data.
 - `CombatFogOfWarRevealer3D`: keep the phase order explicit and hand work to the small classes above.

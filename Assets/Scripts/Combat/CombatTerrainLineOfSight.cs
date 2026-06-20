@@ -125,6 +125,18 @@ namespace IronKingdoms.Combat
 
         public static bool HasActiveZones => CachedZones.Count > 0;
 
+        /// <summary>
+        /// Appends footprint corners for blocking terrain zones (clouds, etc.).
+        /// </summary>
+        public static void CollectBlockingZoneCornersWorld(List<Vector3> corners)
+        {
+            EnsureCache();
+            for (var i = 0; i < CachedZones.Count; i++)
+            {
+                CachedZones[i].CollectFootprintCorners(corners);
+            }
+        }
+
         public static bool AnyCachedZoneWithinReach(Vector3 worldPoint, float reachWorld)
         {
             EnsureCache();

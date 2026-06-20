@@ -196,6 +196,39 @@ namespace IronKingdoms.Combat
             return area * 0.5f;
         }
 
+        public static bool IsConvexFootprintLocal(IReadOnlyList<Vector2> localVertices)
+        {
+            if (!IsValidFootprint(localVertices))
+            {
+                return false;
+            }
+
+            var sign = 0f;
+            for (var i = 0; i < localVertices.Count; i++)
+            {
+                var a = localVertices[i];
+                var b = localVertices[(i + 1) % localVertices.Count];
+                var c = localVertices[(i + 2) % localVertices.Count];
+                var cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+                if (Mathf.Abs(cross) <= 1e-6f)
+                {
+                    continue;
+                }
+
+                var crossSign = Mathf.Sign(cross);
+                if (Mathf.Approximately(sign, 0f))
+                {
+                    sign = crossSign;
+                }
+                else if (!Mathf.Approximately(crossSign, sign))
+                {
+                    return false;
+                }
+            }
+
+            return !Mathf.Approximately(sign, 0f);
+        }
+
         private static bool IsConvexEar(
             int prev,
             int curr,

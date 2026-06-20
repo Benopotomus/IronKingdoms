@@ -13,7 +13,7 @@ namespace IronKingdoms.Editor
 
         private const float DiameterInches = 3f;
         private const int SegmentCount = 32;
-        private const float TabletopLocalY = 1.27f;
+        private const float TabletopLocalY = 0f;
         private const float ColliderHeight = 2.54f;
 
         [MenuItem("Iron Kingdoms/Create/Polygon Circle Forest Zone (3in, 32 seg)")]

@@ -341,6 +341,86 @@ int GetCellHash(int2 cell)
 
 const float FOW_WALL_BLOCK_EPSILON = 0.01;
 
+float ComputeAngularWedgeLerpT(float2 dirPrev, float2 dirCurr, float2 queryDir)
+{
+    float anglePrev = atan2(dirPrev.y, dirPrev.x);
+    float angleCurr = atan2(dirCurr.y, dirCurr.x);
+    float angleQuery = atan2(queryDir.y, queryDir.x);
+    if (angleCurr <= anglePrev)
+        angleCurr += 6.2831853;
+    if (angleQuery < anglePrev)
+        angleQuery += 6.2831853;
+    float span = angleCurr - anglePrev;
+    if (span <= 1e-5)
+        return 0.0;
+    return saturate((angleQuery - anglePrev) / span);
+}
+
+float ComputeTerrainWedgeClipDistance(
+    RevealerSightSegment previousCone,
+    RevealerSightSegment currentCone,
+    float2 toPixelDir,
+    float totalRevealerRadius,
+    float unobscuredRadius)
+{
+    float DistToSegmentEnd = currentCone.length;
+    bool cutShortPrev = previousCone.length <= totalRevealerRadius;
+    bool cutShortCurr = currentCone.length <= totalRevealerRadius;
+    float wedgeT = ComputeAngularWedgeLerpT(
+        previousCone.segmentDirection,
+        currentCone.segmentDirection,
+        toPixelDir);
+
+    if (cutShortPrev && cutShortCurr)
+    {
+        float2 start = previousCone.segmentDirection * previousCone.length;
+        float2 end = currentCone.segmentDirection * currentCone.length;
+        float distSq = dot(end - start, end - start);
+        const float reqDistSq = 0.0225;
+        float lerped = lerp(previousCone.length, currentCone.length, wedgeT);
+        lerped += _extraRadius;
+        if (distSq > reqDistSq)
+        {
+            float2 intersection = CalculateIntersectionCramersRule(start, end, toPixelDir);
+            DistToSegmentEnd = max(length(intersection) + _extraRadius, lerped);
+        }
+        else
+        {
+            DistToSegmentEnd = lerped;
+        }
+    }
+    else if (cutShortPrev != cutShortCurr)
+    {
+        const float openBandT = 0.04;
+        if (cutShortPrev && !cutShortCurr)
+        {
+            if (wedgeT >= openBandT)
+            {
+                DistToSegmentEnd = totalRevealerRadius + 1.0;
+            }
+            else
+            {
+                float clippedLen = previousCone.length + _extraRadius;
+                DistToSegmentEnd = lerp(clippedLen, totalRevealerRadius + 1.0, wedgeT / openBandT);
+            }
+        }
+        else
+        {
+            if (wedgeT <= 1.0 - openBandT)
+            {
+                DistToSegmentEnd = totalRevealerRadius + 1.0;
+            }
+            else
+            {
+                float clippedLen = currentCone.length + _extraRadius;
+                DistToSegmentEnd = lerp(totalRevealerRadius + 1.0, clippedLen, (wedgeT - (1.0 - openBandT)) / openBandT);
+            }
+        }
+    }
+
+    return max(DistToSegmentEnd, unobscuredRadius);
+}
+
 // Stock sight-mesh limit (same wedge/chord rules as LoopRevealerHardFog).
 bool TryComputeSightMeshDistanceLimit(
     int baseIndex,
@@ -400,7 +480,74 @@ bool TerrainUploadRayIsOpen(RevealerSightSegment segment, float totalRevealerRad
     return segment.length > totalRevealerRadius - FOW_WALL_BLOCK_EPSILON;
 }
 
-// Uniform angular clipper LUT (same samples as yellow debug contour).
+const float FOW_TERRAIN_MAX_CLIPPED_WRAP_GAP = 2.3561945; // 135 degrees
+
+float ComputeSortedWrapGapRadians(float2 lastDir, float2 firstDir)
+{
+    float lastAngle = atan2(lastDir.y, lastDir.x);
+    float firstAngle = atan2(firstDir.y, firstDir.x);
+    if (firstAngle >= lastAngle)
+        return firstAngle - lastAngle;
+    return 6.2831853 - (lastAngle - firstAngle);
+}
+
+bool ShouldAllowTerrainWrapWedge(
+    RevealerSightSegment last,
+    RevealerSightSegment first,
+    float totalRevealerRadius)
+{
+    bool lastOpen = last.length > totalRevealerRadius - FOW_WALL_BLOCK_EPSILON;
+    bool firstOpen = first.length > totalRevealerRadius - FOW_WALL_BLOCK_EPSILON;
+    if (lastOpen || firstOpen)
+        return true;
+    return ComputeSortedWrapGapRadians(last.segmentDirection, first.segmentDirection) <= FOW_TERRAIN_MAX_CLIPPED_WRAP_GAP;
+}
+
+float SampleTerrainClipAngular(
+    RevealerSightSegment segA,
+    RevealerSightSegment segB,
+    float2 toPixelDir,
+    float totalRevealerRadius,
+    float unobscuredRadius)
+{
+    float t = ComputeAngularWedgeLerpT(segA.segmentDirection, segB.segmentDirection, toPixelDir);
+    float lenA = segA.length;
+    float lenB = segB.length;
+    bool cutA = lenA <= totalRevealerRadius - FOW_WALL_BLOCK_EPSILON;
+    bool cutB = lenB <= totalRevealerRadius - FOW_WALL_BLOCK_EPSILON;
+    float result;
+
+    if (cutA && cutB)
+    {
+        result = lerp(lenA, lenB, t);
+    }
+    else if (cutA != cutB)
+    {
+        const float openBandT = 0.04;
+        if (cutA && !cutB)
+        {
+            result = t >= openBandT
+                ? totalRevealerRadius + 1.0
+                : lerp(lenA, totalRevealerRadius + 1.0, t / openBandT);
+        }
+        else
+        {
+            result = t <= 1.0 - openBandT
+                ? totalRevealerRadius + 1.0
+                : lerp(totalRevealerRadius + 1.0, lenB, (t - (1.0 - openBandT)) / openBandT);
+        }
+    }
+    else
+    {
+        result = totalRevealerRadius + 1.0;
+    }
+
+    if (result <= totalRevealerRadius - FOW_WALL_BLOCK_EPSILON)
+        result += _extraRadius;
+    return max(result, unobscuredRadius);
+}
+
+// Terrain upload — angular interpolation (no Cartesian chords; avoids barcode streaks on curves).
 bool TryComputeTerrainClipDistanceLimit(
     int baseIndex,
     int numSegments,
@@ -408,6 +555,7 @@ bool TryComputeTerrainClipDistanceLimit(
     float distToRevealerOrigin,
     float totalRevealerRadius,
     float unobscuredRadius,
+    bool circleIsComplete,
     out float distLimit)
 {
     distLimit = totalRevealerRadius + 1.0;
@@ -415,25 +563,50 @@ bool TryComputeTerrainClipDistanceLimit(
         return false;
 
     float2 toPixelDir = relativePosition / distToRevealerOrigin;
-    float angle = atan2(toPixelDir.y, toPixelDir.x);
-    if (angle < 0.0)
-        angle += 6.28318530718;
+    RevealerSightSegment previousCone = _SightSegmentBuffer[baseIndex];
+    float crossPrev = toPixelDir.x * previousCone.segmentDirection.y - toPixelDir.y * previousCone.segmentDirection.x;
 
-    const float twoPi = 6.28318530718;
-    float sampleIndex = angle * ((float)numSegments / twoPi);
-    int i0 = ((int)floor(sampleIndex)) % numSegments;
-    int i1 = (i0 + 1) % numSegments;
-    float t = frac(sampleIndex);
+    for (int c = 1; c < numSegments; c++)
+    {
+        RevealerSightSegment currentCone = _SightSegmentBuffer[baseIndex + c];
+        float crossCurr = toPixelDir.x * currentCone.segmentDirection.y - toPixelDir.y * currentCone.segmentDirection.x;
+        bool inCone = (crossPrev <= 0) && (crossCurr >= 0);
 
-    float len0 = _SightSegmentBuffer[baseIndex + i0].length;
-    float len1 = _SightSegmentBuffer[baseIndex + i1].length;
-    float clip = lerp(len0, len1, t);
+        if (inCone)
+        {
+            distLimit = SampleTerrainClipAngular(
+                previousCone,
+                currentCone,
+                toPixelDir,
+                totalRevealerRadius,
+                unobscuredRadius);
+            return distLimit <= totalRevealerRadius - FOW_WALL_BLOCK_EPSILON;
+        }
 
-    if (clip > totalRevealerRadius - FOW_WALL_BLOCK_EPSILON)
-        return false;
+        crossPrev = crossCurr;
+        previousCone = currentCone;
+    }
 
-    distLimit = max(clip, unobscuredRadius);
-    return true;
+    RevealerSightSegment wrapPrevious = _SightSegmentBuffer[baseIndex + numSegments - 1];
+    RevealerSightSegment wrapCurrent = _SightSegmentBuffer[baseIndex];
+    float crossWrapPrev = toPixelDir.x * wrapPrevious.segmentDirection.y - toPixelDir.y * wrapPrevious.segmentDirection.x;
+    float crossWrapCurr = toPixelDir.x * wrapCurrent.segmentDirection.y - toPixelDir.y * wrapCurrent.segmentDirection.x;
+    bool inWrapCone = (crossWrapPrev <= 0) && (crossWrapCurr >= 0);
+    bool allowWrap = circleIsComplete != 0
+        || ShouldAllowTerrainWrapWedge(wrapPrevious, wrapCurrent, totalRevealerRadius);
+
+    if (allowWrap && inWrapCone)
+    {
+        distLimit = SampleTerrainClipAngular(
+            wrapPrevious,
+            wrapCurrent,
+            toPixelDir,
+            totalRevealerRadius,
+            unobscuredRadius);
+        return distLimit <= totalRevealerRadius - FOW_WALL_BLOCK_EPSILON;
+    }
+
+    return false;
 }
 
 // Terrain only tightens visibility; never expand past the baseline limit.
@@ -457,6 +630,7 @@ void MinTerrainClipIntoDistance(
             distToRevealerOrigin,
             totalRevealerRadius,
             unobscuredRadius,
+            revealerInfo.circleIsComplete != 0,
             terrainLimit)
         && terrainLimit <= totalRevealerRadius - FOW_WALL_BLOCK_EPSILON)
     {

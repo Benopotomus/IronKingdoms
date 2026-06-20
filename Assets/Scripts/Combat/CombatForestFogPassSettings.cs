@@ -45,6 +45,12 @@ namespace IronKingdoms.Combat
         /// </summary>
         public static bool MovingSkipTerrainPostFilters { get; set; } = true;
 
+        /// <summary>
+        /// When false, upload one LUT bin per direction (smooth curves, higher segment cost).
+        /// When true, reduce to sparse edge/corner segments (lower cost, needs angular sampling in shader).
+        /// </summary>
+        public static bool UseSparseTerrainUpload { get; set; }
+
         public static int ResolveLutSampleCount(bool isMoving)
         {
             if (isMoving && UseAdaptiveFidelityWhileMoving)

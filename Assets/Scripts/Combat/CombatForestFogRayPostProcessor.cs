@@ -264,7 +264,7 @@ namespace IronKingdoms.Combat
         private static readonly float[] AngularClipperLutScratch = new float[CombatForestFogAngularClipperLut.SampleCount];
 
         /// <summary>
-        /// Upload uniform angular clipper samples (same source as the yellow debug contour).
+        /// Builds a uniform LUT then reduces it to sparse terrain segments with edge/corner refinement.
         /// </summary>
         private void UploadAngularClipperLutForShader(
             Vector3 eyeWorld,
@@ -283,23 +283,60 @@ namespace IronKingdoms.Combat
             }
 
             var scratchLength = math.min(CombatForestFogAngularClipperLut.SampleCount, AngularClipperLutScratch.Length);
+            var lutCount = math.min(sampleCount, scratchLength);
             CombatForestFogAngularClipperLut.BuildSmoothedClipDistances(
                 eyeWorld,
                 maxRadius,
                 originRadiusWorld,
                 projection,
                 AngularClipperLutScratch,
-                math.min(sampleCount, scratchLength),
+                lutCount,
                 applyForestClip,
                 applyBlockingClip,
                 skipTerrainPostFilters);
 
-            for (var i = 0; i < sampleCount; i++)
-            {
-                var dir2 = CombatForestFogAngularTables.GetDirection2D(i, sampleCount);
+            var flatEye = eyeWorld;
+            flatEye.y = 0f;
+            var sampleDir = CombatForestFogAngularTables.GetDirectionWorldXZ(0, lutCount);
+            var buildContext = new CombatForestFogLutBuildContext(
+                flatEye,
+                maxRadius,
+                originRadiusWorld,
+                depthWorld,
+                CombatForestFogClipper.ComputeRayStartedInsideForest(flatEye, sampleDir, originRadiusWorld),
+                applyForestClip,
+                applyBlockingClip);
 
+            var sparseCount = 0;
+            if (CombatForestFogPassSettings.UseSparseTerrainUpload)
+            {
+                sparseCount = CombatForestFogTerrainSparseUploadBuilder.BuildUploadSegments(
+                    AngularClipperLutScratch,
+                    lutCount,
+                    maxRadius,
+                    eyeWorld,
+                    buildContext,
+                    projection,
+                    applyForestClip,
+                    applyBlockingClip,
+                    terrainClipDirections,
+                    terrainClipUploadDistances,
+                    sampleCount);
+            }
+
+            if (sparseCount >= 2)
+            {
+                return;
+            }
+
+            terrainClipDirections.Clear();
+            terrainClipUploadDistances.Clear();
+            for (var i = 0; i < lutCount; i++)
+            {
+                var dir2 = CombatForestFogAngularTables.GetDirection2D(i, lutCount);
+                var clipped = AngularClipperLutScratch[i] < maxRadius - DistanceEpsilonWorld;
                 terrainClipDirections.Add(dir2);
-                terrainClipUploadDistances.Add(AngularClipperLutScratch[i]);
+                terrainClipUploadDistances.Add(clipped ? AngularClipperLutScratch[i] : maxRadius + 1f);
             }
         }
 
@@ -443,6 +480,273 @@ namespace IronKingdoms.Combat
             }
 
             return true;
+        }
+
+        private static float GetUploadedLength(
+            RaycastRevealer.SightSegment segment,
+            float totalRevealerRadius)
+        {
+            return segment.Radius + (segment.DidHit ? 0f : 1f);
+        }
+
+        private static bool IsCutShort(
+            RaycastRevealer.SightSegment segment,
+            float totalRevealerRadius)
+        {
+            return GetUploadedLength(segment, totalRevealerRadius) <= totalRevealerRadius;
+        }
+
+        private static float2 NormalizeDirection(float2 direction)
+        {
+            return math.normalizesafe(direction, new float2(1f, 0f));
+        }
+
+        private static float Cross(float2 a, float2 b)
+        {
+            return a.x * b.y - a.y * b.x;
+        }
+
+        private static float2 CalculateIntersectionCramersRule(float2 start, float2 end, float2 queryDirection)
+        {
+            var a1 = end.y - start.y;
+            var b1 = start.x - end.x;
+            var c1 = a1 * start.x + b1 * start.y;
+            var a2 = queryDirection.y;
+            var b2 = -queryDirection.x;
+            var determinant = a1 * b2 - a2 * b1;
+            if (math.abs(determinant) <= 1e-8f)
+            {
+                return queryDirection * math.max(math.length(start), math.length(end));
+            }
+
+            var x = b2 * c1 / determinant;
+            var y = -a2 * c1 / determinant;
+            return new float2(x, y);
+        }
+    }
+
+    /// <summary>
+    /// Queries terrain upload segments with wedge/chord rules tuned for forest clip (mixed open/clipped wedges).
+    /// </summary>
+    internal static class CombatFogTerrainUploadQuery
+    {
+        private const float MaxClippedWrapGapRadians = math.PI * 0.75f;
+        private static readonly List<RaycastRevealer.SightSegment> SegmentScratch = new();
+
+        public static float GetBoundaryDistance(
+            float2[] directions,
+            float[] uploadLengths,
+            int count,
+            float2 queryDirection,
+            float totalRevealerRadius,
+            bool circleIsComplete,
+            float extraRadius = 0f)
+        {
+            if (!TryBuildUploadSegments(
+                    directions,
+                    uploadLengths,
+                    count,
+                    totalRevealerRadius,
+                    SegmentScratch))
+            {
+                return totalRevealerRadius + 1f;
+            }
+
+            return GetTerrainBoundaryDistance(
+                SegmentScratch,
+                queryDirection,
+                totalRevealerRadius,
+                circleIsComplete,
+                extraRadius);
+        }
+
+        internal static float GetTerrainBoundaryDistance(
+            IReadOnlyList<RaycastRevealer.SightSegment> segments,
+            float2 queryDirection,
+            float totalRevealerRadius,
+            bool circleIsComplete,
+            float extraRadius = 0f)
+        {
+            if (segments == null || segments.Count < 2)
+            {
+                return totalRevealerRadius + 1f;
+            }
+
+            var count = segments.Count;
+            var crossPrev = Cross(queryDirection, NormalizeDirection(segments[0].Direction));
+
+            for (var c = 1; c < count; c++)
+            {
+                if (TryGetTerrainDistanceInCone(
+                        segments[c - 1],
+                        segments[c],
+                        queryDirection,
+                        crossPrev,
+                        totalRevealerRadius,
+                        extraRadius,
+                        out var distance))
+                {
+                    return distance;
+                }
+
+                crossPrev = Cross(queryDirection, NormalizeDirection(segments[c].Direction));
+            }
+
+            if ((circleIsComplete
+                    || ShouldAllowTerrainWrapWedge(segments[count - 1], segments[0], totalRevealerRadius))
+                && TryGetTerrainDistanceInCone(
+                    segments[count - 1],
+                    segments[0],
+                    queryDirection,
+                    Cross(queryDirection, NormalizeDirection(segments[count - 1].Direction)),
+                    totalRevealerRadius,
+                    extraRadius,
+                    out var wrapDistance))
+            {
+                return wrapDistance;
+            }
+
+            return totalRevealerRadius + 1f;
+        }
+
+        private static bool ShouldAllowTerrainWrapWedge(
+            RaycastRevealer.SightSegment last,
+            RaycastRevealer.SightSegment first,
+            float totalRevealerRadius)
+        {
+            var lastOpen = !IsCutShort(last, totalRevealerRadius);
+            var firstOpen = !IsCutShort(first, totalRevealerRadius);
+            if (lastOpen || firstOpen)
+            {
+                return true;
+            }
+
+            return ComputeSortedWrapGapRadians(
+                NormalizeDirection(last.Direction),
+                NormalizeDirection(first.Direction)) <= MaxClippedWrapGapRadians;
+        }
+
+        private static float ComputeSortedWrapGapRadians(float2 lastDir, float2 firstDir)
+        {
+            var lastAngle = math.atan2(lastDir.y, lastDir.x);
+            var firstAngle = math.atan2(firstDir.y, firstDir.x);
+            if (firstAngle >= lastAngle)
+            {
+                return firstAngle - lastAngle;
+            }
+
+            return math.PI * 2f - (lastAngle - firstAngle);
+        }
+
+        private static bool TryGetTerrainDistanceInCone(
+            RaycastRevealer.SightSegment previous,
+            RaycastRevealer.SightSegment current,
+            float2 queryDirection,
+            float crossPrev,
+            float totalRevealerRadius,
+            float extraRadius,
+            out float distance)
+        {
+            distance = GetUploadedLength(current, totalRevealerRadius);
+            var crossCurr = Cross(queryDirection, NormalizeDirection(current.Direction));
+            var inCone = crossPrev <= 0f && crossCurr >= 0f;
+            if (!inCone)
+            {
+                return false;
+            }
+
+            var cutShortPrev = IsCutShort(previous, totalRevealerRadius);
+            var cutShortCurr = IsCutShort(current, totalRevealerRadius);
+            var wedgeT = ComputeAngularWedgeLerpT(
+                NormalizeDirection(previous.Direction),
+                NormalizeDirection(current.Direction),
+                queryDirection);
+
+            if (cutShortPrev && cutShortCurr)
+            {
+                distance = math.lerp(previous.Radius, current.Radius, wedgeT);
+            }
+            else if (cutShortPrev != cutShortCurr)
+            {
+                const float openBandT = 0.04f;
+                if (cutShortPrev && !cutShortCurr)
+                {
+                    distance = wedgeT >= openBandT
+                        ? totalRevealerRadius + 1f
+                        : math.lerp(
+                            previous.Radius + extraRadius,
+                            totalRevealerRadius + 1f,
+                            wedgeT / openBandT);
+                }
+                else
+                {
+                    distance = wedgeT <= 1f - openBandT
+                        ? totalRevealerRadius + 1f
+                        : math.lerp(
+                            totalRevealerRadius + 1f,
+                            current.Radius + extraRadius,
+                            (wedgeT - (1f - openBandT)) / openBandT);
+                }
+            }
+
+            if (distance <= totalRevealerRadius - 0.01f)
+            {
+                distance += extraRadius;
+            }
+
+            return true;
+        }
+
+        private static float ComputeAngularWedgeLerpT(float2 dirPrev, float2 dirCurr, float2 queryDir)
+        {
+            var anglePrev = math.atan2(dirPrev.y, dirPrev.x);
+            var angleCurr = math.atan2(dirCurr.y, dirCurr.x);
+            var angleQuery = math.atan2(queryDir.y, queryDir.x);
+            if (angleCurr <= anglePrev)
+            {
+                angleCurr += math.PI * 2f;
+            }
+
+            if (angleQuery < anglePrev)
+            {
+                angleQuery += math.PI * 2f;
+            }
+
+            var span = angleCurr - anglePrev;
+            return span > 1e-6f ? math.saturate((angleQuery - anglePrev) / span) : 0f;
+        }
+
+        public static bool TryBuildUploadSegments(
+            float2[] directions,
+            float[] uploadLengths,
+            int count,
+            float totalRevealerRadius,
+            List<RaycastRevealer.SightSegment> segments)
+        {
+            segments.Clear();
+            if (directions == null || uploadLengths == null || count < 2)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < count; i++)
+            {
+                if (math.lengthsq(directions[i]) <= 1e-8f)
+                {
+                    continue;
+                }
+
+                var didHit = uploadLengths[i] <= totalRevealerRadius - 0.01f;
+                var radius = didHit ? uploadLengths[i] : totalRevealerRadius;
+                segments.Add(new RaycastRevealer.SightSegment
+                {
+                    Direction = math.normalize(directions[i]),
+                    Radius = radius,
+                    DidHit = didHit,
+                });
+            }
+
+            return segments.Count >= 2;
         }
 
         private static float GetUploadedLength(
