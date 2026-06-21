@@ -2005,15 +2005,33 @@ namespace IronKingdoms.Combat
 
         internal static bool AnyCachedZoneWithinReach(Vector3 worldPoint, float reachWorld)
         {
+            return AnyCachedZoneIntersectsVisionDisc(worldPoint, reachWorld, 1f);
+        }
+
+        /// <summary>
+        /// True when an active clip zone AABB intersects a disc at <paramref name="worldPoint"/>.
+        /// <paramref name="reachFraction"/> scales the test radius (outer-edge forests can be ignored while moving).
+        /// </summary>
+        internal static bool AnyCachedZoneIntersectsVisionDisc(
+            Vector3 worldPoint,
+            float reachWorld,
+            float reachFraction = 1f)
+        {
             EnsureCache();
             if (CachedZones.Count == 0 || reachWorld <= 0.001f)
             {
                 return false;
             }
 
+            var scaledReach = reachWorld * Mathf.Clamp01(reachFraction);
+            if (scaledReach <= 0.001f)
+            {
+                return false;
+            }
+
             var px = worldPoint.x;
             var pz = worldPoint.z;
-            var reachSq = reachWorld * reachWorld;
+            var reachSq = scaledReach * scaledReach;
             for (var i = 0; i < CachedZones.Count; i++)
             {
                 var zone = CachedZones[i];
@@ -2022,17 +2040,29 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
-                var cx = Mathf.Clamp(px, zone.MinX, zone.MaxX);
-                var cz = Mathf.Clamp(pz, zone.MinZ, zone.MaxZ);
-                var dx = px - cx;
-                var dz = pz - cz;
-                if (dx * dx + dz * dz <= reachSq)
+                if (AabbIntersectsDiscSq(px, pz, reachSq, zone.MinX, zone.MaxX, zone.MinZ, zone.MaxZ))
                 {
                     return true;
                 }
             }
 
             return false;
+        }
+
+        private static bool AabbIntersectsDiscSq(
+            float px,
+            float pz,
+            float reachSq,
+            float minX,
+            float maxX,
+            float minZ,
+            float maxZ)
+        {
+            var cx = Mathf.Clamp(px, minX, maxX);
+            var cz = Mathf.Clamp(pz, minZ, maxZ);
+            var dx = px - cx;
+            var dz = pz - cz;
+            return dx * dx + dz * dz <= reachSq;
         }
 
         private static bool RayMayHitAnyCachedZoneAabb(

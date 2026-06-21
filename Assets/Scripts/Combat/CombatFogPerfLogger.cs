@@ -312,6 +312,8 @@ namespace IronKingdoms.Combat
             sb.Append(" wallRay=").Append(CombatForestFogPassSettings.WallRaycastResolutionDegrees.ToString("0.##")).Append("deg");
             sb.Append(" wallRayTerrain=").Append(CombatForestFogPassSettings.UseWallRayDirectionsWhileMoving);
             sb.Append(" movingHz=").Append(CombatForestFogPassSettings.MovingLineOfSightTargetHz.ToString("0.#"));
+            sb.Append(" openGroundSkip=").Append(CombatForestFogPassSettings.SkipFullLineOfSightInOpenGroundWhileMoving);
+            sb.Append(" wallRayNearOnly=").Append(CombatForestFogPassSettings.UseWallRayTerrainOnlyNearZonesWhileMoving);
             sb.Append(" movingLut=").Append(CombatForestFogPassSettings.MovingTerrainLutSamples);
             sb.Append(" coarseWall=").Append(CombatForestFogPassSettings.UseMovingWallRaycastResolution);
             sb.AppendLine();

@@ -783,6 +783,11 @@ namespace IronKingdoms.Combat
                     continue;
                 }
 
+                if (!zone.IntersectsDisc(flatEye, maxRadius))
+                {
+                    continue;
+                }
+
                 ZoneCornerScratch.Clear();
                 zone.CollectFootprintCorners(ZoneCornerScratch);
                 if (ZoneCornerScratch.Count < 2)

@@ -693,14 +693,19 @@ namespace IronKingdoms.Combat
                     : CombatForestFogPassSettings.MaxShaderLutSamples;
                 var movingHz = CombatForestFogPassSettings.MovingLineOfSightTargetHz;
                 var movingHzLabel = movingHz > 0.001f ? $"{movingHz:0.#} Hz full LOS" : "every frame";
+                var openSkip = CombatForestFogPassSettings.SkipFullLineOfSightInOpenGroundWhileMoving
+                    ? " | open-ground position-only between ticks"
+                    : string.Empty;
                 var terrainMode = revealerMoving && CombatForestFogPassSettings.UseWallRayDirectionsWhileMoving
-                    ? CombatForestFogPassSettings.ThrottleMovingWallRayTerrainRecalc
-                        ? $"wall-ray @ {CombatForestFogPassSettings.MovingLineOfSightTargetHz:0.#}Hz"
-                        : "wall-ray every frame"
-                    : $"LUT {lutBins}";
+                    ? CombatForestFogPassSettings.UseWallRayTerrainOnlyNearZonesWhileMoving
+                        ? $"wall-ray near zones, LUT open @ {movingHz:0.#}Hz"
+                        : CombatForestFogPassSettings.ThrottleMovingWallRayTerrainRecalc
+                            ? $"wall-ray @ {movingHz:0.#}Hz"
+                            : "wall-ray every frame"
+                    : $"LUT {lutBins} @ {movingHz:0.#}Hz";
                 GUILayout.Label(
                     revealerMoving && movingProfile
-                        ? $"Moving: wall {wallStep:0.##}° | terrain {terrainMode} | {movingHzLabel}."
+                        ? $"Moving: wall {wallStep:0.##}° | terrain {terrainMode} | {movingHzLabel}{openSkip}."
                         : $"Stationary: wall {wallStep:0.##}° | LUT {CombatForestFogPassSettings.MaxShaderLutSamples}.");
                 GUILayout.Label("Cyan only aligns when the clip lands on the forest edge (thin patch).");
             }

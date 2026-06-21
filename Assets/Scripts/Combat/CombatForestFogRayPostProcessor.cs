@@ -21,6 +21,10 @@ namespace IronKingdoms.Combat
         private readonly List<float> terrainClipUploadDistances = new();
         private readonly List<float2> cachedMovingBaseDirections = new();
         private readonly List<float> cachedMovingBaseUploadDistances = new();
+        private readonly List<float2> cachedMovingFinalDirections = new();
+        private readonly List<float> cachedMovingFinalUploadDistances = new();
+        private Vector3 lastFullTerrainEyeWorld;
+        private bool hasLastFullTerrainEyeWorld;
         private float2[] terrainClipDirectionsArray = System.Array.Empty<float2>();
         private float[] terrainClipUploadDistancesArray = System.Array.Empty<float>();
 
@@ -53,6 +57,9 @@ namespace IronKingdoms.Combat
         {
             cachedMovingBaseDirections.Clear();
             cachedMovingBaseUploadDistances.Clear();
+            cachedMovingFinalDirections.Clear();
+            cachedMovingFinalUploadDistances.Clear();
+            hasLastFullTerrainEyeWorld = false;
         }
 
         public void BuildTerrainClipSegmentsForShader(
@@ -90,6 +97,15 @@ namespace IronKingdoms.Combat
             }
 
             SnapshotWallPass(viewPoints, baselineSegmentCount);
+
+            if (movingTerrainAnchorsOnly && TryApplyCachedMovingFinalUpload(eyeWorld))
+            {
+                LastWallBaselineReport = BuildMovingAnchorOnlyReport(
+                    viewPoints,
+                    baselineSegmentCount,
+                    maxRadius);
+                return;
+            }
 
             var depthWorld = CombatForestFogDepth.ResolveDepthWorld();
             if (collectDebugState)
@@ -205,6 +221,88 @@ namespace IronKingdoms.Combat
             LastWallBaselineReport = report;
 
             CopyTerrainClipUploadArrays();
+            if (!movingTerrainAnchorsOnly && terrainClipDirections.Count >= 2)
+            {
+                CacheMovingFinalUploadSamples(eyeWorld);
+            }
+        }
+
+        private CombatForestFogWallBaselineReport BuildMovingAnchorOnlyReport(
+            RaycastRevealer.SightSegment[] viewPoints,
+            int baselineSegmentCount,
+            float maxRadius)
+        {
+            var report = new CombatForestFogWallBaselineReport
+            {
+                DenseRayCount = terrainClipDirections.Count,
+                SparseWallSegmentCount = baselineSegmentCount,
+                FinalSparseSegmentCount = baselineSegmentCount + terrainClipDirections.Count,
+                ForestPassApplied = true,
+            };
+
+            for (var i = 0; i < baselineSegmentCount; i++)
+            {
+                if (!IsWallHit(viewPoints[i], maxRadius))
+                {
+                    continue;
+                }
+
+                report.WallBlockedRayCount++;
+                report.WallPreservedRayCount++;
+            }
+
+            report.WallViolationCount = 0;
+            report.MaxWallViolationDistanceWorld = 0f;
+            return report;
+        }
+
+        private bool TryApplyCachedMovingFinalUpload(Vector3 eyeWorld)
+        {
+            if (!hasLastFullTerrainEyeWorld
+                || cachedMovingFinalDirections.Count < 2
+                || cachedMovingFinalDirections.Count != cachedMovingFinalUploadDistances.Count)
+            {
+                return false;
+            }
+
+            var maxTravel = CombatForestFogPassSettings.MovingAnchorRefreshMaxEyeTravelWorld;
+            if (maxTravel > 0.001f)
+            {
+                var delta = eyeWorld - lastFullTerrainEyeWorld;
+                delta.y = 0f;
+                if (delta.sqrMagnitude > maxTravel * maxTravel)
+                {
+                    return false;
+                }
+            }
+
+            using (CombatFogPerfLogger.Measure("revealer.terrain.anchor_cached"))
+            {
+                terrainClipDirections.Clear();
+                terrainClipUploadDistances.Clear();
+                for (var i = 0; i < cachedMovingFinalDirections.Count; i++)
+                {
+                    terrainClipDirections.Add(cachedMovingFinalDirections[i]);
+                    terrainClipUploadDistances.Add(cachedMovingFinalUploadDistances[i]);
+                }
+
+                CopyTerrainClipUploadArrays();
+            }
+
+            return true;
+        }
+
+        private void CacheMovingFinalUploadSamples(Vector3 eyeWorld)
+        {
+            lastFullTerrainEyeWorld = eyeWorld;
+            hasLastFullTerrainEyeWorld = true;
+            cachedMovingFinalDirections.Clear();
+            cachedMovingFinalUploadDistances.Clear();
+            for (var i = 0; i < terrainClipDirections.Count; i++)
+            {
+                cachedMovingFinalDirections.Add(terrainClipDirections[i]);
+                cachedMovingFinalUploadDistances.Add(terrainClipUploadDistances[i]);
+            }
         }
 
         private void CopyTerrainClipUploadArrays()
@@ -403,6 +501,11 @@ namespace IronKingdoms.Combat
             if (cachedMovingBaseDirections.Count < 2
                 || cachedMovingBaseDirections.Count != cachedMovingBaseUploadDistances.Count
                 || maxRadius <= 0.001f)
+            {
+                return;
+            }
+
+            if (TryApplyCachedMovingFinalUpload(eyeWorld))
             {
                 return;
             }

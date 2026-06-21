@@ -87,6 +87,7 @@ namespace IronKingdoms.Combat
         private bool pawnIsMoving;
         private float lastMovingLineOfSightUpdateTime;
         private bool skipMovingTerrainRecalcThisFrame;
+        private bool skipFullLineOfSightThisFrame;
         private bool movingWallRaycastResolutionActive;
         private float stationaryRaycastResolution;
         private int stationaryNumExtraIterations;
@@ -318,6 +319,7 @@ namespace IronKingdoms.Combat
             lastMovingLineOfSightUpdateTime = 0f;
             skipMovingTerrainRecalcThisFrame = false;
             forestPostProcessor.ClearMovingTerrainCache();
+            skipFullLineOfSightThisFrame = false;
             RestoreStationaryWallRaycastResolution();
             RequestLineOfSightRecalculation();
         }
@@ -411,7 +413,14 @@ namespace IronKingdoms.Combat
         public override void LineOfSightPhase1()
         {
             CombatFogPerfLogger.NotifyPawnMoving(pawnIsMoving);
-            skipMovingTerrainRecalcThisFrame = ShouldSkipMovingTerrainRecalc();
+            EvaluateMovingPerfFramePlan();
+
+            if (skipFullLineOfSightThisFrame)
+            {
+                CombatFogPerfLogger.IncrementCounter("revealer.position_only");
+                return;
+            }
+
             if (skipMovingTerrainRecalcThisFrame)
             {
                 CombatFogPerfLogger.IncrementCounter("revealer.terrain_anchor_only");
@@ -431,6 +440,16 @@ namespace IronKingdoms.Combat
 
         public override void LineOfSightPhase2()
         {
+            if (skipFullLineOfSightThisFrame)
+            {
+                using (CombatFogPerfLogger.Measure("revealer.position_only_upload"))
+                {
+                    ApplyRevealerPositionOnly();
+                }
+
+                return;
+            }
+
             forestPostProcessor.ClearDebugState();
 
             applyForestClipThisFrame = ShouldApplyForestClipThisFrame();
@@ -702,14 +721,18 @@ namespace IronKingdoms.Combat
                 var requireFullTerrainFidelity = eyeIntersectsForest
                     || eyeIntersectsCloud
                     || activeClipZoneCount >= 2
-                    || CombatForestFogClipper.AnyCachedZoneWithinReach(eyeWorld, TotalRevealerRadius);
+                    || CombatForestFogClipper.AnyCachedZoneIntersectsVisionDisc(
+                        eyeWorld,
+                        TotalRevealerRadius,
+                        1f);
                 var collectDebugState = drawForestClipDebug && drawForestClipInGameView && !pawnIsMoving;
                 var maxUploadSegments = FogOfWarWorld.instance != null
                     ? FogOfWarWorld.instance.MaxPossibleSegmentsPerRevealer
                     : NumberOfPoints;
 
-                var useWallRayTerrainUpload = pawnIsMoving
-                    && CombatForestFogPassSettings.UseWallRayDirectionsWhileMoving;
+                var useWallRayTerrainUpload = CombatForestFogPassSettings.ResolveUseWallRayTerrainUpload(
+                    pawnIsMoving,
+                    requireFullTerrainFidelity);
                 var desiredLutSamples = CombatForestFogPassSettings.ResolveLutSampleCount(
                     pawnIsMoving,
                     requireFullTerrainFidelity,
@@ -739,9 +762,11 @@ namespace IronKingdoms.Combat
                     skipMovingTerrainRecalcThisFrame,
                     requireFullTerrainFidelity);
 
-                var terrainPathLabel = useWallRayTerrainUpload
-                    ? skipMovingTerrainRecalcThisFrame ? "wall-ray-anchors" : "wall-ray-full"
-                    : "lut";
+                var terrainPathLabel = skipFullLineOfSightThisFrame
+                    ? "position-only"
+                    : useWallRayTerrainUpload
+                        ? skipMovingTerrainRecalcThisFrame ? "wall-ray-anchors" : "wall-ray-full"
+                        : skipMovingTerrainRecalcThisFrame ? "lut-anchors" : "lut";
                 CombatFogPerfLogger.SetContext("name", gameObject.name);
                 CombatFogPerfLogger.SetContext("moving", pawnIsMoving.ToString());
                 CombatFogPerfLogger.SetContext("phase1Rays", FirstIterationStepCount.ToString());
@@ -827,6 +852,7 @@ namespace IronKingdoms.Combat
                 pawnIsMoving = false;
                 lastMovingLineOfSightUpdateTime = 0f;
                 skipMovingTerrainRecalcThisFrame = false;
+                skipFullLineOfSightThisFrame = false;
                 RestoreStationaryWallRaycastResolution();
                 SetRevealerAsStatic(false);
             }
@@ -836,42 +862,53 @@ namespace IronKingdoms.Combat
             }
         }
 
-        private bool ShouldSkipMovingTerrainRecalc()
+        private void EvaluateMovingPerfFramePlan()
         {
+            skipFullLineOfSightThisFrame = false;
+            skipMovingTerrainRecalcThisFrame = false;
+
             if (!pawnIsMoving || !CombatForestFogPassSettings.EnableMovingPerfProfile)
             {
-                return false;
+                return;
             }
 
             var eyeWorld = (Vector3)GetEyePosition();
-            if (CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, 0f)
-                || CombatBlockingTerrainClipper.IsInsideBlockingTerrain(eyeWorld, 0f)
-                || CombatForestFogClipper.AnyCachedZoneWithinReach(eyeWorld, TotalRevealerRadius))
+            var insideForest = CombatForestFogClipper.IsInsideLimitedDepthForest(eyeWorld, 0f);
+            var insideCloud = CombatBlockingTerrainClipper.IsInsideBlockingTerrain(eyeWorld, 0f);
+            var innerZoneReach = CombatForestFogClipper.AnyCachedZoneIntersectsVisionDisc(
+                eyeWorld,
+                TotalRevealerRadius,
+                CombatForestFogPassSettings.MovingOpenGroundZoneReachFraction);
+            var isOpenGroundForSkip = !insideForest && !insideCloud && !innerZoneReach;
+
+            if (!CombatForestFogPassSettings.ShouldDeferMovingFullUpdate(
+                    lastMovingLineOfSightUpdateTime,
+                    Time.time,
+                    GetInstanceID()))
             {
-                return false;
+                return;
+            }
+
+            if (isOpenGroundForSkip
+                && CombatForestFogPassSettings.SkipFullLineOfSightInOpenGroundWhileMoving
+                && hasCalculatedLineOfSightPose)
+            {
+                skipFullLineOfSightThisFrame = true;
+                return;
+            }
+
+            if (insideForest || insideCloud)
+            {
+                return;
             }
 
             if (CombatForestFogPassSettings.UseWallRayDirectionsWhileMoving
                 && !CombatForestFogPassSettings.ThrottleMovingWallRayTerrainRecalc)
             {
-                return false;
+                return;
             }
 
-            var targetHz = CombatForestFogPassSettings.MovingLineOfSightTargetHz;
-            if (targetHz > 0.001f)
-            {
-                var minInterval = 1f / targetHz;
-                return Time.time - lastMovingLineOfSightUpdateTime + 0.0001f < minInterval;
-            }
-
-            var interval = CombatForestFogPassSettings.MovingLineOfSightUpdateInterval;
-            if (interval <= 1)
-            {
-                return false;
-            }
-
-            var frameIndex = Time.frameCount + GetInstanceID();
-            return frameIndex % interval != 0;
+            skipMovingTerrainRecalcThisFrame = true;
         }
 
         private void ApplyMovingWallRaycastResolutionIfNeeded()

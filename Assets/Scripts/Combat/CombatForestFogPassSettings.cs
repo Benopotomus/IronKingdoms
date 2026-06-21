@@ -36,6 +36,30 @@ namespace IronKingdoms.Combat
         public static float MovingLineOfSightTargetHz { get; set; } = 30f;
 
         /// <summary>
+        /// In open ground (no clip zones in the inner reach disc), skip wall raycasts between full
+        /// LOS ticks and re-upload the last polygon at the current eye position only.
+        /// </summary>
+        public static bool SkipFullLineOfSightInOpenGroundWhileMoving { get; set; } = true;
+
+        /// <summary>
+        /// Clip zones beyond this fraction of revealer radius do not block open-ground LOS throttle
+        /// (forests at the outer edge of vision still use reduced-rate updates while pathing).
+        /// </summary>
+        public static float MovingOpenGroundZoneReachFraction { get; set; } = 0.55f;
+
+        /// <summary>
+        /// While moving, use pass-1 wall-ray terrain only when full terrain fidelity is required
+        /// (inside / multi-zone / inner-reach forest). Open ground uses the cheaper LUT path.
+        /// </summary>
+        public static bool UseWallRayTerrainOnlyNearZonesWhileMoving { get; set; } = true;
+
+        /// <summary>
+        /// On anchor-only terrain frames, skip polygon edge re-merge when the eye moved less than
+        /// this distance since the last full terrain sample.
+        /// </summary>
+        public static float MovingAnchorRefreshMaxEyeTravelWorld { get; set; } = 0.15f;
+
+        /// <summary>
         /// Frame skip fallback when <see cref="MovingLineOfSightTargetHz"/> is 0 (2 ≈ 30 Hz at 60 FPS).
         /// </summary>
         public static int MovingLineOfSightUpdateInterval { get; set; } = 2;
@@ -205,6 +229,52 @@ namespace IronKingdoms.Combat
             }
 
             return WallRaycastResolutionDegrees;
+        }
+
+        public static bool ResolveUseWallRayTerrainUpload(
+            bool isMoving,
+            bool requireFullTerrainFidelity)
+        {
+            if (!isMoving || !UseWallRayDirectionsWhileMoving)
+            {
+                return false;
+            }
+
+            if (UseWallRayTerrainOnlyNearZonesWhileMoving)
+            {
+                return requireFullTerrainFidelity;
+            }
+
+            return true;
+        }
+
+        public static float ResolveMovingOpenGroundZoneReach(float revealerRadiusWorld) =>
+            revealerRadiusWorld * UnityEngine.Mathf.Clamp01(MovingOpenGroundZoneReachFraction);
+
+        /// <summary>
+        /// True when a full moving LOS / terrain pass should be deferred to a later frame.
+        /// </summary>
+        public static bool ShouldDeferMovingFullUpdate(float lastFullUpdateTime, float currentTime, int frameSalt)
+        {
+            if (!EnableMovingPerfProfile)
+            {
+                return false;
+            }
+
+            var targetHz = MovingLineOfSightTargetHz;
+            if (targetHz > 0.001f)
+            {
+                var minInterval = 1f / targetHz;
+                return currentTime - lastFullUpdateTime + 0.0001f < minInterval;
+            }
+
+            var interval = MovingLineOfSightUpdateInterval;
+            if (interval <= 1)
+            {
+                return false;
+            }
+
+            return (UnityEngine.Time.frameCount + frameSalt) % interval != 0;
         }
     }
 }
