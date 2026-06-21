@@ -132,6 +132,33 @@ namespace IronKingdoms.Combat
                 out exitWorld);
         }
 
+        /// <summary>Main-thread snapshot for parallel fog clip jobs.</summary>
+        internal int AppendWorldPolygonSnapshot(List<Vector2> destination)
+        {
+            if (!HasFootprint)
+            {
+                return -1;
+            }
+
+            EnsureWorldPolygonCache();
+            var start = destination.Count;
+            destination.AddRange(cachedWorldPolygon);
+            return start;
+        }
+
+        internal bool TryGetFootprintAreaWorld(out float areaWorld)
+        {
+            areaWorld = 0f;
+            if (!HasFootprint || !TryGetFootprintBounds(out var bounds))
+            {
+                return false;
+            }
+
+            var size = bounds.size;
+            areaWorld = Mathf.Abs(size.x * size.z);
+            return true;
+        }
+
         private void InvalidateWorldPolygonCache()
         {
             cachedWorldPolygonKey = int.MinValue;

@@ -15,19 +15,35 @@ namespace IronKingdoms.Combat
 
         public static bool ContainsPointLocal(Vector2 localPoint, IReadOnlyList<Vector2> localVertices)
         {
-            if (!IsValidFootprint(localVertices))
+            return localVertices != null
+                && ContainsPointLocal(localPoint, localVertices, 0, localVertices.Count);
+        }
+
+        /// <summary>Thread-safe slice into a shared vertex buffer (parallel fog clip).</summary>
+        public static bool ContainsPointLocal(
+            Vector2 localPoint,
+            IReadOnlyList<Vector2> vertices,
+            int start,
+            int count)
+        {
+            if (vertices == null || count < 3 || start < 0 || start + count > vertices.Count)
             {
                 return false;
             }
 
             var inside = false;
-            for (int i = 0, j = localVertices.Count - 1; i < localVertices.Count; j = i++)
+            for (int i = 0, j = count - 1; i < count; j = i++)
             {
-                var a = localVertices[i];
-                var b = localVertices[j];
+                var a = vertices[start + i];
+                var b = vertices[start + j];
+                var dy = b.y - a.y;
+                if (Mathf.Abs(dy) <= 1e-8f)
+                {
+                    continue;
+                }
+
                 var intersects = (a.y > localPoint.y) != (b.y > localPoint.y)
-                    && localPoint.x
-                    < (b.x - a.x) * (localPoint.y - a.y) / (b.y - a.y + 1e-12f) + a.x;
+                    && localPoint.x < (b.x - a.x) * (localPoint.y - a.y) / dy + a.x;
                 if (intersects)
                 {
                     inside = !inside;
@@ -46,28 +62,57 @@ namespace IronKingdoms.Combat
         {
             enter = -1f;
             exit = -1f;
-            if (!IsValidFootprint(localVertices) || direction.sqrMagnitude <= 1e-12f)
+            return localVertices != null
+                && TryRayPolygonIntervalLocal(origin, direction, localVertices, 0, localVertices.Count, out enter, out exit);
+        }
+
+        /// <summary>Thread-safe slice into a shared vertex buffer (parallel fog clip).</summary>
+        public static bool TryRayPolygonIntervalLocal(
+            Vector2 origin,
+            Vector2 direction,
+            IReadOnlyList<Vector2> vertices,
+            int start,
+            int count,
+            out float enter,
+            out float exit)
+        {
+            enter = -1f;
+            exit = -1f;
+            if (vertices == null || count < 3 || start < 0 || start + count > vertices.Count
+                || direction.sqrMagnitude <= 1e-12f)
             {
                 return false;
             }
 
-            direction.Normalize();
-            var isCounterClockwise = SignedAreaLocal(localVertices) > 0f;
-            var originInside = ContainsPointLocal(origin, localVertices);
+            var dirLen = direction.magnitude;
+            if (dirLen <= 1e-8f)
+            {
+                return false;
+            }
+
+            var dirX = direction.x / dirLen;
+            var dirY = direction.y / dirLen;
+            var isCounterClockwise = SignedAreaLocal(vertices, start, count) > 0f;
+            var originInside = ContainsPointLocal(origin, vertices, start, count);
             var bestEnter = float.MaxValue;
             var bestExit = float.MaxValue;
 
-            for (var i = 0; i < localVertices.Count; i++)
+            for (var i = 0; i < count; i++)
             {
-                var a = localVertices[i];
-                var b = localVertices[(i + 1) % localVertices.Count];
-                if (!CombatFogPlanarGeometry.TryRaySegmentHit(origin, direction, a, b, out var hitT))
+                var a = vertices[start + i];
+                var b = vertices[start + (i + 1 < count ? i + 1 : 0)];
+                if (!CombatFogPlanarGeometry.TryRaySegmentHit(
+                        origin,
+                        new Vector2(dirX, dirY),
+                        a,
+                        b,
+                        out var hitT))
                 {
                     continue;
                 }
 
                 var edge = b - a;
-                var cross = edge.x * direction.y - edge.y * direction.x;
+                var cross = edge.x * dirY - edge.y * dirX;
                 if (Mathf.Approximately(cross, 0f))
                 {
                     continue;
@@ -170,11 +215,21 @@ namespace IronKingdoms.Combat
 
         public static float SignedAreaLocal(IReadOnlyList<Vector2> localVertices)
         {
-            var area = 0f;
-            for (var i = 0; i < localVertices.Count; i++)
+            return localVertices == null ? 0f : SignedAreaLocal(localVertices, 0, localVertices.Count);
+        }
+
+        public static float SignedAreaLocal(IReadOnlyList<Vector2> vertices, int start, int count)
+        {
+            if (vertices == null || count < 3 || start < 0 || start + count > vertices.Count)
             {
-                var a = localVertices[i];
-                var b = localVertices[(i + 1) % localVertices.Count];
+                return 0f;
+            }
+
+            var area = 0f;
+            for (var i = 0; i < count; i++)
+            {
+                var a = vertices[start + i];
+                var b = vertices[start + (i + 1 < count ? i + 1 : 0)];
                 area += a.x * b.y - b.x * a.y;
             }
 

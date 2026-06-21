@@ -32,6 +32,22 @@ namespace IronKingdoms.Combat
             public float DepthLimitWorld;
         }
 
+        internal readonly struct CachedClipZoneAabb
+        {
+            public readonly float MinX;
+            public readonly float MaxX;
+            public readonly float MinZ;
+            public readonly float MaxZ;
+
+            public CachedClipZoneAabb(float minX, float maxX, float minZ, float maxZ)
+            {
+                MinX = minX;
+                MaxX = maxX;
+                MinZ = minZ;
+                MaxZ = maxZ;
+            }
+        }
+
         private static readonly List<ClipZone> CachedZones = new();
         [ThreadStatic] private static List<ClipInterval> _intervalScratch;
         [ThreadStatic] private static List<Vector3> _footprintCornerScratch;
@@ -384,6 +400,7 @@ namespace IronKingdoms.Combat
         {
             LastCacheFrame = -1;
             CachedZones.Clear();
+            CombatForestFogClipperParallelCache.Clear();
         }
 
         /// <summary>
@@ -401,6 +418,7 @@ namespace IronKingdoms.Combat
                 DepthLimitWorld = depthLimitWorld
             });
             LastCacheFrame = Time.frameCount;
+            RebuildParallelFootprintCache();
         }
 
         public static void EnsureCache()
@@ -459,6 +477,61 @@ namespace IronKingdoms.Combat
                     DepthLimitWorld = CombatScale.InchesToWorldUnits(feature.LineOfSightPassThroughDepthInches)
                 });
             }
+
+            RebuildParallelFootprintCache();
+        }
+
+        private static void RebuildParallelFootprintCache()
+        {
+            CombatForestFogClipperParallelCache.BeginZone(CachedZones.Count);
+            for (var i = 0; i < CachedZones.Count; i++)
+            {
+                CombatForestFogClipperParallelCache.AddZoneFootprint(CachedZones[i].Zone);
+            }
+        }
+
+        internal static bool CanRunParallelForestClipSampling()
+        {
+            return CombatForestFogClipperParallelCache.AllZonesThreadSafe;
+        }
+
+        internal static int GetCachedZoneAabbCount()
+        {
+            return CachedZones.Count;
+        }
+
+        internal static CachedClipZoneAabb GetCachedZoneAabb(int index)
+        {
+            var zone = CachedZones[index];
+            return new CachedClipZoneAabb(zone.MinX, zone.MaxX, zone.MinZ, zone.MaxZ);
+        }
+
+        internal static bool IsCachedZoneActiveForCurrentClipPass(int zoneIndex)
+        {
+            return zoneIndex >= 0
+                && zoneIndex < CachedZones.Count
+                && IsZoneActiveForClipPass(CachedZones[zoneIndex]);
+        }
+
+        internal static bool IsCachedLimitedDepthZone(int zoneIndex)
+        {
+            return zoneIndex >= 0
+                && zoneIndex < CachedZones.Count
+                && CachedZones[zoneIndex].LineOfSightMode == CombatTerrainLineOfSightMode.LimitedDepth;
+        }
+
+        internal static bool IsCachedBlockingClipZone(int zoneIndex)
+        {
+            return zoneIndex >= 0
+                && zoneIndex < CachedZones.Count
+                && CachedZones[zoneIndex].LineOfSightMode == CombatTerrainLineOfSightMode.BlocksCompletely;
+        }
+
+        internal static float GetCachedZoneDepthLimitWorld(int zoneIndex, float fallbackDepthLimitWorld)
+        {
+            return zoneIndex >= 0 && zoneIndex < CachedZones.Count
+                ? CachedZones[zoneIndex].DepthLimitWorld
+                : fallbackDepthLimitWorld;
         }
 
         /// <summary>
@@ -1322,7 +1395,7 @@ namespace IronKingdoms.Combat
             return false;
         }
 
-        private enum ForestZoneBoundaryKind
+        internal enum ForestZoneBoundaryKind
         {
             Entry,
             Exit

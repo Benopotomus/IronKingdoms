@@ -276,5 +276,45 @@ namespace IronKingdoms.Combat
 
             return (UnityEngine.Time.frameCount + frameSalt) % interval != 0;
         }
+
+        /// <summary>Build terrain LUT bins on worker threads when footprints are cache-safe.</summary>
+        public static bool UseParallelForestClipLutBuild { get; set; } = true;
+
+        /// <summary>Minimum LUT bins before parallel clip build kicks in.</summary>
+        public static int ParallelForestClipLutMinSamples { get; set; } = 24;
+
+        /// <summary>
+        /// When true and zone footprints are cache-safe, full forest clip samples run on worker threads
+        /// (not just the AABB cull pass).
+        /// </summary>
+        public static bool UseParallelForestClipFullSample { get; set; } = true;
+
+        /// <summary>Minimum ray/bin count before parallel full-sample clip is used.</summary>
+        public static int ParallelForestClipFullSampleMinCount { get; set; } = 8;
+
+        /// <summary>
+        /// Allow worker-thread clip when full terrain fidelity is required while moving.
+        /// </summary>
+        public static bool AllowParallelForestClipWithFullFidelity { get; set; } = true;
+
+        public static bool ShouldUseParallelForestClip(bool requireFullTerrainFidelity, int sampleCount)
+        {
+            if (!UseParallelForestClipLutBuild && !UseParallelForestClipFullSample)
+            {
+                return false;
+            }
+
+            if (sampleCount < ParallelForestClipFullSampleMinCount)
+            {
+                return false;
+            }
+
+            if (requireFullTerrainFidelity && !AllowParallelForestClipWithFullFidelity)
+            {
+                return false;
+            }
+
+            return CombatForestFogClipper.CanRunParallelForestClipSampling();
+        }
     }
 }

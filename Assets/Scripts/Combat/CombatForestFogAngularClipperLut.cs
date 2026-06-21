@@ -142,6 +142,35 @@ namespace IronKingdoms.Combat
                     return;
                 }
 
+                if (CombatForestFogPassSettings.UseParallelForestClipLutBuild
+                    && sampleCount >= CombatForestFogPassSettings.ParallelForestClipLutMinSamples
+                    && CombatForestFogClipBinParallelBuilder.TryBuildSmoothedClipDistances(
+                        buildContext,
+                        maxSearchRadius,
+                        originRadiusWorld,
+                        projection,
+                        clipDistances,
+                        sampleCount,
+                        halfAngle,
+                        useMedianSmoothing))
+                {
+                    if (!buildContext.RayStartedInsideForest && !skipTerrainPostFilters)
+                    {
+                        var activeZoneCount = CombatForestFogClipper.GetActiveClipZoneCount(
+                            applyForestClip,
+                            applyBlockingClip);
+                        RemoveOutwardAngularSpikes(clipDistances, sampleCount, maxSearchRadius, PostFilterScratch);
+                        RemoveOpenBinsAdjacentToForestClip(
+                            clipDistances,
+                            sampleCount,
+                            maxSearchRadius,
+                            PostFilterScratch,
+                            allowDualLimitedBridge: activeZoneCount <= 1);
+                    }
+
+                    return;
+                }
+
                 for (var i = 0; i < sampleCount; i++)
                 {
                     var directionWorld = CombatForestFogAngularTables.GetDirectionWorldXZ(i, sampleCount);
