@@ -58,6 +58,10 @@ namespace IronKingdoms.Combat
         public bool HasChargedThisTurn { get; set; }
         public bool IsAimingThisTurn { get; set; }
         public bool IsVisibleToPlayer { get; set; } = true;
+        /// <summary>
+        /// Prototype hide state used to surface the BG3-style enemy LOS threat grid overlay.
+        /// </summary>
+        public bool IsHiding { get; set; }
         public Vector3? MoveTarget { get; set; }
         public bool IsAlive => Health > 0;
 
@@ -457,6 +461,7 @@ namespace IronKingdoms.Combat
             HasAdvancedThisTurn = false;
             HasChargedThisTurn = false;
             IsAimingThisTurn = false;
+            IsHiding = false;
             MoveTarget = null;
             PathWaypoints = null;
             ActiveMovementStep = MovementStepOption.None;

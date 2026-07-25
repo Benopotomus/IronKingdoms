@@ -267,6 +267,17 @@ namespace IronKingdoms.Combat
             }
 
             GUI.enabled = true;
+            var hideLabel = currentPlayerMode == UnitActionMode.Hide || selectedUnit.IsHiding
+                ? "[ Hide ]"
+                : "Hide";
+            if (GUILayout.Button(hideLabel, GUILayout.Height(30f)))
+            {
+                if (!WasUiCancelTriggeredThisFrame())
+                {
+                    SetCurrentMode(currentPlayerMode == UnitActionMode.Hide ? UnitActionMode.None : UnitActionMode.Hide);
+                }
+            }
+
             GUILayout.EndHorizontal();
 
             if (currentPlayerMode == UnitActionMode.Attack)
@@ -276,6 +287,11 @@ namespace IronKingdoms.Combat
             else if (currentPlayerMode == UnitActionMode.Move)
             {
                 DrawMoveActionControls(canMove);
+            }
+            else if (currentPlayerMode == UnitActionMode.Hide || selectedUnit.IsHiding)
+            {
+                GUILayout.Space(6f);
+                GUILayout.Label("Enemy line of sight (red grid). Hold Left Shift to preview without Hide.");
             }
 
             GUILayout.EndArea();

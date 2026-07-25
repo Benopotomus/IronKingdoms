@@ -33,7 +33,7 @@ namespace IronKingdoms.Combat
         private const float SelectedUnitPanelOffsetX = 12f;
         private const float SelectedUnitPanelOffsetY = 12f;
         private const float ActionBarWidth = 560f;
-        private const float ActionBarHeight = 132f;
+        private const float ActionBarHeight = 148f;
         private const float ActionBarBottomMargin = 12f;
         private const float HoverPanelWidth = 280f;
         private const float HoverPanelHeight = 122f;
@@ -119,6 +119,9 @@ namespace IronKingdoms.Combat
         private Vector2 combatLogScrollPosition;
         private Vector2 selectedUnitPanelScrollPosition;
         private readonly CombatFogTextureBoundaryDrawer fogTextureBoundaryDrawer = new();
+        private readonly CombatLosGridOverlay losThreatGridOverlay = new();
+        private int losThreatGridBuiltVersion = int.MinValue;
+        private bool losThreatGridForceRebuild;
         private GUIStyle floatingDamageStyle;
         private GUIStyle floatingDamageShadowStyle;
         private GUIStyle coverPopupStyle;
@@ -208,6 +211,7 @@ namespace IronKingdoms.Combat
             TickEnemyAi(Time.deltaTime);
             UpdateMovementVisualizer();
             UpdateWeaponRangeRing();
+            UpdateLosThreatGridOverlay();
             UpdateFogOfWarVisibility();
             UpdateHoveredEnemy();
         }
@@ -357,6 +361,8 @@ namespace IronKingdoms.Combat
             }
 
             destinationMarkerObject.SetActive(false);
+
+            losThreatGridOverlay.SetParent(transform);
         }
 
         private void UpdateMovementVisualizer()
@@ -628,6 +634,9 @@ namespace IronKingdoms.Combat
             {
                 HideAttackTargetRings();
             }
+
+            SyncSelectedUnitHidingState();
+            losThreatGridForceRebuild = true;
         }
 
         private void HideAllVisualizers()
@@ -648,6 +657,9 @@ namespace IronKingdoms.Combat
             {
                 destinationMarkerObject.SetActive(false);
             }
+
+            losThreatGridOverlay.Hide();
+            losThreatGridBuiltVersion = int.MinValue;
         }
 
         private Unit GetPathingUnitForNavmeshClearance()
@@ -737,9 +749,41 @@ namespace IronKingdoms.Combat
                 case UnitActionMode.Attack:
                     HandleAttackModeInput();
                     break;
+                case UnitActionMode.Hide:
+                    HandleHideModeInput();
+                    break;
                 default:
                     HandleSelectionInput();
                     break;
+            }
+        }
+
+        private void HandleHideModeInput()
+        {
+            if (TryCancelModeOnRightClick())
+            {
+                return;
+            }
+
+            // Left-click while hiding still allows selecting another friendly unit.
+            if (!Input.GetMouseButtonDown(0))
+            {
+                return;
+            }
+
+            var activeCamera = cameraManager != null ? cameraManager.ActiveCamera : Camera.main;
+            if (activeCamera == null)
+            {
+                return;
+            }
+
+            var ray = activeCamera.ScreenPointToRay(Input.mousePosition);
+            if (TryGetClosestUnitFromRay(
+                    ray,
+                    unit => unit.IsPlayerControlled && unit.IsAlive,
+                    out var clickedUnit))
+            {
+                HandlePlayerUnitClick(clickedUnit);
             }
         }
 
@@ -1469,6 +1513,7 @@ namespace IronKingdoms.Combat
             }
 
             HideAllVisualizers();
+            ClearAllPlayerHidingState();
             currentPlayerMode = UnitActionMode.None;
             StartEnemyTurn();
         }
@@ -1602,6 +1647,7 @@ namespace IronKingdoms.Combat
 
         private void SelectUnit(Unit unit)
         {
+            ClearAllPlayerHidingState();
             selectedUnit = unit != null && unit.IsAlive ? unit : null;
             selectedAttackWeaponIndex = 0;
             selectedMovementOption = MovementStepOption.Advance;
@@ -1612,6 +1658,69 @@ namespace IronKingdoms.Combat
             TryApplyPlayerFogRevealerActivationIfSafe();
             SyncWallBaselineProofOnRevealers();
             UpdateFogOfWarVisibility();
+            losThreatGridForceRebuild = true;
+        }
+
+        private void ClearAllPlayerHidingState()
+        {
+            for (var i = 0; i < playerRuntimeUnits.Count; i++)
+            {
+                var unit = playerRuntimeUnits[i];
+                if (unit != null)
+                {
+                    unit.IsHiding = false;
+                }
+            }
+        }
+
+        private void SyncSelectedUnitHidingState()
+        {
+            ClearAllPlayerHidingState();
+            if (selectedUnit != null
+                && selectedUnit.IsAlive
+                && currentPlayerMode == UnitActionMode.Hide)
+            {
+                selectedUnit.IsHiding = true;
+            }
+        }
+
+        private bool WantsLosThreatGridOverlay()
+        {
+            if (selectedUnit == null || !selectedUnit.IsAlive || activeTurnSide != TurnSide.Player)
+            {
+                return false;
+            }
+
+            // BG3: hold Left Shift to preview sneak cones, or enter Hide to keep them up.
+            return currentPlayerMode == UnitActionMode.Hide
+                || selectedUnit.IsHiding
+                || Input.GetKey(KeyCode.LeftShift);
+        }
+
+        private void UpdateLosThreatGridOverlay()
+        {
+            losThreatGridOverlay.SetParent(transform);
+
+            if (!WantsLosThreatGridOverlay())
+            {
+                if (losThreatGridOverlay.IsVisible)
+                {
+                    losThreatGridOverlay.Hide();
+                }
+
+                losThreatGridBuiltVersion = int.MinValue;
+                losThreatGridForceRebuild = false;
+                return;
+            }
+
+            if (!losThreatGridForceRebuild && losThreatGridBuiltVersion == losDirtyVersion)
+            {
+                return;
+            }
+
+            losThreatGridOverlay.Rebuild(enemyRuntimeUnits, allRuntimeUnits, GroundYPosition);
+            losThreatGridBuiltVersion = losDirtyVersion;
+            losThreatGridForceRebuild = false;
         }
 
         private static CombatFogOfWarRevealer3D GetFogRevealer(Unit unit)

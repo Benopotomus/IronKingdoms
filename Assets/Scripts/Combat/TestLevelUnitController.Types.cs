@@ -14,7 +14,9 @@ namespace IronKingdoms.Combat
         {
             None,
             Move,
-            Attack
+            Attack,
+            /// <summary>BG3-style hide preview: shows enemy LOS threat grid.</summary>
+            Hide
         }
 
         private struct FloatingDamageEntry
