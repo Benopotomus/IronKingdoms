@@ -164,5 +164,8 @@ Future work may align fog occlusion with Mk4 terrain blocking using revealer ray
 | `Assets/Scripts/Data/CombatScale.cs` | Inch ↔ world conversion constants and helpers |
 | `Assets/Scripts/Data/CombatStats.cs` | `visibilityRange` stat |
 | `Assets/Scripts/Data/ModelSize.cs` | Base diameter and volume height in inches / world units |
-| `Assets/Scripts/Combat/TestLevelUnitController.cs` | Spawns fog revealers from unit stats |
+| `Assets/Scripts/Combat/TestLevelUnitController.cs` | Spawns fog revealers from unit stats; drives Hide / Left-Shift LOS threat grid |
+| `Assets/Scripts/Combat/CombatLosGridSampler.cs` | Angular enemy vision → inch cell mask for the threat grid |
+| `Assets/Scripts/Combat/CombatLosGridOverlay.cs` | BG3-style red translucent LOS grid mesh |
+| `Assets/Shaders/Combat/LosGridOverlay.shader` | Transparent fill + cell edge lines for the threat grid |
 | `Assets/Editor/UnitTypeCreatorWindow.cs` | Authoring UI for visibility range |
